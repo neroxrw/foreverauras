@@ -145,7 +145,8 @@ function CompressDisplay(data, version)
 end
 
 local function filterFunc(_, event, msg, player, l, cs, t, flag, channelId, ...)
-  if flag == "GM" or flag == "DEV" or (event == "CHAT_MSG_CHANNEL" and type(channelId) == "number" and channelId > 0) then
+  if hasanysecretvalues(msg, player, t, flag, channelId, ...) then return end
+  if flag == "GM" or flag == "DEV" then
     return
   end
 
@@ -230,8 +231,10 @@ local tooltipLoading;
 local receivedData;
 
 EventRegistry:RegisterCallback("SetItemRef", function(_, link, text)
+  if hasanysecretvalues(link, text) then return end
   if(link == "addon:ForeverAurasShare:import") then
-    local _, _, characterName, displayName = text:find("|Haddon:ForeverAurasShare:import|h|cFF8800FF%[(.-) |r|cFF8800FF%- (.*)%]|h");
+    local label = text:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
+    local characterName, displayName = label:match("%[(.-) %- (.*)%]")
     if(characterName and characterName ~= "" and displayName) then
       characterName = characterName:gsub("|c[Ff][Ff]......", ""):gsub("|r", "");
       displayName = displayName:gsub("|c[Ff][Ff]......", ""):gsub("|r", "");
@@ -289,7 +292,7 @@ function TableToString(inTable, forChat)
       compressedTablesCache[k] = nil
     end
   end
-  local encoded = "!WA:2!"
+  local encoded = forChat and "!FA:2!" or "!WA:2!"
   if(forChat) then
     encoded = encoded .. LibDeflate:EncodeForPrint(compressed)
   else
@@ -302,11 +305,12 @@ function StringToTable(inString, fromChat)
   -- encoding format:
   -- version 0: simple b64 string, compressed with LC and serialized with AS
   -- version 1: b64 string prepended with "!", compressed with LD and serialized with AS
-  -- version 2+: b64 string prepended with !WA:N! (where N is encode version)
+  -- version 2+: b64 string prepended with !FA:N! or !WA:N! (N is the encoding version)
   --   compressed with LD and serialized with LS
-  local _, _, encodeVersion, encoded = inString:find("^(!WA:%d+!)(.+)$")
+  if fromChat then inString = inString:match("^%s*(.-)%s*$") end
+  local _, encodeVersion, encoded = inString:match("^!([FW]A):(%d+)!(.+)$")
   if encodeVersion then
-    encodeVersion = tonumber(encodeVersion:match("%d+"))
+    encodeVersion = tonumber(encodeVersion)
   else
     encoded, encodeVersion = inString:gsub("^%!", "")
   end
@@ -605,6 +609,28 @@ end
 
 local safeSenders = {}
 function RequestDisplay(characterName, displayName)
+  local playerName, realm = Private.ExecEnv.UnitFullName("player")
+  if characterName == playerName or (realm and characterName == playerName .. "-" .. realm:gsub("%s", "")) then
+    tooltipLoading = nil
+    local exported = Private.DisplayToString(displayName, true)
+    if exported ~= "" then
+      ItemRefTooltip:Hide()
+      ForeverAuras.Import(exported)
+    else
+      ShowTooltip({{1, "ForeverAuras", 0.5, 0, 1}, {1, L["Requested display does not exist"], 1, 0, 0}})
+    end
+    return
+  end
+  if C_ChatInfo.AreOutgoingAddonChatMessagesRestricted() then
+    tooltipLoading = nil
+    ShowTooltip({{1, "ForeverAuras", 0.5, 0, 1}, {1, "This realm blocks aura transfers through chat. Ask the sender to export the aura, then paste the export string into Import.", 1, 0.82, 0}})
+    return
+  end
+  if C_ChatInfo.InChatMessagingLockdown() then
+    tooltipLoading = nil
+    ShowTooltip({{1, "ForeverAuras", 0.5, 0, 1}, {1, "Aura sharing is unavailable while chat is restricted. Click the link again after restrictions end.", 1, 0.82, 0}})
+    return
+  end
   local characterNameAmbiguate = Ambiguate(characterName, "none")
   safeSenders[characterName] = true
   safeSenders[characterNameAmbiguate] = true
@@ -685,6 +711,7 @@ local function HandleProgressComm(prefix, message, distribution, sender)
 end
 
 local function HandleComm(prefix, message, distribution, sender)
+  if hasanysecretvalues(prefix, message, distribution, sender) then return end
   local linkValidityDuration = 60 * 5
   local safeSender = safeSenders[sender]
   local validLink = false

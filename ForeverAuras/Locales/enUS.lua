@@ -1557,9 +1557,12 @@ L["Zoom Animation"] = "Zoom Animation"
 L["Zul'Gurub"] = "Zul'Gurub"
 
 
+L["Raid Leader"] = "Raid Leader"
+
 -- Make missing translations available
 setmetatable(ForeverAuras.L, {__index = function(self, key)
   self[key] = (key or "")
   return key
 end})
+
 

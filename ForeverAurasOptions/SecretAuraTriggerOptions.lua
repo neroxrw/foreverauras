@@ -36,7 +36,7 @@ local function GetOptions(data, triggernum)
     return values
   end
   local options = {
-    help = {type = "description", order = 2, width = "full",
+    help = {type = "description", order = 2, width = "full", fontSize = "small",
       name = "Trigger Always Active. Blizzard Controls Display.\n\nFor secret auras, Exact Spell IDs can display friendly buffs and enemy debuffs.\n\nYou can also enter IDs for friendly debuffs or enemy buffs and assign sounds in Actions, but those auras will not display."},
     unit = {
       type = "select", name = "Unit", order = 3, width = width, values = display.units,

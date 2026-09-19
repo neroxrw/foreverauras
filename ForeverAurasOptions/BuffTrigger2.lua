@@ -386,12 +386,6 @@ local function GetBuffTriggerOptions(data, triggernum)
       name = L["Spell Selection Filters"],
       order = 11.15,
     },
-    restrictions12_1Warning = {
-      type = "description",
-      width = ForeverAuras.doubleWidth,
-      name = "For secret auras, select the Secret Auras trigger type. The normal Aura trigger requires readable aura data; during restrictions, use exact spell IDs for non-secret auras.",
-      order = 11.16,
-    },
     use_debuffClass = {
       type = "toggle",
       width = ForeverAuras.normalWidth,
