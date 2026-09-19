@@ -8,7 +8,7 @@ local function GetOptions(data, triggernum)
   local width = ForeverAuras.normalWidth
   local function Save(key, value)
     trigger[key] = value
-    ForeverAuras.Add(data)
+    OptionsPrivate.SaveAuraTrigger(data, triggernum)
     OptionsPrivate.QueueOptionsRefresh(data.id)
   end
   local auraTypes = {
@@ -37,7 +37,7 @@ local function GetOptions(data, triggernum)
   end
   local options = {
     help = {type = "description", order = 2, width = "full", fontSize = "small",
-      name = "Trigger Always Active. Blizzard Controls Display.\n\nFor secret auras, Exact Spell IDs can display friendly buffs and enemy debuffs.\n\nYou can also enter IDs for friendly debuffs or enemy buffs and assign sounds in Actions, but those auras will not display."},
+      name = "Trigger Always Active. Blizzard Controls Display.\n\nFor secret auras, Exact Spell IDs can filter friendly buffs. Blizzard also supports filtering enemy debuffs by exact ID. These filters control the display, not readable present/missing checks.\n\nYou can also enter IDs for friendly debuffs or enemy buffs and assign sounds in Actions, but those auras will not display."},
     unit = {
       type = "select", name = "Unit", order = 3, width = width, values = display.units,
       get = function() return trigger.unit end, set = function(_, value) Save("unit", value) end,
@@ -236,6 +236,7 @@ local function GetOptions(data, triggernum)
   options.nativePLAYER.width = width
   options.nativePLAYER.order = options.isFromPlayerOrPlayerPet.order + 0.01
   OptionsPrivate.commonOptions.AddCommonTriggerOptions(options, data, triggernum, true)
+  OptionsPrivate.AuraEditor.AddOptions(options, data, triggernum)
   OptionsPrivate.AddTriggerMetaFunctions(options, data, triggernum)
   return {["trigger." .. triggernum .. ".secretAura"] = options}
 end

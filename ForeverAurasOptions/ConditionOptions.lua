@@ -3349,7 +3349,7 @@ function OptionsPrivate.GetConditionOptions(data)
   local args = options.args
   if OptionsPrivate.Private.BlizzardAuraDisplay.HasTrigger(data) then
     args.secretAuraNotice = {type = "description", order = 0, width = "full",
-      name = "Secret Aura Trigger Detected: Native elements cannot update in combat or while aura access is restricted. Detached elements can."}
+      name = "Blizzard-controlled aura display: native elements cannot update in combat or while aura access is restricted. Detached elements can."}
   end
 
   local conditionVariable = "conditions"

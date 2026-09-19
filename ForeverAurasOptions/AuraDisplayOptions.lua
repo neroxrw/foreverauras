@@ -32,7 +32,7 @@ function OptionsPrivate.GetSecretAuraSettings(data)
     OptionsPrivate.QueueOptionsRefresh(data.id)
   end
   local function Disabled() return not Display.Enabled(data) end
-  local args = {__title = "Secret Aura Settings", __order = 8, __collapsed = true}
+  local args = {__title = "Blizzard Aura Settings", __order = 8, __collapsed = true}
   args.sortMethod = {
     type = "select", name = "Sort by", disabled = Disabled, values = Display.sortMethods,
     sorting = {"Default", "ExpirationOnly", "Expiration", "NameOnly", "Name", "ImportantOnly", "BigDefensive", "UnitFrameDebuff", "AuraInstanceIDOnly"},
@@ -265,5 +265,5 @@ function OptionsPrivate.PrepareSecretActionOptions(data, action)
     set = function(_, value) SaveGlow("unitGlowPadding", value) end,
   }
   action.args.secretSoundNotice = {type = "description", order = 0, width = "full",
-    name = "|cffff2020Secret Aura Trigger Detected: Limited options.|r"}
+    name = "|cffff2020Blizzard-controlled aura display: only supported actions are available.|r"}
 end

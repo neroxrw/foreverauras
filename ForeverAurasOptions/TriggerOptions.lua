@@ -135,12 +135,13 @@ local function AddOptions(allOptions, data)
           {
             trigger =
             {
-              type = "aura2"
+              type = "aura2",
+              auraTracking = "native"
             },
             untrigger = {
             }
           })
-        ForeverAuras.Add(data)
+        OptionsPrivate.SaveAuraTrigger(data, #data.triggers)
         OptionsPrivate.SetCollapsed(collapsedId, "trigger", #data.triggers, false)
         maxTriggerNumForExpand = max(maxTriggerNumForExpand, #data.triggers)
         ForeverAuras.ClearAndUpdateOptions(data.id)
@@ -300,7 +301,7 @@ function OptionsPrivate.GetTriggerTitle(data, triggernum)
       local triggerType = trigger.type
       local name
       if triggerType == "secretAura" then
-        name = "Secret Auras"
+        name = L["Aura"]
       elseif triggerType == "aura2" then
         name = L["Aura"]
       elseif triggerType == "custom" then

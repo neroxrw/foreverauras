@@ -6090,8 +6090,15 @@ local function GetAnchorFrame(data, region, parent)
 
   if (anchorFrameType == "UNITFRAME") then
     local unit = region.state and region.state.unit
+    if ForeverAuras.IsOptionsOpen() and Private.BlizzardAuraDisplay.Enabled(data) then
+      unit = Private.BlizzardAuraDisplay.GetPreviewUnit(data)
+    end
     if unit then
-      local frame = ForeverAuras.GetUnitFrame(unit) or ForeverAuras.HiddenFrames
+      local frame = ForeverAuras.GetUnitFrame(unit)
+      if not frame and ForeverAuras.IsOptionsOpen() and Private.BlizzardAuraDisplay.Enabled(data) then
+        frame = parent or UIParent
+      end
+      frame = frame or ForeverAuras.HiddenFrames
       if frame then
         anchor_unitframe_monitor = anchor_unitframe_monitor or {}
         anchor_unitframe_monitor[region] = {
@@ -6159,7 +6166,10 @@ function Private.AnchorFrame(data, region, parent, force)
   else
     local anchorParent = GetAnchorFrame(data, region, parent);
     if not anchorParent then return end
-    if (data.anchorFrameParent or data.anchorFrameParent == nil
+    if Private.BlizzardAuraDisplay.Enabled(data) and (data.anchorFrameType == "UNITFRAME" or data.anchorFrameType == "NAMEPLATE") then
+      -- One unit frame must not hide previews belonging to other units.
+      region:SetParent(parent or ForeverAurasFrame);
+    elseif (data.anchorFrameParent or data.anchorFrameParent == nil
         or data.anchorFrameType == "SCREEN" or data.anchorFrameType == "UIPARENT" or data.anchorFrameType == "MOUSE") then
       xpcall(region.SetParent, Private.GetErrorHandlerId(data.id, L["Anchoring"]), region, anchorParent);
     else
