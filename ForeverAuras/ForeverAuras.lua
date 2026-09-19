@@ -3551,9 +3551,24 @@ function Private.ReleaseClone(id, cloneId, regionType)
   end
 end
 
+local function SendChatAction(region, message, channel, language, target)
+  local data = ForeverAuras.GetData(region.id)
+  local sent = false
+  if not hasanysecretvalues(message, target) then
+    sent = pcall(SendChatMessage, message, channel, language, target)
+  end
+  if data then
+    if sent then
+      Private.AuraWarnings.UpdateWarning(data.uid, "chat_action")
+    else
+      Private.AuraWarnings.UpdateWarning(data.uid, "chat_action", "warning", "The client blocked a chat message from this aura. Chat restrictions or a required key press may prevent automatic messages.", true)
+    end
+  end
+end
+
 function Private.HandleChatAction(message_type, message, message_dest, message_dest_isunit, message_channel, r, g, b, region, customCache, when, formatters)
   local useHiddenStates = when == "finish"
-  if (message:find('%%')) then
+  if not issecretvalue(message) and message:find('%%') then
     message = Private.ReplacePlaceHolders(message, region, customCache, useHiddenStates, formatters);
   end
   if(message_type == "PRINT") then
@@ -3578,38 +3593,46 @@ function Private.HandleChatAction(message_type, message, message_dest, message_d
       CombatText_AddMessage(message, COMBAT_TEXT_SCROLL_FUNCTION, r or 1, g or 1, b or 1);
     end
   elseif(message_type == "WHISPER") then
-    if(message_dest) then
+    if issecretvalue(message_dest) then
+      SendChatAction(region, message, "WHISPER", nil, message_dest)
+      return
+    end
+    if message_dest then
       if (message_dest:find('%%')) then
         message_dest = Private.ReplacePlaceHolders(message_dest, region, customCache, useHiddenStates, formatters);
+      end
+      if issecretvalue(message_dest) then
+        SendChatAction(region, message, "WHISPER", nil, message_dest)
+        return
       end
       if message_dest_isunit == true then
         message_dest = GetUnitName(message_dest, true)
       end
-      pcall(function() SendChatMessage(message, "WHISPER", nil, message_dest) end);
+      SendChatAction(region, message, "WHISPER", nil, message_dest);
     end
   elseif(message_type == "SMARTRAID") then
     local isInstanceGroup = IsInGroup(LE_PARTY_CATEGORY_INSTANCE)
     if UnitInBattleground("player") then
-      pcall(function() SendChatMessage(message, "INSTANCE_CHAT") end)
+      SendChatAction(region, message, "INSTANCE_CHAT")
     elseif UnitInRaid("player") then
-      pcall(function() SendChatMessage(message, "RAID") end)
+      SendChatAction(region, message, "RAID")
     elseif UnitInParty("player") then
       if isInstanceGroup then
-        pcall(function() SendChatMessage(message, "INSTANCE_CHAT") end)
+        SendChatAction(region, message, "INSTANCE_CHAT")
       else
-        pcall(function() SendChatMessage(message, "PARTY") end)
+        SendChatAction(region, message, "PARTY")
       end
     else
       if IsInInstance() then
-        pcall(function() SendChatMessage(message, "SAY") end)
+        SendChatAction(region, message, "SAY")
       end
     end
   elseif(message_type == "SAY" or message_type == "YELL") then
     if IsInInstance() then
-      pcall(function() SendChatMessage(message, message_type, nil, nil) end)
+      SendChatAction(region, message, message_type, nil, nil)
     end
   else
-    pcall(function() SendChatMessage(message, message_type, nil, nil) end);
+    SendChatAction(region, message, message_type, nil, nil);
   end
 end
 

@@ -5,7 +5,7 @@ local AddonName, TemplatePrivate = ...
 
 local AceGUI = LibStub("AceGUI-3.0");
 local floor, ceil, tinsert = floor, ceil, tinsert;
-local CreateFrame, UnitClass, UnitRace, GetSpecialization = CreateFrame, UnitClass, UnitRace, GetSpecialization;
+local CreateFrame = CreateFrame;
 ---@class ForeverAuras
 local ForeverAuras = ForeverAuras;
 local L = ForeverAuras.L
@@ -1400,24 +1400,6 @@ function ForeverAuras.CreateTemplateView(Private, frame)
     return group;
   end
 
-  local function createDropdown(member, values)
-    local selector = AceGUI:Create("Dropdown");
-    selector:SetList(values);
-    selector:SetValue(newView[member]);
-    selector:SetCallback("OnValueChanged", function(self, callback, v)
-      newView[member] = v;
-      createButtons();
-    end);
-    return selector;
-  end
-
-  local function createSpacer()
-    local spacer = AceGUI:Create("Label");
-    spacer:SetFullWidth(true);
-    spacer:SetText(" ");
-    return spacer;
-  end
-
   local function createTriggerFlyout(section, fullWidth)
     local group = AceGUI:Create("ForeverAurasTemplateGroup");
     group:SetFullWidth(true);
@@ -1576,15 +1558,6 @@ function ForeverAuras.CreateTemplateView(Private, frame)
       newViewScroll:AddChild(group);
     end
   end
-  -- Creates a button + flyout (if the button is selected) for one section
-  local function createTriggerButtons(templates, selectedItem, fullWidth)
-    for k, section in ipairs(templates) do
-      if section.args and next(section.args) then
-        createTriggerButton(section, selectedItem, fullWidth);
-      end
-    end
-  end
-
   local function replaceTriggers(data, item, subType)
     local function handle(data, item, subType)
       replaceTrigger(data, item, subType);
@@ -1699,37 +1672,7 @@ function ForeverAuras.CreateTemplateView(Private, frame)
     elseif (newView.data and not newView.chosenItem) then
       -- Second step: Trigger selection screen
 
-      -- Class
-      local classSelector = createDropdown("class", ForeverAuras.class_types);
-      newViewScroll:AddChild(classSelector);
-
-      do
-        local specSelector = createDropdown("spec", ForeverAuras.spec_types_specific[newView.class]);
-        newViewScroll:AddChild(specSelector);
-        newViewScroll:AddChild(createSpacer());
-      end
-      if TemplatePrivate.triggerTemplates.class[newView.class]
-         and TemplatePrivate.triggerTemplates.class[newView.class][newView.spec]
-      then
-        createTriggerButtons(TemplatePrivate.triggerTemplates.class[newView.class][newView.spec], selectedItem);
-      end
-      local classHeader = AceGUI:Create("Heading");
-      classHeader:SetFullWidth(true);
-      newViewScroll:AddChild(classHeader);
-
       createTriggerButton(TemplatePrivate.triggerTemplates.general, selectedItem);
-
-      -- Race
-      local raceHeader = AceGUI:Create("Heading");
-      raceHeader:SetFullWidth(true);
-      newViewScroll:AddChild(raceHeader);
-      local raceSelector = createDropdown("race", ForeverAuras.race_types);
-      newViewScroll:AddChild(raceSelector);
-      newViewScroll:AddChild(createSpacer());
-      if (TemplatePrivate.triggerTemplates.race[newView.race]) then
-        local group = createTriggerFlyout(TemplatePrivate.triggerTemplates.race[newView.race], true)
-        newViewScroll:AddChild(group);
-      end
 
       -- backButton
       if (not newView.existingAura) then
@@ -1869,11 +1812,6 @@ function ForeverAuras.CreateTemplateView(Private, frame)
       newView.batchStep = nil;
       newView.chosenItemBatch = {};
     end
-    newView.class = select(2, UnitClass("player"));
-    do
-      newView.spec = GetSpecialization() or 1;
-    end
-    newView.race = select(2, UnitRace('player'));
 
     createButtons();
   end

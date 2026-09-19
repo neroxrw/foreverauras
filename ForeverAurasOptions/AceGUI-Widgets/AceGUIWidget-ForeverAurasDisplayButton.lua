@@ -490,6 +490,10 @@ local methods = {
       elseif(IsShiftKeyDown()) then
         local editbox = GetCurrentKeyBoardFocus();
         if(editbox) then
+          if C_ChatInfo.AreOutgoingAddonChatMessagesRestricted() then
+            print("ForeverAuras: This realm blocks aura transfers through chat. Use Export to string and share the export outside the game instead.")
+            return
+          end
           if (not fullName) then
             local name, realm = UnitFullName("player")
             if realm then
@@ -1056,7 +1060,11 @@ local methods = {
     if not(data.controlledChildren) then
       tinsert(namestable, {" ", "|cFF00FFFF"..L["Control-click to select multiple displays"]});
     end
-    tinsert(namestable, {" ", "|cFF00FFFF"..L["Shift-click to create chat link"]});
+    if C_ChatInfo.AreOutgoingAddonChatMessagesRestricted() then
+      tinsert(namestable, {" ", "|cFF00FFFFChat sharing unavailable on this realm. Use Export to string."});
+    else
+      tinsert(namestable, {" ", "|cFF00FFFF"..L["Shift-click to create chat link"]});
+    end
     local regionData = OptionsPrivate.Private.regionOptions[data.regionType or ""]
     local displayName = regionData and regionData.displayName or "";
     self:SetDescription({data.id, displayName}, unpack(namestable));

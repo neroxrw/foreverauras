@@ -3059,6 +3059,7 @@ Private.chat_message_types = {
   CHAT_MSG_OFFICER = L["Officer"],
   CHAT_MSG_PARTY = L["Party"],
   CHAT_MSG_RAID = L["Raid"],
+  CHAT_MSG_RAID_LEADER = L["Raid Leader"],
   CHAT_MSG_RAID_BOSS_EMOTE = L["Boss Emote"],
   CHAT_MSG_RAID_BOSS_WHISPER = L["Boss Whisper"],
   CHAT_MSG_RAID_WARNING = L["Raid Warning"],
@@ -3072,8 +3073,7 @@ Private.chat_message_types = {
 ---@type table<string, string>
 Private.chat_message_leader_event = {
   CHAT_MSG_INSTANCE_CHAT = "CHAT_MSG_INSTANCE_CHAT_LEADER",
-  CHAT_MSG_PARTY = "CHAT_MSG_PARTY_LEADER",
-  CHAT_MSG_RAID = "CHAT_MSG_RAID_LEADER"
+  CHAT_MSG_PARTY = "CHAT_MSG_PARTY_LEADER"
 }
 
 ---@type table<string, string>

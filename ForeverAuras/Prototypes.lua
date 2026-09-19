@@ -6568,7 +6568,8 @@ Private.event_prototypes = {
     name = L["Chat Message"],
     init = function(trigger)
       local ret = [[
-        if (event:find('LEADER')) then
+        if hasanysecretvalues(message, sourceName, destName, sourceGUID) then return false end
+        if event == 'CHAT_MSG_PARTY_LEADER' or event == 'CHAT_MSG_INSTANCE_CHAT_LEADER' then
           event = event:sub(1, -8);
         end
         if (event == 'CHAT_MSG_TEXT_EMOTE') then

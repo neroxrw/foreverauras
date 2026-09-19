@@ -65,8 +65,23 @@ hooksecurefunc(AceGUI, "Release", function(_, widget)
   if widget.frame then RestoreOptionsFont(widget.frame) end
 end)
 
+local function ResetDescriptionFonts(widget)
+  if widget.type == "Label" then
+    -- A pooled label can retain a direct font override from a previous heading.
+    local fontObject = widget.label:GetFontObject()
+    if fontObject then
+      widget.label:SetFont(fontObject:GetFont())
+      widget:SetFontObject(fontObject)
+    end
+  end
+  for _, child in ipairs(widget.children or {}) do ResetDescriptionFonts(child) end
+end
+
 hooksecurefunc(AceConfigDialog, "FeedGroup", function(_, appName, _, container)
-  if appName == "ForeverAuras" then ApplyOptionsFont(container.frame) end
+  if appName == "ForeverAuras" then
+    ResetDescriptionFonts(container)
+    ApplyOptionsFont(container.frame)
+  end
 end)
 
 local function CreateFrameSizer(frame, callback, position)
