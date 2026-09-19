@@ -229,7 +229,7 @@ local function CreateNameOptions(aura_options, data, triggernum, size, isExactSp
           local _, bestSuggestion = getAuraMatchesList(input)
           if bestSuggestion then
             trigger[optionKey][i] = bestSuggestion
-            ForeverAuras.Add(data)
+            OptionsPrivate.SaveAuraTrigger(data, triggernum)
             ForeverAuras.ClearAndUpdateOptions(data.id)
           end
         end
@@ -272,7 +272,7 @@ local function CreateNameOptions(aura_options, data, triggernum, size, isExactSp
           end
         end
 
-        ForeverAuras.Add(data)
+        OptionsPrivate.SaveAuraTrigger(data, triggernum)
         ForeverAuras.UpdateThumbnail(data)
         ForeverAuras.ClearAndUpdateOptions(data.id)
       end,
@@ -641,7 +641,7 @@ local function GetBuffTriggerOptions(data, triggernum)
           if value == false then trigger.use_stealable = nil
           else trigger.use_stealable = false end
         end
-        ForeverAuras.Add(data)
+        OptionsPrivate.SaveAuraTrigger(data, triggernum)
       end
     },
     use_isBossDebuff = {
@@ -669,7 +669,7 @@ local function GetBuffTriggerOptions(data, triggernum)
           if value == false then trigger.use_isBossDebuff = nil
           else trigger.use_isBossDebuff = false end
         end
-        ForeverAuras.Add(data)
+        OptionsPrivate.SaveAuraTrigger(data, triggernum)
       end
     },
     use_castByPlayer = {
@@ -698,7 +698,7 @@ local function GetBuffTriggerOptions(data, triggernum)
           if value == false then trigger.use_castByPlayer = nil
           else trigger.use_castByPlayer = false end
         end
-        ForeverAuras.Add(data)
+        OptionsPrivate.SaveAuraTrigger(data, triggernum)
       end
     },
     ownOnly = {
@@ -730,7 +730,7 @@ local function GetBuffTriggerOptions(data, triggernum)
           if value == false then trigger.ownOnly = nil
           else trigger.ownOnly = false end
         end
-        ForeverAuras.Add(data)
+        OptionsPrivate.SaveAuraTrigger(data, triggernum)
       end,
       order = 64.3,
       hidden = function() return not trigger.type == "aura2" end
@@ -1335,7 +1335,7 @@ local function GetBuffTriggerOptions(data, triggernum)
       width = ForeverAuras.doubleWidth,
       set = function(info, v)
         trigger.showClones = v
-        ForeverAuras.Add(data)
+        OptionsPrivate.SaveAuraTrigger(data, triggernum)
       end
     },
     combinePerUnit = {
@@ -1459,6 +1459,7 @@ local function GetBuffTriggerOptions(data, triggernum)
 
   OptionsPrivate.commonOptions.AddCommonTriggerOptions(aura_options, data, triggernum, true)
   OptionsPrivate.commonOptions.AddTriggerGetterSetter(aura_options, data, triggernum)
+  OptionsPrivate.AuraEditor.AddOptions(aura_options, data, triggernum)
   OptionsPrivate.AddTriggerMetaFunctions(aura_options, data, triggernum)
 
 

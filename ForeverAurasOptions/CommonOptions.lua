@@ -2009,7 +2009,7 @@ local function AddCommonTriggerOptions(options, data, triggernum, doubleWidth)
 
   local trigger_types = {};
   for type, triggerSystem in pairs(OptionsPrivate.Private.triggerTypes) do
-    trigger_types[type] = triggerSystem.GetName(type);
+    if type ~= "secretAura" then trigger_types[type] = triggerSystem.GetName(type) end
   end
 
   options.type = {
@@ -2021,11 +2021,12 @@ local function AddCommonTriggerOptions(options, data, triggernum, doubleWidth)
     values = trigger_types,
     sorting = OptionsPrivate.Private.SortOrderForValues(trigger_types),
     get = function()
-      return trigger.type
+      return trigger.type == "secretAura" and "aura2" or trigger.type
     end,
     set = function(info, v)
       local wasSecret = trigger.type == "secretAura"
       trigger.type = v;
+      trigger.auraTracking = v == "aura2" and "native" or nil
       if data.blizzardAuraDisplay then data.blizzardAuraDisplay.enabled = nil end
       if v == "secretAura" then OptionsPrivate.Private.BlizzardAuraDisplay.Migrate(data) end
       local prototype = trigger.event and OptionsPrivate.Private.event_prototypes[trigger.event];
@@ -2034,7 +2035,7 @@ local function AddCommonTriggerOptions(options, data, triggernum, doubleWidth)
           trigger.event = OptionsPrivate.Private.event_categories[v].default
         end
       end
-      ForeverAuras.Add(data);
+      OptionsPrivate.SaveAuraTrigger(data, triggernum);
       ForeverAuras.UpdateThumbnail(data);
       if wasSecret or v == "secretAura" then
         OptionsPrivate.QueueOptionsRefresh(data.id)
@@ -2084,13 +2085,13 @@ local function AddTriggerGetterSetter(options, data, triggernum)
             trigger[key] = nil
           end
 
-          ForeverAuras.Add(data)
+          OptionsPrivate.SaveAuraTrigger(data, triggernum)
           ForeverAuras.ClearAndUpdateOptions(data.id)
         end
       else
         option.set = function(info, v)
           trigger[key] = v
-          ForeverAuras.Add(data)
+          OptionsPrivate.SaveAuraTrigger(data, triggernum)
           ForeverAuras.ClearAndUpdateOptions(data.id)
         end
       end

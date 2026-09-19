@@ -2076,15 +2076,13 @@ local function ScanRaidMarkScanFunc(matchDataChanged)
 end
 
 local function ScanGroupUnit(time, matchDataChanged, unitType, unit, unitAuraUpdateInfo)
-  local unitExists = UnitExistsFixed(unit)
-  if unitExists then
-
-    if unitExistScanFunc[unit] then
-      for id, idData in pairs(unitExistScanFunc[unit]) do
-        matchDataChanged[id] = matchDataChanged[id] or {}
-        for _, triggerInfo in ipairs(idData) do
-          matchDataChanged[id][triggerInfo.triggernum] = true
-        end
+  -- Missing/Always states may have no aura matches to clean up when the unit disappears.
+  -- Recheck the existence option on both sides of a target/focus change.
+  if unitExistScanFunc[unit] then
+    for id, idData in pairs(unitExistScanFunc[unit]) do
+      matchDataChanged[id] = matchDataChanged[id] or {}
+      for _, triggerInfo in ipairs(idData) do
+        matchDataChanged[id][triggerInfo.triggernum] = true
       end
     end
   end

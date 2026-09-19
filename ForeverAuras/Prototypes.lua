@@ -6669,8 +6669,15 @@ Private.event_prototypes = {
       return result
     end,
     name = L["Spell Cast Succeeded"],
+    init = function()
+      return "if issecretvalue(unit) or issecretvalue(spellId) or spellId == nil then return false end\n"
+    end,
     statesParameter = "unit",
     args = {
+      {
+        name = "castSucceededNote", type = "description", display = "",
+        text = function() return "Tracks successful casts only when the spell ID is readable. Your own casts are normally readable; other units may be restricted." end,
+      },
       {
         name = "unit",
         init = "arg",

@@ -225,7 +225,7 @@ function Display.GetPreviewUnit(data)
   local trigger = Display.GetTrigger(data)
   if not trigger then return "player" end
   for _, unit in ipairs(UnitTokens(trigger)) do
-    if UnitExists(unit) then return unit end
+    if UnitExists(unit) and (data.anchorFrameType ~= "UNITFRAME" or ForeverAuras.GetUnitFrame(unit)) then return unit end
   end
   return "player"
 end
@@ -475,7 +475,8 @@ local function UpdatePreviewNotice(region)
 end
 
 local function Suppress(region)
-  if IsPreview() then
+  local native = region.blizzardAuraDisplay
+  if IsPreview() and not (native and native.previewHasAuras) then
     for frame, alpha in pairs(region.blizzardSuppressed or {}) do frame:SetAlpha(alpha) end
     region.blizzardSuppressed = nil
     UpdatePreviewNotice(region)
@@ -695,6 +696,93 @@ local function CandidateFilters(data)
   return filters
 end
 
+-- Only the options fallback needs to know whether there is a readable match.
+-- Native widgets own the actual preview, including secret visibility and layout.
+local function MatchesPreviewAura(unit, aura, filters)
+  -- Mirror the native candidate rules; AuraContainerUtil is in Blizzard's secure environment.
+  if filters.includeSpellIDs or filters.excludeSpellIDs then
+    local canMatch = aura.spellId and C_Secrets.GetSpellAuraSecrecy(aura.spellId) == Enum.SecrecyLevel.NeverSecret
+    if not canMatch then
+      if aura.isHelpful and UnitIsPlayerControlledOrGroupMember(unit) then
+        canMatch = true
+      else
+        local friendly = UnitCanAssist("player", unit, true, true)
+        canMatch = not ((aura.isHarmful and friendly) or (aura.isHelpful and not friendly))
+      end
+    end
+    if canMatch then
+      if filters.includeSpellIDs and not filters.includeSpellIDs[aura.spellId] then return false end
+      if filters.excludeSpellIDs and filters.excludeSpellIDs[aura.spellId] then return false end
+    elseif filters.includeSpellIDs then
+      return false
+    end
+  end
+  if filters.processedAuraType and aura.processedAuraType ~= filters.processedAuraType then return false end
+  if filters.includeDispelTypes and not filters.includeDispelTypes[aura.dispelName] then return false end
+  if filters.excludeDispelTypes and filters.excludeDispelTypes[aura.dispelName] then return false end
+  if filters.maxDuration and (aura.duration == 0 or aura.duration > filters.maxDuration) then return false end
+  for _, field in ipairs(Display.booleanFilters) do
+    local key = field[1]
+    if filters[key] ~= nil then
+      local value = aura[key]
+      if key == "isRoleAura" then value = AuraUtil.IsRoleAura(aura)
+      elseif key == "isBossOrRoleAura" then value = aura.isBossAura or AuraUtil.IsRoleAura(aura)
+      elseif key == "isPriorityAura" then value = AuraUtil.IsPriorityDebuff(aura.spellId) end
+      if value ~= filters[key] then return false end
+    end
+  end
+  return true
+end
+
+local function HasPreviewAuras(unit, trigger, filters)
+  local ids = C_UnitAuras.GetUnitAuraInstanceIDs(unit, FilterString(trigger))
+  if issecretvalue(ids) then return true end
+  for _, id in ipairs(ids) do
+    if issecretvalue(id) then return true end
+    local aura = C_UnitAuras.GetAuraDataByAuraInstanceID(unit, id)
+    if issecretvalue(aura) then return true end
+    if aura then
+      for _, value in pairs(aura) do
+        if issecretvalue(value) then return true end
+      end
+      if trigger.processedAuraType and trigger.processedAuraType ~= "any" then
+        aura.processedAuraType = AuraUtil.ProcessAura(aura, trigger.displayOnlyDispellableDebuffs or false,
+          trigger.ignoreBuffs or false, trigger.ignoreDebuffs or false, trigger.ignoreDispelDebuffs or false)
+      end
+      if aura.processedAuraType ~= AuraUtil.AuraUpdateChangedType.None
+        and MatchesPreviewAura(unit, aura, filters) then return true end
+    end
+  end
+  return false
+end
+
+local function RefreshPreview(region)
+  local native = region.blizzardAuraDisplay
+  native.previewHasAuras = false
+  if IsPreview() then
+    if Restricted() then
+      native.previewHasAuras = true
+    else
+      local trigger = Display.GetTrigger(native.data)
+      local filters = CandidateFilters(native.data)
+      if (native.data.blizzardAuraDisplay.maxIcons or 10) > 0 then
+        for _, instance in ipairs(native.instances) do
+          if instance.visible and instance.boundUnit then
+            -- Blizzard's classification helpers can themselves return secret values.
+            -- An unreadable result must not be treated as an absent aura.
+            local ok, found = pcall(HasPreviewAuras, instance.boundUnit, trigger, filters)
+            if not ok or issecretvalue(found) or found then
+              native.previewHasAuras = true
+              break
+            end
+          end
+        end
+      end
+    end
+  end
+  Suppress(region)
+end
+
 local function ConfigureProcessing(container, trigger)
   if trigger.processedAuraType and trigger.processedAuraType ~= "any" then
     local options = {}
@@ -868,7 +956,7 @@ local function RefreshUnits(region, removedUnit, changedUnit)
         end
       end
       if anchorFrame and anchorFrame:IsForbidden() then anchorFrame = nil end
-      local shown = not IsPreview() and unit ~= nil and region:IsShown() and (not (unitFrames or nameplates) or anchorFrame ~= nil)
+      local shown = unit ~= nil and region:IsShown() and (not (unitFrames or nameplates) or anchorFrame ~= nil)
       local parent = unitFrames and data.anchorFrameParent ~= false and anchorFrame or region
       -- Disabling clears native aura assignments and restarts their animations.
       if instance.boundUnit ~= unit or container:GetParent() ~= parent then
@@ -903,6 +991,7 @@ local function RefreshUnits(region, removedUnit, changedUnit)
           container:SetPoint(anchor, region, anchor)
         end
       end
+      instance.visible = shown
       container:SetShown(shown)
       container:SetEnabled(shown)
       if shown then container:UpdateAllAuras() end
@@ -910,7 +999,7 @@ local function RefreshUnits(region, removedUnit, changedUnit)
         local glowContainer = instance.unitGlow.container
         local frame = unitFrames and unit and settings.unitGlow and anchorFrame
         if frame and frame:IsForbidden() then frame = nil end
-        local glowShown = not IsPreview() and frame ~= nil and frame ~= false and region:IsShown() and not native.unitGlowsHidden and settings.unitGlow == true
+        local glowShown = frame ~= nil and frame ~= false and region:IsShown() and not native.unitGlowsHidden and settings.unitGlow == true
         local glowParent = frame or region
         if instance.unitGlow.boundUnit ~= unit or glowContainer:GetParent() ~= glowParent then
           glowContainer:SetEnabled(false)
@@ -929,6 +1018,7 @@ local function RefreshUnits(region, removedUnit, changedUnit)
     end
   end
   Display.UpdateDetachedFrameLevels(region)
+  RefreshPreview(region)
 end
 
 local unitFrameRefreshPending
@@ -1070,12 +1160,26 @@ local function NeedsUnitRefresh(mode, event, unit)
 end
 
 local events = CreateFrame("Frame")
+events:RegisterEvent("UNIT_AURA")
 events:RegisterEvent("PLAYER_REGEN_ENABLED")
 events:RegisterEvent("ADDON_RESTRICTION_STATE_CHANGED")
 for _, event in ipairs({"PLAYER_ENTERING_WORLD", "GROUP_ROSTER_UPDATE", "PLAYER_TARGET_CHANGED", "PLAYER_FOCUS_CHANGED",
   "UPDATE_MOUSEOVER_UNIT", "UNIT_TARGET", "UNIT_PET", "INSTANCE_ENCOUNTER_ENGAGE_UNIT", "ARENA_OPPONENT_UPDATE",
   "NAME_PLATE_UNIT_ADDED", "NAME_PLATE_UNIT_REMOVED", "UNIT_NAME_UPDATE", "PLAYER_ROLES_ASSIGNED"}) do events:RegisterEvent(event) end
 events:SetScript("OnEvent", function(_, event, unit)
+  if event == "UNIT_AURA" then
+    if IsPreview() then
+      for region in pairs(activeRegions) do
+        for _, instance in ipairs(region.blizzardAuraDisplay.instances) do
+          if instance.visible and instance.boundUnit == unit then
+            RefreshPreview(region)
+            break
+          end
+        end
+      end
+    end
+    return
+  end
   for region in pairs(activeRegions) do
     local mode = Display.GetTrigger(region.blizzardAuraDisplay.data).unit
     if event == "NAME_PLATE_UNIT_ADDED" or event == "NAME_PLATE_UNIT_REMOVED" then

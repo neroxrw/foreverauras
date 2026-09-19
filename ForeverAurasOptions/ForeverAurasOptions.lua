@@ -1969,6 +1969,11 @@ function ForeverAuras.NewAura(sourceData, regionType, targetId)
 
   AddDefaultSubRegions(data)
 
+  if not sourceData or not sourceData.triggers then
+    data.triggers[1].trigger.auraTracking = "native"
+    OptionsPrivate.AuraEditor.Resolve(data, 1)
+  end
+
   if targetId then
     local target = OptionsPrivate.GetDisplayButton(targetId);
     local group
