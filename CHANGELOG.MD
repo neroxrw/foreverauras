@@ -1,8 +1,9 @@
 # Changelog
 
 ## Versions
-## 0.1.104
-- Change anchor prefix from `WeakAuras:` to `ForeverAuras`
+## 0.1.114
+First released version to Curseforge for WoW Forever Beta
+- Change anchor prefix from `WeakAuras:` to `ForeverAuras:`
 - Fix EnchantIDs for Weapons
 - Add Client save warning
 - Add ItemStatus.lua
