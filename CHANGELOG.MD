@@ -1,6 +1,13 @@
 # Changelog
 
 ## Versions
+## 0.1.104
+- Change anchor prefix from `WeakAuras:` to `ForeverAuras`
+- Fix EnchantIDs for Weapons
+- Add Client save warning
+- Add ItemStatus.lua
+- Spelling fixes
+
 ## 0.1.103
 - Add function to check if a SpellID is secret
 - Change addon icon

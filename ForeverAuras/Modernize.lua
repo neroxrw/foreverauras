@@ -2511,6 +2511,25 @@ function Private.Modernize(data, oldSnapshot)
     data.toolTipArea = "ICON"
   end
 
+  -- The "anchor to another aura" marker used to be stored as "WeakAuras:<id>"; auras saved
+  -- before the rename still have that prefix and need rewriting to "ForeverAuras:<id>" so the
+  -- sub(1, 13) == "ForeverAuras:" checks elsewhere keep recognizing them.
+  if data.internalVersion < 91 then
+    if data.anchorFrameType == "SELECTFRAME" and type(data.anchorFrameFrame) == "string" then
+      data.anchorFrameFrame = data.anchorFrameFrame:gsub("^WeakAuras:", "ForeverAuras:")
+    end
+    if type(data.glow_frame) == "string" then
+      data.glow_frame = data.glow_frame:gsub("^WeakAuras:", "ForeverAuras:")
+    end
+    if data.actions then
+      for _, when in ipairs({ "start", "finish" }) do
+        if data.actions[when] and type(data.actions[when].glow_frame) == "string" then
+          data.actions[when].glow_frame = data.actions[when].glow_frame:gsub("^WeakAuras:", "ForeverAuras:")
+        end
+      end
+    end
+  end
+
   data.internalVersion = max(data.internalVersion or 0, ForeverAuras.InternalVersion())
 end
 

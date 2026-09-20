@@ -4,7 +4,7 @@ local AddonName = ...
 ---@class Private
 local Private = select(2, ...)
 
-local internalVersion = 90
+local internalVersion = 91
 
 -- Lua APIs
 local insert = table.insert
@@ -1275,7 +1275,6 @@ function Private.Login(takeNewSnapshots)
         coroutine.yield(500, "login delayed region actions");
       end
     end
-    -- print("WA LOGIN:", Private.AsyncEnvironment.EXECUTION_TIME, Private.AsyncEnvironment.TOTAL_TIME)
   end)
 
   local loginThreadConfig = {
@@ -1286,6 +1285,10 @@ function Private.Login(takeNewSnapshots)
 
   local thread = Private:Async(loginThreadConfig, loginFunc):OnSuccess(function()
     Private.callbacks:Fire("WEAKAURAS_LOGIN_COMPLETE")
+    -- Fire both names for now: WEAKAURAS_LOGIN_COMPLETE is the long-established event other
+    -- addons (GTFO, BigWigs/DBM plugins, etc.) already hook to detect readiness, so it stays;
+    -- FOREVERAURAS_LOGIN_COMPLETE is offered alongside it for anything written against our name.
+    Private.callbacks:Fire("FOREVERAURAS_LOGIN_COMPLETE")
     if GREMINDER and GREMINDER.FireCallback then
       GREMINDER:FireCallback("WEAKAURAS_LOGIN_COMPLETE")
     end
@@ -2185,7 +2188,7 @@ function ForeverAuras.Delete(data)
 end
 
 function ForeverAuras.Rename(data, newid)
-  -- since we Add() later in this function, we need to destroy the universe first
+  -- Remove existing regions before Add() rebuilds them later in this function.
   local oldid = data.id
   UnloadDisplayIfLoaded(oldid)
 
@@ -2597,8 +2600,8 @@ function Private.CheckForAnchorCycle(source)
     local target
     if data then
       if data.anchorFrameType == "SELECTFRAME" and data.anchorFrameFrame then
-        if data.anchorFrameFrame:sub(1, 10) == "WeakAuras:" then
-          target = data.anchorFrameFrame:sub(11)
+        if data.anchorFrameFrame:sub(1, 13) == "ForeverAuras:" then
+          target = data.anchorFrameFrame:sub(14)
         end
       else
         target = data.parent
@@ -2629,8 +2632,8 @@ function Private.AddMany(tbl, takeSnapshots)
     end
     idtable[data.id] = data;
     if data.anchorFrameType == "SELECTFRAME" and data.anchorFrameFrame then
-      if data.anchorFrameFrame:sub(1, 10) == "WeakAuras:"then
-        anchorTargets[data.anchorFrameFrame:sub(11)] = data.id
+      if data.anchorFrameFrame:sub(1, 13) == "ForeverAuras:"then
+        anchorTargets[data.anchorFrameFrame:sub(14)] = data.id
       end
     end
   end
@@ -3130,7 +3133,7 @@ end
 
 local function cycleCheck(data)
   local id = data.id
-  if data.anchorFrameType == "SELECTFRAME" and data.anchorFrameFrame and data.anchorFrameFrame:sub(1, 10) == "WeakAuras:" then
+  if data.anchorFrameType == "SELECTFRAME" and data.anchorFrameFrame and data.anchorFrameFrame:sub(1, 13) == "ForeverAuras:" then
     if Private.CheckForAnchorCycle(id) then
       ForeverAuras.prettyPrint(L["Warning: Anchoring in aura '%s' is imposssible, due to an anchoring cycle"]:format(id))
       db.displays[id].anchorFrameType = "UIPARENT"
@@ -3795,8 +3798,8 @@ function Private.HandleGlowAction(actions, region)
   then
     local glow_frame, should_glow_frame
     if actions.glow_frame_type == "FRAMESELECTOR" then
-      if actions.glow_frame:sub(1, 10) == "WeakAuras:" then
-        local frame_name = actions.glow_frame:sub(11)
+      if actions.glow_frame:sub(1, 13) == "ForeverAuras:" then
+        local frame_name = actions.glow_frame:sub(14)
         if ForeverAuras.GetData(frame_name) then
           Private.EnsureRegion(frame_name)
         end
@@ -6112,8 +6115,8 @@ local function GetAnchorFrame(data, region, parent)
   end
 
   if (anchorFrameType == "SELECTFRAME" and anchorFrameFrame) then
-    if(anchorFrameFrame:sub(1, 10) == "WeakAuras:") then
-      local frame_name = anchorFrameFrame:sub(11);
+    if(anchorFrameFrame:sub(1, 13) == "ForeverAuras:") then
+      local frame_name = anchorFrameFrame:sub(14);
       if (frame_name == id) then
         return parent;
       end
