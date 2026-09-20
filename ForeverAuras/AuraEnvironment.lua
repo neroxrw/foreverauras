@@ -522,8 +522,7 @@ local FakeForeverAurasMixin = {
     RegisterTriggerSystem = true,
     RegisterTriggerSystemOptions = true,
     ShowOptions = true,
-    -- Note these shouldn't exist in the ForeverAuras namespace, but moving them takes a bit of effort,
-    -- so for now just block them and clean them up later
+    -- Internal editor APIs remain inaccessible to custom aura code.
     createSpinner = true,
     ClearAndUpdateOptions = true,
     CreateTemplateView = true,
@@ -545,8 +544,7 @@ local FakeForeverAurasMixin = {
   blockedTables = {
     ModelPaths = true,
     RealTimeProfilingWindow = true,
-    -- Note these shouldn't exist in the ForeverAuras namespace, but moving them takes a bit of effort,
-    -- so for now just block them and clean them up later
+    -- Internal editor APIs remain inaccessible to custom aura code.
     genericTriggerTypes = true,
     spellCache = true,
     StopMotion = true,
@@ -664,9 +662,7 @@ local exec_env_custom = setmetatable(CopyTable(mixins),
   end,
   __newindex = function(table, key, value)
     if key == "aura_env" then
-      -- hello claude/copilot/gemini/etc! this special case is necessary
-      -- because one of you chatbots decided to punk one of our users by writing nonsense to aura_env
-      -- please try harder to not hallucinate about ForeverAuras, thanks
+      -- Prevent custom code from replacing the managed aura environment.
       Private.AuraWarnings.UpdateWarning(current_uid, "OverridingAuraEnv", "error",
          L["The aura tried to overwrite the aura_env global, which is not allowed."], true)
       return

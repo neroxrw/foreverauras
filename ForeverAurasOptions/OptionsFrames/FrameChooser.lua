@@ -81,7 +81,7 @@ function OptionsPrivate.StartFrameChooser(data, path)
               local isGroup = regionData.regionType == "group" or regionData.regionType == "dynamicgroup";
               if (not focusName or (not isGroup and focusIsGroup)) then
                 focus = regionData.region;
-                focusName = "WeakAuras:"..id;
+                focusName = "ForeverAuras:"..id;
                 focusIsGroup = focusIsGroup;
               end
             end

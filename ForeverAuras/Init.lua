@@ -384,7 +384,7 @@ ForeverAuras.normalWidth = 1.3
 ForeverAuras.halfWidth = ForeverAuras.normalWidth / 2
 ForeverAuras.doubleWidth = ForeverAuras.normalWidth * 2
 local versionStringFromToc = C_AddOns.GetAddOnMetadata("ForeverAuras", "Version")
-local versionString = "0.1.103"
+local versionString = "0.1.114"
 local buildTime = "2026-09-19"
 
 if not versionString:find("beta", 1, true) then
@@ -411,8 +411,7 @@ function ForeverAuras.IsLibsOK()
   return libsAreOk
 end
 
-local clientVersion = GetBuildInfo()
-local isForeverClient = type(clientVersion) == "string" and clientVersion:match("^1%.60%.") ~= nil and ForeverAuras.BuildInfo >= 16000 and ForeverAuras.BuildInfo < 16100
+local isForeverClient = ForeverAuras.BuildInfo >= 16000 and ForeverAuras.BuildInfo < 16100
 
 if not isForeverClient then
   libsAreOk = false

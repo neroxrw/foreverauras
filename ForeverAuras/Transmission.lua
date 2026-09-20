@@ -1,9 +1,9 @@
 -- Modified for ForeverAuras; namespace and/or implementation changes through 2026-09-18.
---[[ Transmisson.lua
+--[[ Transmission.lua
 This file contains all transmission related functionality, e.g. import/export and chat links.
 For that it hooks into the chat frame and addon message channels.
 
-Noteable functions in this file are:
+Notable functions in this file are:
 
 DisplayToString(id, forChat)
 Converts the display id to a plain text string
@@ -292,7 +292,7 @@ function TableToString(inTable, forChat)
       compressedTablesCache[k] = nil
     end
   end
-  local encoded = forChat and "!FA:2!" or "!WA:2!"
+  local encoded = "!WA:2!"
   if(forChat) then
     encoded = encoded .. LibDeflate:EncodeForPrint(compressed)
   else

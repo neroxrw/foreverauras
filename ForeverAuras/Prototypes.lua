@@ -6071,6 +6071,105 @@ Private.event_prototypes = {
     },
     automaticrequired = true
   },
+  ["Role"] = {
+    type = "unit", name = "Role", statesParameter = "one",
+    automaticrequired = true, progressType = "none",
+    events = {events = {"PLAYER_ROLES_ASSIGNED", "ROLE_CHANGED_INFORM", "GROUP_ROSTER_UPDATE", "PLAYER_ENTERING_WORLD", "PLAYER_SPECIALIZATION_CHANGED"}},
+    force_events = "PLAYER_ENTERING_WORLD",
+    init = function()
+      return [[local role = UnitGroupRolesAssigned("player")
+if issecretvalue(role) or role == nil or role == "NONE" then return false end
+]]
+    end,
+    args = {
+      {name = "role", display = "Role", type = "select", required = true, default = "DAMAGER",
+        values = function() return {TANK = "Tank", HEALER = "Healer", DAMAGER = "Damager"} end,
+        init = "role", store = true, conditionType = "select"},
+      {name = "name", init = "role", hidden = true, store = true, test = "true"},
+      {name = "roleNote", type = "description", display = "", text = function() return "Checks your assigned role. No match when the game reports no assigned role." end},
+    },
+  },
+  ["Tracking"] = {
+    type = "unit", name = "Tracking", statesParameter = "one",
+    automaticrequired = true, progressType = "none",
+    events = {events = {"MINIMAP_UPDATE_TRACKING", "SPELLS_CHANGED", "PLAYER_ENTERING_WORLD"}},
+    force_events = "PLAYER_ENTERING_WORLD",
+    init = function(trigger)
+      return ([[local active, name, icon = Private.ExecEnv.GetTrackingState(%q)
+if active == nil then return false end
+local showOn = %q
+if (showOn == "active" and not active) or (showOn == "inactive" and active) then return false end
+]]):format(trigger.trackingType or "", trigger.trackingShow or "active")
+    end,
+    args = {
+      {name = "trackingType", display = "Tracking Type", type = "select", required = true,
+        values = function(trigger) return Private.ExecEnv.GetTrackingChoices(trigger.trackingType) end, test = "true"},
+      {name = "trackingShow", display = "Show On", type = "select", required = true,
+        default = "active", values = function() return {active = "Active", inactive = "Inactive", always = "Always"} end, test = "true"},
+      {name = "active", display = "Tracking Active", init = "active", hidden = true, store = true, test = "true", conditionType = "bool"},
+      {name = "name", init = "name", hidden = true, store = true, test = "true"},
+      {name = "icon", init = "icon", hidden = true, store = true, test = "true"},
+    },
+  },
+  ["Equipment Durability"] = {
+    type = "item", name = "Equipment Durability", statesParameter = "one",
+    automaticrequired = true, progressType = "static",
+    events = {events = {"UPDATE_INVENTORY_DURABILITY","PLAYER_EQUIPMENT_CHANGED","PLAYER_ENTERING_WORLD"}},
+    force_events = "PLAYER_ENTERING_WORLD",
+    init = function(trigger)
+      local slot = tonumber(trigger.durabilitySlot) or 0
+      return ([[local lowest, overall, broken, itemCount = Private.ExecEnv.GetEquipmentDurability(%d)
+if lowest == nil then return false end
+local progress = %s
+]]):format(slot, trigger.durabilityProgress == "lowest" and "lowest" or "overall")
+    end,
+    args = {
+      {name = "durabilitySlot", display = "Equipment Slot", type = "select", required = true, default = 0,
+        values = function()
+          local slots = {[0] = "All Equipped Items"}
+          for slot, name in pairs(Private.item_slot_types) do
+            if slot >= 1 and slot <= 19 then slots[slot] = name end
+          end
+          return slots
+        end, test = "true"},
+      {name = "durabilityProgress", display = "Progress Value", type = "select", required = true, default = "overall",
+        values = function() return {overall = "Overall Durability (%)", lowest = "Lowest Item Durability (%)"} end, test = "true"},
+      {name = "durabilityNote", type = "description", display = "", text = function() return "Checks equipped items only. Empty slots and items without durability are ignored. Progress Value controls %p. Values are percentages from 0 to 100." end},
+      {name = "lowest", display = "Lowest Item Durability (%)", type = "number", init = "lowest", store = true, conditionType = "number"},
+      {name = "overall", display = "Overall Durability (%)", type = "number", init = "overall", store = true, conditionType = "number"},
+      {name = "broken", display = "Broken Items", type = "number", init = "broken", store = true, conditionType = "number"},
+      {name = "itemCount", display = "Items with Durability", type = "number", init = "itemCount", store = true, conditionType = "number", hidden = true, test = "true"},
+      {name = "value", display = "Progress Value", type = "number", init = "progress", store = true, conditionType = "number", hidden = true, test = "true"},
+      {name = "total", display = "Progress Total", type = "number", init = "100", store = true, conditionType = "number", hidden = true, test = "true"},
+      {name = "progressType", init = "'static'", hidden = true, store = true, test = "true"},
+      {name = "name", init = "'Equipment Durability'", hidden = true, store = true, test = "true"},
+      {name = "icon", init = "132530", hidden = true, store = true, test = "true"},
+    },
+  },
+  ["Bag Space"] = {
+    type = "item", name = "Bag Space", statesParameter = "one",
+    automaticrequired = true, progressType = "static",
+    events = {events = {"BAG_UPDATE_DELAYED","BAG_CONTAINER_UPDATE","PLAYER_ENTERING_WORLD"}},
+    force_events = "PLAYER_ENTERING_WORLD",
+    init = function(trigger)
+      return ([[local free, totalSlots, used, freePercent = Private.ExecEnv.GetBagSpace(%s)
+if free == nil then return false end
+]]):format(trigger.use_includeSpecialty and "true" or "false")
+    end,
+    args = {
+      {name = "includeSpecialty", display = "Include Specialty Bags", type = "toggle", test = "true"},
+      {name = "bagNote", type = "description", display = "", text = function() return "Counts carried bags, not bank storage. By default only general-purpose slots count. Specialty bags may only accept certain item types." end},
+      {name = "free", display = "Free Slots", type = "number", init = "free", store = true, conditionType = "number"},
+      {name = "used", display = "Used Slots", type = "number", init = "used", store = true, conditionType = "number"},
+      {name = "totalSlots", display = "Total Slots", type = "number", init = "totalSlots", store = true, conditionType = "number"},
+      {name = "freePercent", display = "Free Space (%)", type = "number", init = "freePercent", store = true, conditionType = "number"},
+      {name = "value", display = "Progress Value", type = "number", init = "free", store = true, conditionType = "number", hidden = true, test = "true"},
+      {name = "total", display = "Progress Total", type = "number", init = "totalSlots", store = true, conditionType = "number", hidden = true, test = "true"},
+      {name = "progressType", init = "'static'", hidden = true, store = true, test = "true"},
+      {name = "name", init = "'Bag Space'", hidden = true, store = true, test = "true"},
+      {name = "icon", init = "133633", hidden = true, store = true, test = "true"},
+    },
+  },
   ["Item Count"] = {
     type = "item",
     events = {

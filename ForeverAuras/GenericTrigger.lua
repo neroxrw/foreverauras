@@ -3889,7 +3889,7 @@ do
           local tooltipData = C_TooltipInfo.GetInventoryItem("player", id)
           if tooltipData and tooltipData.lines then
             for _, line in ipairs(tooltipData.lines) do
-              if line.leftText then
+              if line.leftText and not issecretvalue(line.leftText) then
                 -- Format based on ITEM_ENCHANT_TIME_LEFT_MIN, ITEM_ENCHANT_TIME_LEFT_SEC
                 local _, _, name, shortenedName = line.leftText:find("^((.-) ?+?[VI%d]*) ?%(%d+%D.+%)$");
                 if(name and name ~= "") then
@@ -3908,12 +3908,13 @@ do
       local function tenchUpdate()
         Private.StartProfileSystem("generictrigger temporary enchant");
         local _, mh_rem, oh_rem, rw_rem
-        _, mh_rem, mh_charges, mh_EnchantID, _, oh_rem, oh_charges, oh_EnchantID, _, rw_rem, rw_charges, rw_EnchantID = GetWeaponEnchantInfo();
+        local oldMHEnchantID, oldOHEnchantID = mh_EnchantID, oh_EnchantID
+        _, mh_rem, mh_charges, mh_EnchantID, _, oh_rem, oh_charges, oh_EnchantID, _, rw_rem, rw_charges, rw_EnchantID = Private.ExecEnv.GetTemporaryWeaponEnchants();
         local time = GetTime();
         local mh_exp_new = mh_rem and (time + (mh_rem / 1000));
         local oh_exp_new = oh_rem and (time + (oh_rem / 1000));
         local rw_exp_new = rw_rem and (time + (rw_rem / 1000));
-        if(math.abs((mh_exp or 0) - (mh_exp_new or 0)) > 1) then
+        if oldMHEnchantID ~= mh_EnchantID or math.abs((mh_exp or 0) - (mh_exp_new or 0)) > 1 then
           mh_exp = mh_exp_new;
           mh_dur = mh_rem and mh_rem / 1000;
           if mh_exp then
@@ -3923,7 +3924,7 @@ do
           end
           mh_icon = GetInventoryItemTexture("player", mh)
         end
-        if(math.abs((oh_exp or 0) - (oh_exp_new or 0)) > 1) then
+        if oldOHEnchantID ~= oh_EnchantID or math.abs((oh_exp or 0) - (oh_exp_new or 0)) > 1 then
           oh_exp = oh_exp_new;
           oh_dur = oh_rem and oh_rem / 1000;
           if oh_exp then
@@ -4882,7 +4883,7 @@ function GenericTrigger.GetTriggerDescription(data, triggernum, namestable)
 end
 
 do
-  -- Based on Code by DejaCharacterStats. Ugly code to figure out the GCD
+  -- Based on DejaCharacterStats: infer the global cooldown from spell timing.
   local class = select(2, UnitClass("player"))
   if class == "DEMONHUNTER"
     or class == "HUNTER" or class == "SHAMAN"
