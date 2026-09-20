@@ -28,62 +28,6 @@ local displayButtons = OptionsPrivate.displayButtons
 local tempGroup = OptionsPrivate.tempGroup
 local aceOptions = {}
 
-local optionsFont = "Interface\\AddOns\\ForeverAuras\\Media\\Fonts\\FiraSans-Medium.ttf"
-local originalOptionsFonts = setmetatable({}, {__mode = "k"})
-local function ApplyOptionsFont(frame)
-  if frame.GetFont then
-    local font, size, flags = frame:GetFont()
-    if font and font:lower() == "fonts\\frizqt__.ttf" then
-      originalOptionsFonts[frame] = {font, size, flags}
-      frame:SetFont(optionsFont, size, flags)
-    end
-  end
-  if frame.GetRegions then
-    for _, region in ipairs({frame:GetRegions()}) do ApplyOptionsFont(region) end
-  end
-  if frame.GetChildren then
-    for _, child in ipairs({frame:GetChildren()}) do ApplyOptionsFont(child) end
-  end
-end
-
-local function RestoreOptionsFont(frame)
-  local original = originalOptionsFonts[frame]
-  if original then
-    if frame:GetFont() == optionsFont then frame:SetFont(unpack(original)) end
-    originalOptionsFonts[frame] = nil
-  end
-  if frame.GetRegions then
-    for _, region in ipairs({frame:GetRegions()}) do RestoreOptionsFont(region) end
-  end
-  if frame.GetChildren then
-    for _, child in ipairs({frame:GetChildren()}) do RestoreOptionsFont(child) end
-  end
-end
-
--- Restore pooled controls before another addon reuses them.
-hooksecurefunc(AceGUI, "Release", function(_, widget)
-  if widget.frame then RestoreOptionsFont(widget.frame) end
-end)
-
-local function ResetDescriptionFonts(widget)
-  if widget.type == "Label" then
-    -- A pooled label can retain a direct font override from a previous heading.
-    local fontObject = widget.label:GetFontObject()
-    if fontObject then
-      widget.label:SetFont(fontObject:GetFont())
-      widget:SetFontObject(fontObject)
-    end
-  end
-  for _, child in ipairs(widget.children or {}) do ResetDescriptionFonts(child) end
-end
-
-hooksecurefunc(AceConfigDialog, "FeedGroup", function(_, appName, _, container)
-  if appName == "ForeverAuras" then
-    ResetDescriptionFonts(container)
-    ApplyOptionsFont(container.frame)
-  end
-end)
-
 local function CreateFrameSizer(frame, callback, position)
   callback = callback or (function() end)
 
@@ -206,7 +150,6 @@ function OptionsPrivate.CreateFrame()
   frame:SetPoint("TOP", UIParent, "BOTTOMLEFT", xOffset, yOffset)
   frame:Hide()
 
-  frame:HookScript("OnShow", function() ApplyOptionsFont(frame) end)
 
   frame:SetScript("OnHide", function()
     local suspended = OptionsPrivate.Private.PauseAllDynamicGroups()
@@ -1220,7 +1163,6 @@ function OptionsPrivate.CreateFrame()
       end)
 
     AceConfigDialog:Open("ForeverAuras", group)
-    ApplyOptionsFont(frame)
     tabsWidget:SetTitle("")
 
     if data.controlledChildren and #data.controlledChildren == 0 then
@@ -1467,7 +1409,6 @@ function OptionsPrivate.CreateFrame()
     importButton:SetDescription(L["Import a display from an encoded string"])
     importButton:SetClick(OptionsPrivate.ImportFromString)
     containerScroll:AddChild(importButton)
-    ApplyOptionsFont(container.frame)
   end
 
   local function ExpandParents(data)
@@ -1601,6 +1542,5 @@ function OptionsPrivate.CreateFrame()
   local left, right, top, bottom = w/2,-w/2, 0, h-25
   frame:SetClampRectInsets(left, right, top, bottom)
 
-  ApplyOptionsFont(frame)
   return frame
 end

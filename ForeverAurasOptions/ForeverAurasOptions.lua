@@ -1960,6 +1960,7 @@ function ForeverAuras.NewAura(sourceData, regionType, targetId)
   end
   local new_id = OptionsPrivate.Private.FindUnusedId("New")
   local data = {id = new_id, regionType = regionType, uid = ForeverAuras.GenerateUniqueID()}
+  if regionType == "icon" then data.cooldownTextDisabled = true end
   ForeverAuras.DeepMixin(data, OptionsPrivate.Private.data_stub);
   if (sourceData) then
     ForeverAuras.DeepMixin(data, sourceData);

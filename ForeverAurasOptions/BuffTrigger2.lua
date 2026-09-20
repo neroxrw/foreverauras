@@ -7,6 +7,27 @@ local OptionsPrivate = select(2, ...)
 
 local L = ForeverAuras.L
 
+local function HasSecretSpellID(trigger)
+  if trigger.type ~= "aura2" or not trigger.useExactSpellId or not C_Secrets then return false end
+  for _, value in ipairs(trigger.auraspellids or {}) do
+    local spellID = tonumber(value)
+    if spellID and spellID > 0 and spellID < 2147483647 and spellID == math.floor(spellID) then
+      if C_Secrets.GetSpellAuraSecrecy and Enum and Enum.SecrecyLevel then
+        local ok, secrecy = pcall(C_Secrets.GetSpellAuraSecrecy, spellID)
+        if ok and not issecretvalue(secrecy) and
+          (secrecy == Enum.SecrecyLevel.AlwaysSecret or secrecy == Enum.SecrecyLevel.ContextuallySecret) then
+          return true
+        end
+      end
+      if C_Secrets.ShouldSpellAuraBeSecret then
+        local ok, secret = pcall(C_Secrets.ShouldSpellAuraBeSecret, spellID)
+        if ok and not issecretvalue(secret) and secret == true then return true end
+      end
+    end
+  end
+  return false
+end
+
 local function getAuraMatchesLabel(name)
   local ids = ForeverAuras.spellCache.GetSpellsMatching(name)
   if ids then
@@ -320,7 +341,7 @@ local function GetBuffTriggerOptions(data, triggernum)
       values = function()
         return OptionsPrivate.Private.unit_types_bufftrigger_2
       end,
-      desc = L["• |cff00ff00Player|r, |cff00ff00Target|r, |cff00ff00Focus|r, and |cff00ff00Pet|r correspond directly to those individual unitIDs.\n• |cff00ff00Specific Unit|r lets you provide a specific valid unitID to watch.\n|cffff0000Note|r: The game will not fire events for all valid unitIDs, making some untrackable by this trigger.\n• |cffffff00Party|r, |cffffff00Raid|r, |cffffff00Boss|r, |cffffff00Arena|r, and |cffffff00Nameplate|r can match multiple corresponding unitIDs.\n• |cffffff00Smart Group|r adjusts to your current group type, matching just the \"player\" when solo, \"party\" units (including \"player\") in a party or \"raid\" units in a raid.\n• |cffffff00Multi-target|r attempts to use the Combat Log events, rather than unitID, to track affected units.\n|cffff0000Note|r: Without a direct relationship to actual unitIDs, results may vary.\n\n|cffffff00*|r Yellow Unit settings can match multiple units and will default to being active even while no affected units are found without a Unit Count or Match Count setting."],
+      desc = L["â€¢ |cff00ff00Player|r, |cff00ff00Target|r, |cff00ff00Focus|r, and |cff00ff00Pet|r correspond directly to those individual unitIDs.\nâ€¢ |cff00ff00Specific Unit|r lets you provide a specific valid unitID to watch.\n|cffff0000Note|r: The game will not fire events for all valid unitIDs, making some untrackable by this trigger.\nâ€¢ |cffffff00Party|r, |cffffff00Raid|r, |cffffff00Boss|r, |cffffff00Arena|r, and |cffffff00Nameplate|r can match multiple corresponding unitIDs.\nâ€¢ |cffffff00Smart Group|r adjusts to your current group type, matching just the \"player\" when solo, \"party\" units (including \"player\") in a party or \"raid\" units in a raid.\nâ€¢ |cffffff00Multi-target|r attempts to use the Combat Log events, rather than unitID, to track affected units.\n|cffff0000Note|r: Without a direct relationship to actual unitIDs, results may vary.\n\n|cffffff00*|r Yellow Unit settings can match multiple units and will default to being active even while no affected units are found without a Unit Count or Match Count setting."],
     },
     multiWarning = {
       type = "description",
@@ -439,6 +460,14 @@ local function GetBuffTriggerOptions(data, triggernum)
       order = 12.1,
       width = ForeverAuras.normalWidth,
       hidden = function() return not (trigger.type == "aura2" and not trigger.useName) end
+    },
+    secretSpellWarning = {
+      type = "description",
+      name = "|cffff4444Secret Spell ID detected|r",
+      fontSize = "small",
+      width = "full",
+      order = 21.9,
+      hidden = function() return not HasSecretSpellID(trigger) end,
     },
     useExactSpellId = {
       type = "toggle",
