@@ -1,6 +1,11 @@
 # Changelog
 
 ## Versions
+## 0.1.103
+- Add function to check if a SpellID is secret
+- Change addon icon
+- Remove CC warnings for other addons
+
 ## 0.1.101
 - Remove "Secret Aura" type and move Blizzard controlled auras under the regular auras section on the trigger tab
 
