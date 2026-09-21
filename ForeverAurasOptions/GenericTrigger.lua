@@ -466,7 +466,9 @@ local function GetGenericTriggerOptions(data, triggernum)
       end,
       set = function(info, v)
         trigger.event = v
+        if trigger.type == "cdm" then trigger.cdmSource = v == "Blizzard CDM Buff" and "buff" or "cooldown" end
         ForeverAuras.Add(data)
+        if trigger.type == "cdm" then OptionsPrivate.Private.UpdateFakeStatesFor(data.id) end
         ForeverAuras.ClearAndUpdateOptions(data.id)
       end,
     }
@@ -533,6 +535,7 @@ local function GetGenericTriggerOptions(data, triggernum)
     end
     if (prototypeOptions) then
       Mixin(options, prototypeOptions);
+      if trigger.type == "cdm" then OptionsPrivate.AddCooldownViewerOptions(options, data, triggernum) end
     end
   end
 

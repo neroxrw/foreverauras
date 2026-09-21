@@ -1042,7 +1042,7 @@ function Display.UnitFramesChanged()
 end
 
 function Display.Apply(region, data)
-  if not Display.Enabled(data) then Display.Release(region); return end
+  if not Display.Enabled(data) then Display.Release(region); Warn(data); SoundWarning(data); return end
   Suppress(region)
   local problem = Display.Validate(data)
   if problem then Display.Release(region); Warn(data, problem); return end
@@ -1133,7 +1133,7 @@ end
 
 function Display.Modify(region, data)
   region.secretAuraConditionValues = nil
-  if not Display.Enabled(data) then Display.Release(region); return end
+  if not Display.Enabled(data) then Display.Release(region); Warn(data); SoundWarning(data); return end
   Install(region)
   Display.Apply(region, data)
 end

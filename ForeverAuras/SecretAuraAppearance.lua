@@ -17,6 +17,7 @@ function Display.IsDetachedProperty(data, property)
 end
 
 function Display.CanAddElement(data, kind)
+  if kind == "subcdmdispel" then return Private.CDMAuraProgress.IsConfigured(data) end
   if not Display.HasTrigger(data) then return true end
   if not Display.supportedElements[kind] then return false end
   if kind == "subborder" then

@@ -1133,6 +1133,7 @@ end
 ---@type fun(data: auraData, triggernum: integer, state: state, eventData: table)
 local function AddFakeInformation(data, triggernum, state, eventData)
   state.autoHide = false
+  if eventData.prototype and eventData.prototype.cooldownViewerProgress then return end
   if ProgressType(data, triggernum) == "timed" and state.expirationTime == nil then
     state.progressType = "timed"
   end
@@ -4480,6 +4481,10 @@ end
 
 function GenericTrigger.GetProgressSources(data, triggernum, values)
   local prototype = GenericTrigger.GetPrototype(data.triggers[triggernum].trigger)
+  if prototype and prototype.cooldownViewerProgress then
+    tinsert(values, {trigger = triggernum, property = "expirationTime", type = "timer", display = "Cooldown / aura duration", total = "duration", modRate = "modRate"})
+    return
+  end
   if prototype and prototype.displayOnlyProgress then
     tinsert(values, {trigger = triggernum, property = "value", type = "number", display = prototype.name, total = "total"})
     return
@@ -4644,7 +4649,7 @@ function GenericTrigger.GetTriggerConditions(data, triggernum)
     local result = {};
 
     local progressType, modRated = ProgressType(data, triggernum);
-    if progressType == "timed" then
+    if progressType == "timed" and not prototype.cooldownViewerProgress then
       if modRated then
         result.expirationTime = commonConditions.expirationTimeModRate;
         result.duration = commonConditions.durationModRate;

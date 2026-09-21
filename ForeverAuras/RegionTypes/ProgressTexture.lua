@@ -204,6 +204,7 @@ Private.regionPrototype.AddProperties(properties, default);
 local function GetProperties(data)
   local overlayInfo = Private.GetOverlayInfo(data);
   local auraProperties = CopyTable(properties)
+  if Private.CDMAuraProgress.IsConfigured(data) then auraProperties.adjustedMin, auraProperties.adjustedMax = nil, nil end
   auraProperties.progressSource.values = Private.GetProgressSourcesForUi(data)
   if (overlayInfo and next(overlayInfo)) then
     for id, display in ipairs(overlayInfo) do
@@ -453,6 +454,7 @@ local function ApplyAdditionalProgressCircular(self, additionalProgress, min, ma
 end
 
 local function FrameTick(self)
+  if self.cdmNativeProgress then return end
   local duration = self.duration
   local expirationTime = self.expirationTime
   local inverse = self.inverse
@@ -620,6 +622,7 @@ local funcs = {
     self:ForAllLinears(self.foreground.SetTexRotation, self.effectiveTexRotation)
   end,
   UpdateTime = function(self)
+    if self.cdmNativeProgress then return end
     local progress = 1
     if self.duration ~= 0 then
       local remaining = self.expirationTime - GetTime()
@@ -648,6 +651,7 @@ local funcs = {
     end
   end,
   UpdateValue = function(self)
+    if self.cdmNativeProgress then return end
     if hasanysecretvalues(self.value, self.total) then
       return
     end
@@ -672,6 +676,7 @@ local funcs = {
     end
   end,
   SetAdditionalProgress = function(self, additionalProgress, currentMin, currentMax, inverse)
+    if self.cdmNativeProgress then return end
     self:ApplyAdditionalProgress(additionalProgress, currentMin, currentMax, inverse)
   end,
   ReapplyAdditionalProgress = function(self)
@@ -989,6 +994,7 @@ local function modify(parent, region, data)
   region:DoPosition(region)
   region:Color(data.foregroundColor[1], data.foregroundColor[2], data.foregroundColor[3], data.foregroundColor[4]);
 
+  Private.CDMAuraProgress.Modify(region, data)
   Private.regionPrototype.modifyFinish(parent, region, data);
 end
 

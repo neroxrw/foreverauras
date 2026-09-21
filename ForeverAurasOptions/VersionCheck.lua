@@ -6,7 +6,7 @@ local Private = select(2, ...)
 
 local L = ForeverAuras.L
 
-local optionsVersion = "0.1.114"
+local optionsVersion = "0.1.148"
 
 
 if optionsVersion ~= ForeverAuras.versionString then

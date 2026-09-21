@@ -658,6 +658,29 @@ function OptionsPrivate.CreateFrame()
   magnetButton:SetPoint("LEFT", lockButton.frame, "RIGHT", 10, 0)
 
 
+  if C_CooldownViewer then
+    local hideCDM = AceGUI:Create("CheckBox")
+    hideCDM:SetLabel("Hide Blizzard's CDM")
+    hideCDM:SetWidth(190)
+    hideCDM:SetValue(OptionsPrivate.Private.db.cdmHideBlizzard == true)
+    hideCDM:SetCallback("OnValueChanged", function(_, _, value)
+      OptionsPrivate.Private.db.cdmHideBlizzard = value
+      OptionsPrivate.Private.ApplyCDMBackground()
+    end)
+    hideCDM:SetCallback("OnEnter", function(widget)
+      GameTooltip:SetOwner(widget.frame, "ANCHOR_RIGHT")
+      GameTooltip:SetText("Hide Blizzard's CDM")
+      GameTooltip:AddLine("Keeps Blizzard's cooldown manager enabled for tracking while hiding its four viewers. Turning this off restores their previous opacity and leaves tracking enabled. Changes apply out of combat.", 1, 1, 1, true)
+      GameTooltip:Show()
+    end)
+    hideCDM:SetCallback("OnLeave", function() GameTooltip:Hide() end)
+    hideCDM.frame:SetParent(toolbarContainer)
+    hideCDM.frame:HookScript("OnShow", function() hideCDM:SetValue(OptionsPrivate.Private.db.cdmHideBlizzard == true) end)
+    hideCDM.frame:SetPoint("LEFT", magnetButton.frame, "RIGHT", 10, 0)
+    hideCDM.frame:Show()
+  end
+
+
   local loadProgress = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
   loadProgress:SetPoint("TOP", buttonsContainer.frame, "TOP", 0, -4)
   loadProgress:SetText(L["Creating options: "].."0/0")
@@ -1285,6 +1308,7 @@ function OptionsPrivate.CreateFrame()
     local containerScroll = AceGUI:Create("ScrollFrame")
     containerScroll:SetLayout("flow")
     border:AddChild(containerScroll)
+
 
     if C_AddOns.GetAddOnEnableState("ForeverAurasTemplates") ~= Enum.AddOnEnableState.None then
       local simpleLabel = AceGUI:Create("Label")

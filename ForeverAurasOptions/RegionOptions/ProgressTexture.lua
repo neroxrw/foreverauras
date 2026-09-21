@@ -124,7 +124,11 @@ local function createOptions(id, data)
       width = ForeverAuras.normalWidth,
       name = L["Orientation"],
       order = 35,
-      values = OptionsPrivate.Private.orientation_with_circle_types
+      values = function()
+        local values = CopyTable(OptionsPrivate.Private.orientation_with_circle_types)
+        if OptionsPrivate.Private.CDMAuraProgress.IsConfigured(data) then values.ANTICLOCKWISE = nil end
+        return values
+      end
     },
     compress = {
       type = "toggle",
@@ -357,6 +361,11 @@ local function createOptions(id, data)
       name = L["Clip Overlays"],
       order = index
     }
+  end
+
+  for _, key in ipairs({"mirror","compress","user_x","user_y","startAngle","endAngle","crop_x","crop_y","rotation","auraRotation","smoothProgress","textureWrapMode","slanted","slant","slantFirst","slantMode","desaturateForeground","blendMode"}) do
+    local previousHidden = options[key].hidden
+    options[key].hidden = function() return OptionsPrivate.Private.CDMAuraProgress.IsConfigured(data) or (type(previousHidden) == "function" and previousHidden()) or previousHidden == true end
   end
 
   return {

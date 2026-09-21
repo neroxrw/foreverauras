@@ -1,6 +1,11 @@
 # Changelog
 
 ## Versions
+## 0.1.148
+- Added new Trigger type "Blizzard Cooldown Manager"
+- Added option to Hide Blizzards CDM.
+- Note, the Blizzard CDM needs to be enabled for the trigger to work. If using these triggers in your Aura, the intended design is to enable the Hide Blizzard CDM option.
+
 ## 0.1.114
 First released version to Curseforge for WoW Forever Beta
 - Change anchor prefix from `WeakAuras:` to `ForeverAuras:`
