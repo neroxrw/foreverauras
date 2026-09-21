@@ -539,6 +539,11 @@ local function createOptions(id, data)
 
   end
 
+  for _, key in ipairs({"smoothProgress","enableGradient","gradientOrientation","barColor2","spark_header","spark","sparkTexture","sparkChooseTexture","sparkDesaturate","spaceSpark","sparkColor","sparkBlendMode","sparkWidth","sparkHeight","sparkOffsetX","sparkOffsetY","sparkRotationMode","sparkRotation","sparkMirror","sparkHidden"}) do
+    local previousHidden = options[key].hidden
+    options[key].hidden = function() return OptionsPrivate.Private.CDMAuraProgress.IsConfigured(data) or (type(previousHidden) == "function" and previousHidden()) or previousHidden == true end
+  end
+
   return {
     aurabar = options,
     progressOptions = OptionsPrivate.commonOptions.ProgressOptions(data),

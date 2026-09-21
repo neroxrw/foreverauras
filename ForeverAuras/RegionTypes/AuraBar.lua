@@ -219,6 +219,7 @@ Private.regionPrototype.AddProperties(properties, default);
 local function GetProperties(data)
   local overlayInfo = Private.GetOverlayInfo(data);
   local auraProperties = CopyTable(properties)
+  if Private.CDMAuraProgress.IsConfigured(data) then auraProperties.adjustedMin, auraProperties.adjustedMax = nil, nil end
   if (overlayInfo and next(overlayInfo)) then
     for id, display in ipairs(overlayInfo) do
       auraProperties["overlays." .. id] = {
@@ -1110,6 +1111,7 @@ local function GetTexCoordZoom(texWidth)
 end
 
 local function FrameTick(self)
+  if self.cdmNativeProgress then return end
   local expirationTime = self.expirationTime
   local remaining = expirationTime - GetTime()
   local duration = self.duration
@@ -1314,6 +1316,7 @@ local funcs = {
     end
   end,
   UpdateDuration = function(self)
+    if self.cdmNativeProgress then return end
     self.secretProgress = "duration"
     self:SetProgressSecret()
 
@@ -1323,6 +1326,7 @@ local funcs = {
     end
   end,
   UpdateValue = function(self)
+    if self.cdmNativeProgress then return end
     -- self.inverse = nil -- we don't want this field to affect "static" progress
     if hasanysecretvalues(self.value, self.total) then
       self.secretProgress = "value"
@@ -1342,6 +1346,7 @@ local funcs = {
     end
   end,
   UpdateTime = function(self)
+    if self.cdmNativeProgress then return end
     self.secretProgress = nil
     local remaining = self.expirationTime - GetTime();
     local progress = self.duration ~= 0 and remaining / self.duration or 0;
@@ -1828,6 +1833,7 @@ local function modify(parent, region, data)
   end
 
   function region:SetAdditionalProgress(additionalProgress, currentMin, currentMax, inverse)
+    if self.cdmNativeProgress then return end
     local effectiveInverse = (inverse and not region.inverseDirection) or (not inverse and region.inverseDirection);
     region.bar:SetAdditionalBars(additionalProgress, region.overlays, region.overlaysTexture, currentMin, currentMax, effectiveInverse, region.overlayclip);
   end
@@ -1883,6 +1889,7 @@ local function modify(parent, region, data)
   --- Update internal bar alignment
   region.bar:Update();
 
+  Private.CDMAuraProgress.Modify(region, data)
   Private.regionPrototype.modifyFinish(parent, region, data);
 end
 

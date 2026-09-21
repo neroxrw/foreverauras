@@ -343,9 +343,29 @@ local function modify(parent, region, parentData, data, first)
   region.subTextFormatters, region.everyFrameFormatters = Private.CreateFormatters(texts, getter, false, parentData)
 
   function region:ConfigureTextUpdate()
+    Private.CDMAuraProgress.HideText(region)
+    local nativeKind, nativeTrigger = Private.ParseCDMText(region.text_text)
+    if nativeKind == "bp" or nativeKind == "bs" then
+      region.Update = function()
+        if not text:GetFont() then return end
+        local state = nativeTrigger and parent.states and parent.states[nativeTrigger] or not nativeTrigger and parent.state
+        if Private.CDMAuraProgress.UpdateText(parent, region, data, nativeKind, nativeTrigger) then return end
+        Private.CopyCDMCountdownText(text, state, nativeKind)
+      end
+      region.FrameTick = region.Update
+      return
+    end
     local UpdateText
     if region.text_text and Private.ContainsAnyPlaceHolders(region.text_text) then
       UpdateText = function()
+        if Private.CDMAuraProgress.UpdateText(parent, region, data, nativeKind, nativeTrigger) then return end
+        if nativeKind then
+          local state = nativeTrigger and parent.states and parent.states[nativeTrigger] or not nativeTrigger and parent.state
+          if state and state.cdmBuff then
+            if text:GetFont() then Private.CopyCDMCountdownText(text, state, nativeKind) end
+            return
+          end
+        end
         local textStr = region.text_text or ""
         textStr = Private.ReplacePlaceHolders(textStr, parent, nil, false, self.subTextFormatters)
 
@@ -371,7 +391,7 @@ local function modify(parent, region, parentData, data, first)
     end
 
     local FrameTick
-    if Private.ContainsPlaceHolders(region.text_text, "p")
+    if nativeKind or Private.ContainsPlaceHolders(region.text_text, "p")
        or Private.AnyEveryFrameFormatters(region.text_text, region.everyFrameFormatters)
     then
       FrameTick = UpdateText
@@ -497,7 +517,7 @@ local function modify(parent, region, parentData, data, first)
   local textDegrees = data.rotateText == "LEFT" and 90 or data.rotateText == "RIGHT" and -90 or 0;
 
   region.Anchor = function(self)
-    local xo, yo = getRotateOffset(text, textDegrees, selfPoint)
+    local xo, yo = getRotateOffset(text, Private.IsCDMBuffText(region.text_text, parentData) and 0 or textDegrees, selfPoint)
     parent:AnchorSubRegion(text, "point", data.anchor_point, selfPoint,
                            (self.text_anchorXOffset or 0) + xo, (self.text_anchorYOffset or 0) + yo)
   end
@@ -528,6 +548,8 @@ local function modify(parent, region, parentData, data, first)
   region:Color(data.text_color[1], data.text_color[2], data.text_color[3], data.text_color[4]);
   region:SetVisible(data.text_visible)
   animRotate(text, textDegrees, selfPoint)
+  region:Anchor()
+  Private.CDMAuraProgress.ModifyText(parent, region, parentData, data)
 end
 
 local function addDefaultsForNewAura(data)

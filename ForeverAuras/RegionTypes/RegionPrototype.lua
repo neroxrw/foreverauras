@@ -704,6 +704,7 @@ end
 
 -- For regions
 local function UpdateProgress(self)
+  if (self.regionType == "icon" or self.regionType == "aurabar" or self.regionType == "progresstexture") and Private.CDMAuraProgress then Private.CDMAuraProgress.Update(self) end
   UpdateProgressFrom(self, self.progressSource, self, self.state, self.states)
   self.subRegionEvents:Notify("UpdateProgress", self.state, self.states)
 end

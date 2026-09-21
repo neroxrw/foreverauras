@@ -1772,6 +1772,17 @@ local BaseDynamicTextCodes = {
   }
 }
 
+local function CDMTextCodes(trigger)
+  if not trigger or trigger.type ~= "cdm" or trigger.event ~= "Blizzard CDM Buff" then return BaseDynamicTextCodes.trigger end
+  return {
+    {type = "mini", name = "p", desc = "Blizzard duration text. Use alone in a text field. Native formatting and aura-detail options are available when the buff supplies progress."},
+    {type = "mini", name = "s", desc = "Blizzard stack text. Use alone in a text field. Native stack formatting is available when the buff supplies progress."},
+    {type = "mini", name = "caster", desc = "Blizzard aura caster name. Use alone in a text field."},
+    {type = "mini", name = "dispel", desc = "Blizzard aura dispel type. Use alone in a text field."},
+    BaseDynamicTextCodes.trigger[3], BaseDynamicTextCodes.trigger[4],
+  }
+end
+
 function OptionsPrivate.UpdateTextReplacements(frame, data)
   frame.scrollList:ReleaseChildren()
 
@@ -1786,7 +1797,8 @@ function OptionsPrivate.UpdateTextReplacements(frame, data)
 
   -- Add base dynamic text codes
   local globalProps = {}
-  tAppendAll(globalProps, CopyTable(BaseDynamicTextCodes.trigger))
+  local singleTrigger = data.triggers and #data.triggers == 1 and data.triggers[1].trigger
+  tAppendAll(globalProps, CopyTable(CDMTextCodes(singleTrigger)))
   tAppendAll(globalProps, CopyTable(BaseDynamicTextCodes.global))
   for _, prop in ipairs(globalProps) do
     prop.widthFraction = #globalProps
@@ -1794,9 +1806,12 @@ function OptionsPrivate.UpdateTextReplacements(frame, data)
     table.insert(sortedProps, prop)
   end
 
+  for triggerNum, entry in ipairs(data.triggers or {}) do
+    if entry.trigger.type == "cdm" and entry.trigger.event == "Blizzard CDM Buff" then props[triggerNum] = props[triggerNum] or {} end
+  end
   -- Process each trigger's properties
   for triggerNum, triggerProps in pairs(props) do
-    if next(triggerProps) then
+    if next(triggerProps) or (data.triggers[triggerNum] and data.triggers[triggerNum].trigger.type == "cdm") then
       -- Create a temporary table for this trigger's properties
       local tempProps = {}
 
@@ -1814,9 +1829,9 @@ function OptionsPrivate.UpdateTextReplacements(frame, data)
       table.insert(sortedProps, {type = "header", triggerNum = triggerNum, name = OptionsPrivate.GetTriggerTitle(data, triggerNum)})
 
       -- Add the base properties for the trigger
-      for _, v in ipairs(BaseDynamicTextCodes.trigger) do
+      for _, v in ipairs(CDMTextCodes(data.triggers[triggerNum].trigger)) do
         local prop = CopyTable(v)
-        prop.widthFraction = #BaseDynamicTextCodes.trigger
+        prop.widthFraction = #CDMTextCodes(data.triggers[triggerNum].trigger)
         prop.triggerNum = triggerNum
         table.insert(sortedProps, prop)
       end

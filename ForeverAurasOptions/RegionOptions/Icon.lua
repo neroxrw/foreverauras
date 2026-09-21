@@ -275,7 +275,7 @@ local function createOptions(id, data)
       name = L["Blizzard Cooldown Reduction"],
       order = 11.6,
       desc = L["Cooldown Reduction changes the duration of seconds instead of showing the real time seconds."],
-      hidden = function() return not data.cooldown end,
+      hidden = function() return not data.cooldown or OptionsPrivate.Private.CDMAuraProgress.IsConfigured(data) end,
     },
     endHeader = {
       type = "header",

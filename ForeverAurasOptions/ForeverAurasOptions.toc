@@ -2,7 +2,7 @@
 ## Interface: 16001
 ## Title: ForeverAuras Options
 ## Author: m33shoq, WeakAuras contributors
-## Version: 0.1.114
+## Version: 0.1.148
 ## IconTexture: Interface\AddOns\ForeverAuras\Media\Textures\foreverauras_logo.tga
 ## Notes: Options for ForeverAuras
 ## Notes-esES: Opciones para ForeverAuras
@@ -43,6 +43,7 @@ SubRegionOptions\Tick.lua
 SubRegionOptions\Model.lua
 SubRegionOptions\StopMotion.lua
 SubRegionOptions\Texture.lua
+SubRegionOptions\CDMDispel.lua
 SubRegionOptions\CircularProgressTexture.lua
 SubRegionOptions\LinearProgressTexture.lua
 
@@ -61,6 +62,7 @@ AuraDisplayOptions.lua
 
 BuffTrigger2.lua
 SecretAuraTriggerOptions.lua
+CooldownViewerOptions.lua
 GenericTrigger.lua
 
 ForeverAurasOptions.lua

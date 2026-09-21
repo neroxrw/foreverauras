@@ -1342,7 +1342,6 @@ Private.actual_unit_types_cast_tooltip = L["• |cff00ff00Player|r, |cff00ff00Ta
 
 ---@type table<string, string>
 Private.threat_unit_types = Mixin({
-  nameplate = L["Nameplate"],
   boss = L["Boss"],
   member = L["Specific Unit"],
   none = L["At Least One Enemy"]

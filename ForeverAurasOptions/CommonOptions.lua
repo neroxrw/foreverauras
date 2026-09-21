@@ -1228,6 +1228,31 @@ local function ProgressOptions(data)
     hidden = function() return not (data.useAdjustededMin and not data.useAdjustededMax) end,
   }
 
+  for _, key in ipairs({"useAdjustededMin", "adjustedMin", "useAdjustedMinSpacer", "useAdjustededMax", "adjustedMax", "useAdjustedMaxSpacer"}) do
+    local previousHidden = options[key].hidden
+    options[key].hidden = function()
+      return OptionsPrivate.Private.CDMAuraProgress.IsConfigured(data)
+        or (previousHidden and previousHidden()) or false
+    end
+  end
+
+  local function nativeHidden() return not OptionsPrivate.Private.CDMAuraProgress.IsConfigured(data) end
+  options.cdmProgressMode = {
+    type = "select", order = order + 8, width = ForeverAuras.normalWidth,
+    name = "Native progress", desc = "Blizzard drives this progress. Appearance changes apply when aura restrictions end.", values = {duration = "Duration", stacks = "Stacks"},
+    hidden = function() return nativeHidden() or data.regionType == "icon" or data.orientation == "CLOCKWISE" or data.orientation == "ANTICLOCKWISE" end,
+    get = function() return data.cdmProgressMode or "duration" end,
+    set = function(_, value) data.cdmProgressMode = value; ForeverAuras.Add(data); ForeverAuras.ClearAndUpdateOptions(data.id) end,
+  }
+  options.cdmMaxStacks = {
+    type = "range", order = order + 9, width = ForeverAuras.normalWidth, name = "Maximum stacks",
+    min = 1, softMax = 100, step = 1,
+    hidden = function() return nativeHidden() or data.cdmProgressMode ~= "stacks" or data.regionType == "icon" or data.orientation == "CLOCKWISE" or data.orientation == "ANTICLOCKWISE" end,
+    get = function() return data.cdmMaxStacks or 5 end,
+    set = function(_, value) data.cdmMaxStacks = value; ForeverAuras.Add(data) end,
+  }
+
+
   return options
 end
 

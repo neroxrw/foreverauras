@@ -2150,6 +2150,7 @@ local unitHelperFunctions = {
 }
 
 Private.event_categories = {
+  cdm = {name = "Blizzard Cooldown Manager", default = "Blizzard Cooldown Manager"},
   spell = {
     name = L["Spell"],
     default = "Cooldown Progress (Spell)"
@@ -2187,6 +2188,10 @@ local GetNameAndIconForSpellName = function(trigger)
 end
 
 Private.event_prototypes = {
+  ["Blizzard Cooldown Manager"] = Private.CooldownViewerPrototype,
+  ["Blizzard CDM Buff"] = Private.CooldownViewerBuffPrototype,
+  ["Blizzard CDM Utility"] = Private.CooldownViewerUtilityPrototype,
+  ["Blizzard CDM Item"] = Private.CooldownViewerItemPrototype,
   ["Swing Timer"] = {
     type = "unit",
     name = "Swing Timer",
@@ -7399,15 +7404,21 @@ if free == nil then return false end
     init = function(trigger)
       trigger.unit = trigger.unit or "target";
       local ret = [[
+        if issecretvalue(unit) or type(unit) ~= "string" then return false end
         unit = string.lower(unit)
+        if unit:match("^nameplate") then return false end
         local name = Private.ExecEnv.UnitName(unit)
+        if issecretvalue(name) then return false end
         local ok = true
         local aggro, status, threatpct, rawthreatpct, threatvalue, threattotal
-        if unit and unit ~= "none" then
+        if unit ~= "none" then
           aggro, status, threatpct, rawthreatpct, threatvalue = ForeverAuras.UnitDetailedThreatSituation('player', unit)
-          threattotal = (threatvalue or 0) * 100 / (threatpct ~= 0 and threatpct or 1)
+          if hasanysecretvalues(aggro, status, threatpct, rawthreatpct, threatvalue) then return false end
+          if type(threatpct) ~= "number" or type(threatvalue) ~= "number" then return false end
+          threattotal = threatvalue * 100 / (threatpct ~= 0 and threatpct or 1)
         else
           status = UnitThreatSituation('player')
+          if issecretvalue(status) then return false end
           aggro = status == 2 or status == 3
           threatpct, rawthreatpct, threatvalue, threattotal = 100, 100, 0, 100
         end

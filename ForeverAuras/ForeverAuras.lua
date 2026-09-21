@@ -1285,10 +1285,6 @@ function Private.Login(takeNewSnapshots)
 
   local thread = Private:Async(loginThreadConfig, loginFunc):OnSuccess(function()
     Private.callbacks:Fire("WEAKAURAS_LOGIN_COMPLETE")
-    -- Fire both names for now: WEAKAURAS_LOGIN_COMPLETE is the long-established event other
-    -- addons (GTFO, BigWigs/DBM plugins, etc.) already hook to detect readiness, so it stays;
-    -- FOREVERAURAS_LOGIN_COMPLETE is offered alongside it for anything written against our name.
-    Private.callbacks:Fire("FOREVERAURAS_LOGIN_COMPLETE")
     if GREMINDER and GREMINDER.FireCallback then
       GREMINDER:FireCallback("WEAKAURAS_LOGIN_COMPLETE")
     end
@@ -2600,8 +2596,8 @@ function Private.CheckForAnchorCycle(source)
     local target
     if data then
       if data.anchorFrameType == "SELECTFRAME" and data.anchorFrameFrame then
-        if data.anchorFrameFrame:sub(1, 13) == "ForeverAuras:" then
-          target = data.anchorFrameFrame:sub(14)
+        if data.anchorFrameFrame:sub(1, 10) == "WeakAuras:" then
+          target = data.anchorFrameFrame:sub(11)
         end
       else
         target = data.parent
@@ -2632,8 +2628,8 @@ function Private.AddMany(tbl, takeSnapshots)
     end
     idtable[data.id] = data;
     if data.anchorFrameType == "SELECTFRAME" and data.anchorFrameFrame then
-      if data.anchorFrameFrame:sub(1, 13) == "ForeverAuras:"then
-        anchorTargets[data.anchorFrameFrame:sub(14)] = data.id
+      if data.anchorFrameFrame:sub(1, 10) == "WeakAuras:"then
+        anchorTargets[data.anchorFrameFrame:sub(11)] = data.id
       end
     end
   end
@@ -3133,7 +3129,7 @@ end
 
 local function cycleCheck(data)
   local id = data.id
-  if data.anchorFrameType == "SELECTFRAME" and data.anchorFrameFrame and data.anchorFrameFrame:sub(1, 13) == "ForeverAuras:" then
+  if data.anchorFrameType == "SELECTFRAME" and data.anchorFrameFrame and data.anchorFrameFrame:sub(1, 10) == "WeakAuras:" then
     if Private.CheckForAnchorCycle(id) then
       ForeverAuras.prettyPrint(L["Warning: Anchoring in aura '%s' is imposssible, due to an anchoring cycle"]:format(id))
       db.displays[id].anchorFrameType = "UIPARENT"
@@ -3143,6 +3139,23 @@ local function cycleCheck(data)
 end
 
 function pAdd(data, simpleChange)
+  if data.cdmDispelIndicator then
+    data.subRegions = data.subRegions or {}
+    table.insert(data.subRegions, {
+      type = "subcdmdispel", dispelVisible = true, dispelStyle = "Border",
+      anchor_mode = "area", anchor_area = data.regionType == "aurabar" and "bar" or "ALL",
+      self_point = "CENTER", anchor_point = "CENTER", width = 32, height = 32,
+      xOffset = 0, yOffset = 0,
+    })
+    data.cdmDispelIndicator = nil
+  end
+  for _, entry in ipairs(data.triggers or {}) do
+    local trigger = entry.trigger
+    if trigger and trigger.type == "spell" and trigger.event == "Blizzard Cooldown Manager" then
+      trigger.type = "cdm"
+      if trigger.cdmSource == "buff" then trigger.event = "Blizzard CDM Buff" end
+    end
+  end
   local id = data.id;
   if not(id) then
     error("Improper arguments to ForeverAuras.Add - id not defined");
@@ -3155,6 +3168,11 @@ function pAdd(data, simpleChange)
   end
   if UIDtoID[data.uid] and UIDtoID[data.uid] ~= id then
     print("Improper? arguments to ForeverAuras.Add - uid is assigned to a id. Uid:", data.uid, "assigned too:", UIDtoID[data.uid], "assigning now to", data.id)
+  end
+
+  if not Private.BlizzardAuraDisplay.HasTrigger(data) then
+    Private.AuraWarnings.UpdateWarning(data.uid, "blizzard_aura_display", nil)
+    Private.AuraWarnings.UpdateWarning(data.uid, "blizzard_aura_sound", nil)
   end
 
   local otherID = UIDtoID[data.uid]
@@ -3798,8 +3816,8 @@ function Private.HandleGlowAction(actions, region)
   then
     local glow_frame, should_glow_frame
     if actions.glow_frame_type == "FRAMESELECTOR" then
-      if actions.glow_frame:sub(1, 13) == "ForeverAuras:" then
-        local frame_name = actions.glow_frame:sub(14)
+      if actions.glow_frame:sub(1, 10) == "WeakAuras:" then
+        local frame_name = actions.glow_frame:sub(11)
         if ForeverAuras.GetData(frame_name) then
           Private.EnsureRegion(frame_name)
         end
@@ -4485,6 +4503,7 @@ function Private.ApplyFrameLevel(region, frameLevel)
     region:SetFrameLevel(frameLevel)
   end
   Private.BlizzardAuraDisplay.UpdateDetachedFrameLevels(region)
+  Private.CDMAuraProgress.SyncFrameLevels(region, true)
 end
 
 function ForeverAuras.EnsureString(input)
@@ -5843,8 +5862,8 @@ function Private.ensurePRDFrame()
     end
 
     -- Calculate size of self nameplate
-    local prdWidth = 1;
-    local prdHeight = 1;
+    local prdWidth = 180;
+    local prdHeight = 20;
 
     if (KuiNameplatesCore and KuiNameplatesCore.profile) then
       prdWidth = KuiNameplatesCore.profile.frame_width_personal;
@@ -5861,16 +5880,8 @@ function Private.ensurePRDFrame()
       end
       personalRessourceDisplayFrame.texture:SetTexture("Interface\\AddOns\\ForeverAuras\\Media\\Textures\\PRDFrameKui");
     else
-      -- some of these CVars were removed
-      -- local namePlateVerticalScale = tonumber(GetCVar("NamePlateVerticalScale"));
-      -- local zeroBasedScale = (namePlateVerticalScale or 1) - 1.0;
-      -- local clampedZeroBasedScale = Saturate(zeroBasedScale);
-      -- local horizontalScale = tonumber(GetCVar("NamePlateHorizontalScale"));
-      -- local baseNamePlateWidth = NamePlateDriverFrame.baseNamePlateWidth;
-      -- prdWidth = baseNamePlateWidth * horizontalScale * Lerp(1.1, 1.0, clampedZeroBasedScale) - 24;
-      -- prdHeight = 4 * namePlateVerticalScale * Lerp(1.2, 1.0, clampedZeroBasedScale) * 2  + 1;
-      -- personalRessourceDisplayFrame:SetScale(1 / UIParent:GetEffectiveScale());
-      -- personalRessourceDisplayFrame.texture:SetTexture("Interface\\AddOns\\ForeverAuras\\Media\\Textures\\PRDFrame");
+      personalRessourceDisplayFrame:SetScale(1);
+      personalRessourceDisplayFrame.texture:SetTexture("Interface\\AddOns\\ForeverAuras\\Media\\Textures\\PRDFrame");
     end
 
     local scale = UIParent:GetEffectiveScale() / personalRessourceDisplayFrame:GetEffectiveScale();
@@ -6115,8 +6126,8 @@ local function GetAnchorFrame(data, region, parent)
   end
 
   if (anchorFrameType == "SELECTFRAME" and anchorFrameFrame) then
-    if(anchorFrameFrame:sub(1, 13) == "ForeverAuras:") then
-      local frame_name = anchorFrameFrame:sub(14);
+    if(anchorFrameFrame:sub(1, 10) == "WeakAuras:") then
+      local frame_name = anchorFrameFrame:sub(11);
       if (frame_name == id) then
         return parent;
       end
