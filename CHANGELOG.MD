@@ -1,7 +1,7 @@
 # Changelog
 
 ## Versions
-## 0.1.148
+## 0.1.160
 - Blizzard Cooldown Manager trigger fixes.
 - No longer use AuraContainer at all.
 
