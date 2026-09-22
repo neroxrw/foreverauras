@@ -1,6 +1,9 @@
 # Changelog
 
 ## Versions
+## 0.1.168
+- Minor fixes for CDM
+
 ## 0.1.165
 - Minor fixes for CDM Previews
 - Rename CDM Trigger Dropdowns

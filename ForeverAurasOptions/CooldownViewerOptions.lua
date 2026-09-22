@@ -44,7 +44,7 @@ function OptionsPrivate.AddCooldownViewerOptions(options, data, triggernum)
     C_Timer.After(0, function() ForeverAuras.Add(data); Private.UpdateFakeStatesFor(data.id) end)
   end
   Add("typeSpacer", {type = "description", name = " ", width = "full"})
-  Add("help", {type = "description", name = "To see more spells, type /CDM and add them.", width = "full"})
+  Add("help", {type = "description", name = "Spells must be active in the CDM to be displayed. Type /cdm and add them.", width = "full"})
   Add("open", {type = "execute", name = "Open CDM", width = ForeverAuras.normalWidth,
     disabled = function() return InCombatLockdown() or not C_CooldownViewer end,
     func = function()
@@ -77,13 +77,21 @@ function OptionsPrivate.AddCooldownViewerOptions(options, data, triggernum)
   Add("includeGCD", {type = "toggle", name = "Show global cooldown", width = "full", hidden = function() return trigger.cdmSource == "buff" or trigger.event == "Blizzard CDM Item" or not view.extra end, get = function() return trigger.use_cdmShowGCD or false end, set = function(_, value) Save("use_cdmShowGCD", value) end})
   Add("hideGCDText", {type = "toggle", name = "Hide global cooldown text", width = "full", hidden = function() return trigger.cdmSource == "buff" or trigger.event == "Blizzard CDM Item" or not view.extra end, desc = "Hides the icon cooldown countdown numbers during a global cooldown. Custom text such as %p is configured separately.", get = function() return trigger.cdmHideGCDText ~= false end, set = function(_, value) Save("cdmHideGCDText", value) end})
 
-  Add("spell", {type = "input", name = "Spell name or ID", width = "full", hidden = function() return trigger.event == "Blizzard CDM Item" end,
-    desc = "When filled, this takes priority over the checklist. Clear it to use checked entries. A name creates one display across aura ranks, or uses the highest available cooldown rank. A spell ID matches that specific spell. The spell must be assigned in Blizzard's CDM.",
+  Add("spell", {type = "input", name = "Spell name or ID", width = ForeverAuras.normalWidth, hidden = function() return trigger.event == "Blizzard CDM Item" end,
+    desc = "Enter name or spell ID. This creates one display across spell ranks, using the highest available rank. Use exact spell match for strict spell ID only filtering.",
     get = function() return trigger.cdmSpell or "" end,
     set = function(_, value)
-      trigger.cdmSelection, trigger.cdmExact = "spell", nil
+      trigger.cdmSelection = "spell"
+      if not tonumber(value) then trigger.cdmExact = nil end
       Save("cdmSpell", value:match("^%s*(.-)%s*$"))
     end})
+  Add("exactSpellMatch", {type = "toggle", name = "Exact Spell Match", width = ForeverAuras.normalWidth,
+    hidden = function() return trigger.event == "Blizzard CDM Item" end,
+    disabled = function() return not tonumber(trigger.cdmSpell) end,
+    desc = "Match only the entered spell ID, without matching other ranks. Requires a spell ID.",
+    get = function() return trigger.cdmExact == true end,
+    set = function(_, value) Save("cdmExact", value) end})
+  Add("spellSpacer", {type = "description", name = " ", width = "full", hidden = function() return trigger.event == "Blizzard CDM Item" end})
   Add("filters", {type = "header", name = "Blizzard CDM Filters"})
   Add("search", {type = "input", name = "Search", width = "full", get = function() return view.search or "" end,
     set = function(_, value) view.search = value; Refresh() end})
@@ -109,9 +117,7 @@ function OptionsPrivate.AddCooldownViewerOptions(options, data, triggernum)
       local shownID = item and identity.itemID or spellID
       if shownID then label = label .. " [" .. shownID .. "]" end
       rows[#rows + 1] = {id = id, name = name, label = label, rank = rank, known = entry.known, icon = not item and spell and spell.iconID or identity.icon, category = Private.CDMCategoryName(entry.category)}
-      if not view.availableOnly or entry.known then
-        highest[name] = math.max(highest[name] or 0, rank)
-      end
+      highest[name] = math.max(highest[name] or 0, rank)
     end
   end
   table.sort(rows, function(a,b) if a.name ~= b.name then return a.name < b.name end; if a.rank ~= b.rank then return a.rank > b.rank end; return a.id < b.id end)
