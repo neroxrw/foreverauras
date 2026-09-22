@@ -635,6 +635,11 @@ local function modify(parent, region, data)
       cooldown.expirationTime = nil
       cooldown.duration = nil
 
+      if Private.CDMAuraProgress.IsInactive(self) then
+        cooldown:Hide()
+        return
+      end
+
       cooldown.value = self.value
       cooldown.total = self.total
       cooldown.modRate = nil

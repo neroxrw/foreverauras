@@ -1,6 +1,10 @@
 # Changelog
 
 ## Versions
+## 0.1.165
+- Minor fixes for CDM Previews
+- Rename CDM Trigger Dropdowns
+
 ## 0.1.161
 - Fix spell cost overlay ignoring borders
 

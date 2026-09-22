@@ -19,6 +19,11 @@ local function SourceState(parent, explicit)
   if source == -1 then return parent.state end
 end
 
+function Display.IsInactive(region)
+  local state = SourceState(region)
+  return state and state.cdmBuff and state.auraActive == false or false
+end
+
 function Display.Modify(region, data)
   region.cdmProgressData = data
   region.cdmNativeProgress = nil
@@ -35,6 +40,7 @@ function Display.UpdateText(parent, sub, config, kind, explicitTrigger)
   if not state or not state.cdmBuff then return false end
   if not sub.text:GetFont() then return true end
   Private.CopyCDMCountdownText(sub.text, state, kind)
+  if sub.UpdateAnchorOnTextChange then sub:UpdateAnchorOnTextChange() end
   return true
 end
 

@@ -2,7 +2,7 @@
 ## Interface: 16001
 ## Title: ForeverAuras Archive
 ## Author: m33shoq, WeakAuras contributors
-## Version: 0.1.161
+## Version: 0.1.165
 ## IconTexture: Interface\AddOns\ForeverAuras\Media\Textures\foreverauras_logo.tga
 ## LoadOnDemand: 1
 ## SavedVariables: ForeverAurasArchive
