@@ -87,12 +87,10 @@ function OptionsPrivate.AddCooldownViewerOptions(options, data, triggernum)
   Add("filters", {type = "header", name = "Blizzard CDM Filters"})
   Add("search", {type = "input", name = "Search", width = "full", get = function() return view.search or "" end,
     set = function(_, value) view.search = value; Refresh() end})
-  Add("maxRank", {type = "toggle", name = "Show only max rank", width = ForeverAuras.normalWidth,
-    get = function() return view.maxRank or false end, set = function(_, value) view.maxRank = value; Refresh() end})
   Add("available", {type = "toggle", name = "Show only available", width = ForeverAuras.normalWidth,
     get = function() return view.availableOnly or false end, set = function(_, value) view.availableOnly = value; Refresh() end})
-  Add("selected", {type = "toggle", name = "Selected only", width = ForeverAuras.normalWidth,
-    get = function() return view.selectedOnly or false end, set = function(_, value) view.selectedOnly = value; Refresh() end})
+  Add("maxRank", {type = "toggle", name = "Show only max rank", width = ForeverAuras.normalWidth,
+    get = function() return view.maxRank or false end, set = function(_, value) view.maxRank = value; Refresh() end})
   Add("entries", {type = "header", name = "Blizzard CDM Entries"})
   local catalog = C_CooldownViewer and Private.CDMCatalog() or {}
   local rows, highest = {}, {}
@@ -111,15 +109,16 @@ function OptionsPrivate.AddCooldownViewerOptions(options, data, triggernum)
       local shownID = item and identity.itemID or spellID
       if shownID then label = label .. " [" .. shownID .. "]" end
       rows[#rows + 1] = {id = id, name = name, label = label, rank = rank, known = entry.known, icon = not item and spell and spell.iconID or identity.icon, category = Private.CDMCategoryName(entry.category)}
-      local best = highest[name]
-      if not best or (entry.known and not best.known) or (entry.known == best.known and rank > best.rank) then highest[name] = {rank = rank, known = entry.known} end
+      if not view.availableOnly or entry.known then
+        highest[name] = math.max(highest[name] or 0, rank)
+      end
     end
   end
   table.sort(rows, function(a,b) if a.name ~= b.name then return a.name < b.name end; if a.rank ~= b.rank then return a.rank > b.rank end; return a.id < b.id end)
   local query = (view.search or ""):lower()
   for _, row in ipairs(rows) do
-    if (not view.availableOnly or row.known) and (not view.selectedOnly or Checked(row.id)) and row.label:lower():find(query, 1, true)
-      and (not view.maxRank or Checked(row.id) or (row.rank == highest[row.name].rank and row.known == highest[row.name].known)) then
+    if (not view.availableOnly or row.known) and row.label:lower():find(query, 1, true)
+      and (not view.maxRank or row.rank == highest[row.name]) then
       Add("entry" .. row.id, {type = "toggle", name = row.label, desc = row.category, width = "full", image = row.icon, imageWidth = 18, imageHeight = 18,
         get = function() return Checked(row.id) end,
         set = function(_, value)

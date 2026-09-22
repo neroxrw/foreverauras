@@ -318,7 +318,7 @@ end
 
 Private.CooldownViewerPrototype = {
   type = "cdm",
-  name = "Cooldown",
+  name = "Essential Cooldowns",
   statesParameter = "full",
   progressType = "timed",
   cooldownViewerProgress = true,
@@ -427,7 +427,7 @@ end
 
 Private.CooldownViewerBuffPrototype = {}
 for key, value in pairs(Private.CooldownViewerPrototype) do Private.CooldownViewerBuffPrototype[key] = value end
-Private.CooldownViewerBuffPrototype.name = "Aura"
+Private.CooldownViewerBuffPrototype.name = "Buff/Debuff"
 
 local buffArgs, cooldownArgs = {}, {}
 for _, arg in ipairs(Private.CooldownViewerPrototype.args) do
@@ -448,5 +448,5 @@ for key, value in pairs(Private.CooldownViewerPrototype) do
   Private.CooldownViewerUtilityPrototype[key] = value
   Private.CooldownViewerItemPrototype[key] = value
 end
-Private.CooldownViewerUtilityPrototype.name = "Utility"
+Private.CooldownViewerUtilityPrototype.name = "Utility Cooldowns"
 Private.CooldownViewerItemPrototype.name = "Item"

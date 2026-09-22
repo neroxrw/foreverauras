@@ -460,7 +460,8 @@ local function GetGenericTriggerOptions(data, triggernum)
       order = 7.1,
       width = ForeverAuras.normalWidth,
       values = subtypes,
-      sorting = OptionsPrivate.Private.SortOrderForValues(subtypes),
+      sorting = triggerType == "cdm" and {"Blizzard Cooldown Manager", "Blizzard CDM Utility", "Blizzard CDM Buff", "Blizzard CDM Item"}
+        or OptionsPrivate.Private.SortOrderForValues(subtypes),
       get = function(info)
         return trigger.event
       end,
