@@ -31,7 +31,7 @@ Display.booleanFilters = {
 function Display.GetTrigger(data)
   local found
   for _, entry in ipairs(data and data.triggers or {}) do
-    if entry.trigger.type == "secretAura" then
+    if type(entry) == "table" and entry.trigger and entry.trigger.type == "secretAura" then
       if found then return nil end
       found = entry.trigger
     end
@@ -41,7 +41,7 @@ end
 
 function Display.HasTrigger(data)
   for _, entry in ipairs(data and data.triggers or {}) do
-    if entry.trigger.type == "secretAura" then return true end
+    if type(entry) == "table" and entry.trigger and entry.trigger.type == "secretAura" then return true end
   end
   return false
 end
@@ -141,7 +141,7 @@ function Display.Migrate(data)
     data.blizzardAuraDisplay.enabled = nil
   end
   for _, entry in ipairs(data.triggers or {}) do
-    if entry.trigger.type == "secretAura" then
+    if type(entry) == "table" and entry.trigger and entry.trigger.type == "secretAura" then
       entry.trigger.unit = entry.trigger.unit or "player"
       entry.trigger.debuffType = entry.trigger.debuffType or "HELPFUL"
       entry.trigger.auraspellids = entry.trigger.auraspellids or {}

@@ -34,6 +34,7 @@ function Private.CDMIsBuff(category)
 end
 
 local observed = setmetatable({}, {__mode = "k"})
+local observedViewers = setmetatable({}, {__mode = "k"})
 local nativeRefreshQueued = false
 local function NativeRefresh()
   if nativeRefreshQueued then return end
@@ -51,11 +52,14 @@ local function Observe(frame)
     record.duration, record.raw = nil, nil
     NativeRefresh()
   end
-  for _, method in ipairs({"ClearAuraInstanceInfo", "OnCooldownIDSet", "OnCooldownIDCleared"}) do
+  for _, method in ipairs({"ClearAuraInstanceInfo", "OnAuraInstanceInfoCleared", "OnCooldownIDSet", "OnCooldownIDCleared"}) do
     if type(frame[method]) == "function" then hooksecurefunc(frame, method, Clear) end
   end
   if type(frame.OnAuraInstanceInfoSet) == "function" then hooksecurefunc(frame, "OnAuraInstanceInfoSet", Clear) end
   if type(frame.SetAuraInstanceInfo) == "function" then hooksecurefunc(frame, "SetAuraInstanceInfo", NativeRefresh) end
+  for _, method in ipairs({"OnUnitAuraRemovedEvent", "OnUnitAuraUpdatedEvent", "OnNewTarget", "OnActiveStateChanged"}) do
+    if type(frame[method]) == "function" then hooksecurefunc(frame, method, NativeRefresh) end
+  end
   if frame.HookScript then frame:HookScript("OnShow", NativeRefresh); frame:HookScript("OnHide", NativeRefresh) end
   local cooldown = frame.Cooldown or frame.cooldown
   if cooldown then
@@ -79,6 +83,13 @@ function Private.CDMFrames()
   local frames = {}
   for _, name in ipairs(viewerNames) do
     local viewer = _G[name]
+
+    if viewer and hooksecurefunc and not observedViewers[viewer] then
+      observedViewers[viewer] = true
+      for _, method in ipairs({"OnUnitAura", "OnPlayerTargetChanged", "RefreshActiveFramesForTargetChange"}) do
+        if type(viewer[method]) == "function" then hooksecurefunc(viewer, method, NativeRefresh) end
+      end
+    end
     local pool = viewer and viewer.itemFramePool
     if pool and pool.EnumerateActive then
       for frame in pool:EnumerateActive() do
@@ -96,7 +107,7 @@ function Private.CDMCatalog()
   local provider = settings and settings.GetDataProvider and settings:GetDataProvider()
   provider = provider or _G.CooldownViewerDataProvider
   local layout
-  -- Rebuilding a dirty provider can write Blizzard's layout on our stack.
+
   if provider and provider.GetDisplayData and (not provider.IsDirty or not provider:IsDirty()) then
     local data = provider:GetDisplayData()
     layout = data and data.cooldownInfoByID
@@ -118,7 +129,7 @@ function Private.CDMCatalog()
             local c = Enum.CooldownViewerCategory
             displayed = placement == c.Essential or placement == c.Utility or placement == c.TrackedBuff or placement == c.TrackedBar
           elseif frames[id] then
-            -- Pool membership proves assignment even when an inactive buff is hidden.
+
             displayed = true
             local viewer = frames[id].viewerFrame
             placement = viewer and Number(viewer.cooldownViewerCategory)
@@ -191,12 +202,6 @@ function Private.CDMApplyItem(state, identity)
   end
 end
 
-local function CanConfirmMissing(id)
-  if C_Secrets and C_Secrets.ShouldSpellAuraBeSecret then return C_Secrets.ShouldSpellAuraBeSecret(id) == false end
-  if C_Secrets and C_Secrets.ShouldAurasBeSecret then return C_Secrets.ShouldAurasBeSecret() == false end
-  return InCombatLockdown and not InCombatLockdown() or false
-end
-
 local function ApplyAuraSource(state, unit, aura)
   state.cdmAuraFilter = "HELPFUL"
   if Readable(unit) and (unit == "player" or unit == "target") then state.cdmAuraUnit = unit end
@@ -212,7 +217,7 @@ local function ApplyAuraSource(state, unit, aura)
   end
 end
 
-function Private.CDMApplyAura(state, identity, info, frame, exactID, buffSpellIDs)
+local function ApplyCachedAura(state, identity, info, frame, exactID, buffSpellIDs)
   local aura, unit
   state.cdmAuraUnit, state.cdmAuraFilter, state.cdmAuraTotem = "player", "HELPFUL", false
   if frame then aura, unit = frame.auraDataCached, frame.auraDataUnit end
@@ -230,46 +235,11 @@ function Private.CDMApplyAura(state, identity, info, frame, exactID, buffSpellID
     end
   end
   if exactID and aura and not nativeMatches then aura, unit = nil, nil end
-  local confirmedMissing = false
-  if not aura and C_UnitAuras and C_UnitAuras.GetPlayerAuraBySpellID and (not frame or exactID) then
-    local ids, seen = {}, {}
-    local function Add(id)
-      id = Number(id)
-      if id and id > 0 and not seen[id] then seen[id] = true; ids[#ids + 1] = id end
-    end
-    Add(exactID or identity.spellID)
-    if buffSpellIDs then
-      for _, id in ipairs(buffSpellIDs) do Add(id) end
-    elseif not exactID then
-      for _, id in ipairs(info.linkedSpellIDs or {}) do Add(id) end
-      Add(info.spellID)
-    end
-    confirmedMissing = #ids > 0
-    for _, scanUnit in ipairs({"player", "target"}) do
-      local exists = scanUnit == "player" or (UnitExists and UnitExists(scanUnit))
-      if Readable(exists) and exists then
-        for _, id in ipairs(ids) do
-          local ok, result
-          if scanUnit == "player" then
-            ok, result = pcall(C_UnitAuras.GetPlayerAuraBySpellID, id)
-          elseif C_UnitAuras.GetUnitAuraBySpellID then
-            ok, result = pcall(C_UnitAuras.GetUnitAuraBySpellID, scanUnit, id)
-          end
-          if ok and Readable(result) then
-            if result then
-              -- Target queries can return another player's copy; CDM tracks ours.
-              local own = scanUnit == "player" or (Readable(result.sourceUnit) and result.sourceUnit == "player")
-              if own then aura, unit = result, scanUnit; break end
-              confirmedMissing = false
-            elseif not CanConfirmMissing(id) then confirmedMissing = false end
-          else confirmedMissing = false end
-        end
-      end
-      if aura then break end
-    end
-  end
+
+  local nativeAbsent = frame and Readable(frame.auraInstanceID) and frame.auraInstanceID == nil
+    and not frame.auraDataCached
   if not aura then
-    if confirmedMissing or (not exactID and frame and Readable(frame.auraInstanceID) and frame.auraInstanceID == nil) then state.auraActive = false end
+    if nativeAbsent then state.auraActive = false end
     local totem = frame and frame.totemData
     if totem then
       state.cdmAuraTotem = true
@@ -282,10 +252,12 @@ function Private.CDMApplyAura(state, identity, info, frame, exactID, buffSpellID
     return
   end
   state.auraActive = true
+  if Readable(aura.dispelName) and type(aura.dispelName) == "string" then state.cdmDispelName = aura.dispelName end
   ApplyAuraSource(state, unit, aura)
   if nativeMatches then
     local cooldown = frame.Cooldown or frame.cooldown
     if cooldown and cooldown.GetCountdownFontString then state.cdmCountdownSource = cooldown:GetCountdownFontString() end
+    if not state.cdmCountdownSource and frame.Bar then state.cdmCountdownSource = frame.Bar.Duration end
     local applications = frame.Applications
     local stacks = applications and (applications.Applications or applications)
     if not stacks or not stacks.GetText then stacks = frame.Icon and frame.Icon.Applications end
@@ -302,23 +274,40 @@ function Private.CDMApplyAura(state, identity, info, frame, exactID, buffSpellID
     end
   end
   state.stacks = Number(aura.applications)
-  local id = Number(aura.auraInstanceID)
-  local restricted = C_Secrets and C_Secrets.ShouldAurasBeSecret and C_Secrets.ShouldAurasBeSecret()
-  if restricted == nil then restricted = InCombatLockdown and InCombatLockdown() or false end
-  if not state.durationObject and not restricted and id and Readable(unit) and type(unit) == "string" and C_UnitAuras.GetAuraDuration then
-    local ok, duration = pcall(C_UnitAuras.GetAuraDuration, unit, id)
-    if ok and duration then
-      state.progressType = "durationObject"
-      state.durationObject = duration
-      state.value, state.total = nil, nil
-    end
-  end
   if not state.durationObject then
     local duration, expiration = Number(aura.duration), Number(aura.expirationTime)
     if duration and expiration then
       SetTimes(state, expiration - duration, duration, aura.timeMod)
       state.auraActive = duration == 0 or expiration > GetTime()
     end
+  end
+end
+
+function Private.CDMApplyAura(state, identity, info, frame, exactID, buffSpellIDs)
+  ApplyCachedAura(state, identity, info, frame, exactID, buffSpellIDs)
+
+  if frame then
+    local active = frame.isActive
+    if not Readable(active) then
+      state.auraActive = nil
+
+    elseif type(active) == "boolean" then
+
+      state.auraActive = active
+      if active and exactID then
+        local spellID = Number(frame.auraSpellID)
+          or (frame.auraDataCached and Number(frame.auraDataCached.spellId))
+
+        if spellID then state.auraActive = spellID == exactID
+        else state.auraActive = nil end
+      end
+    end
+  end
+  if state.auraActive == false then
+    state.progressType, state.value, state.total = "static", 1, 1
+    state.durationObject, state.duration, state.expirationTime, state.modRate = nil, nil, nil, nil
+    state.cdmCountdownSource, state.cdmStackSource, state.cdmTextRecord = nil, nil, nil
+    state.stacks, state.cdmDispelName = nil, nil
   end
 end
 
@@ -346,14 +335,17 @@ function Private.IsCDMBuffText(value, data)
     if source == 0 then return false elseif source > 0 then index = source end
   end
   index = index or (triggers.activeTriggerMode and triggers.activeTriggerMode > 0 and triggers.activeTriggerMode) or (#triggers == 1 and 1)
-  local trigger = index and triggers[index] and triggers[index].trigger
+  local entry = index and triggers[index]
+  local trigger = type(entry) == "table" and entry.trigger
   return trigger and trigger.type == "cdm" and trigger.event == "Blizzard CDM Buff" or false
 end
 
 function Private.CopyCDMCountdownText(destination, state, kind)
-  if kind == "caster" or kind == "dispel" then destination:SetText(""); return end
+  if kind == "caster" then destination:SetText(""); return end
+  if kind == "dispel" then destination:SetText(state and state.show and state.cdmDispelName or ""); return end
   if kind == "s" then kind = "bs" end
   local source = state and state.show and (kind == "bs" and state.cdmStackSource or kind ~= "bs" and state.cdmCountdownSource)
+  if source and source.IsForbidden and source:IsForbidden() then source = nil end
   if source and kind == "bs" and source.IsShown then
     local shown = source:IsShown()
     if Readable(shown) and not shown then destination:SetText(""); return end

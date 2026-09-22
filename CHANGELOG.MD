@@ -1,6 +1,10 @@
 # Changelog
 
 ## Versions
+## 0.1.160
+- Blizzard Cooldown Manager trigger fixes.
+- No longer use AuraContainer at all.
+
 ## 0.1.148
 - Added new Trigger type "Blizzard Cooldown Manager"
 - Added option to Hide Blizzards CDM.
