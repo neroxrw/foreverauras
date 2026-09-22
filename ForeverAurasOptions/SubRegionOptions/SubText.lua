@@ -575,58 +575,6 @@ local function createOptions(parentData, data, index, subIndex)
                           "https://github.com/WeakAuras/WeakAuras2/wiki/Custom-Code-Blocks#custom-text",
                           4,  hideCustomTextOption, {"customText"}, false)
 
-  local function NativeHidden()
-    return not OptionsPrivate.Private.CDMAuraProgress.IsConfigured(parentData)
-      or not OptionsPrivate.Private.ParseCDMText(data.text_text)
-  end
-  local previousRotateHidden = options.rotateText.hidden
-  options.rotateText.hidden = function() return not NativeHidden() or (type(previousRotateHidden) == "function" and previousRotateHidden()) or previousRotateHidden == true end
-  local function NativeKind()
-    if data.cdmTextSource and data.cdmTextSource ~= "auto" then return data.cdmTextSource end
-    local kind = OptionsPrivate.Private.ParseCDMText(data.text_text)
-    if kind == "caster" or kind == "dispel" then return kind end
-    return (kind == "s" or kind == "bs") and "stacks" or "duration"
-  end
-  local function NativeOption(key, option, default, kind)
-    option.width = option.width or ForeverAuras.normalWidth
-    option.hidden = function() return NativeHidden() or (kind and NativeKind() ~= kind) end
-    option.get = function()
-      local value = data[key]; if value == nil then value = default end
-      if option.type == "color" then return unpack(value) end
-      return value
-    end
-    option.set = function(_, value, g, b, a)
-      data[key] = option.type == "color" and {value, g, b, a or 1} or value
-      ForeverAuras.Add(parentData); ForeverAuras.ClearAndUpdateOptions(parentData.id)
-    end
-    options[key] = option
-  end
-  NativeOption("cdmTextSource", {type = "select", name = "Blizzard aura text", order = 12,
-    values = {auto = "From text code", duration = "Duration", stacks = "Stacks", caster = "Caster", dispel = "Dispel type"}}, "auto")
-  NativeOption("cdmTimeFormat", {type = "select", name = "Time format", order = 12.1,
-    values = {blizzard = "Blizzard", clock = "Minutes:seconds", seconds = "Seconds"}}, "blizzard", "duration")
-  NativeOption("cdmPrecision", {type = "range", name = "Decimal places", order = 12.2, min = 0, max = 3, step = 1}, 1, "duration")
-  NativeOption("cdmDecimalThreshold", {type = "range", name = "Decimals below (seconds)", order = 12.3, min = 0, softMax = 60, step = 1}, 3, "duration")
-  NativeOption("cdmRoundUp", {type = "toggle", name = "Round up whole seconds", order = 12.4}, true, "duration")
-  NativeOption("cdmDurationColor", {type = "toggle", name = "Colour by remaining time", order = 12.5}, false, "duration")
-  NativeOption("cdmColorThreshold", {type = "range", name = "Colour below (seconds)", order = 12.6, min = 0.1, softMax = 60, step = 0.1}, 3, "duration")
-  NativeOption("cdmExpiringColor", {type = "color", name = "Expiring colour", order = 12.7, hasAlpha = true}, {1, 0.2, 0.2, 1}, "duration")
-  NativeOption("cdmStackFormat", {type = "select", name = "Stack format", order = 12.75,
-    values = {number = "Number", prefix = "×3", suffix = "3×", padded = "03"}}, "number", "stacks")
-  NativeOption("cdmStackDigits", {type = "range", name = "Minimum digits (03)", order = 12.76, min = 1, max = 5, step = 1}, 2, "stacks")
-  NativeOption("cdmShowOneStack", {type = "toggle", name = "Show a single stack", order = 12.8}, false, "stacks")
-  NativeOption("cdmCasterRealm", {type = "toggle", name = "Include caster realm", order = 12.9}, false, "caster")
-  NativeOption("cdmCasterClassColor", {type = "toggle", name = "Caster class colour", order = 12.91}, false, "caster")
-  for _, key in ipairs({"cdmPrecision", "cdmDecimalThreshold", "cdmRoundUp"}) do
-    local previousHidden = options[key].hidden
-    options[key].hidden = function() return previousHidden() or not data.cdmTimeFormat or data.cdmTimeFormat == "blizzard" end
-  end
-  for _, key in ipairs({"cdmColorThreshold", "cdmExpiringColor"}) do
-    local previousHidden = options[key].hidden
-    options[key].hidden = function() return previousHidden() or not data.cdmDurationColor end
-  end
-  local stackDigitsHidden = options.cdmStackDigits.hidden
-  options.cdmStackDigits.hidden = function() return stackDigitsHidden() or data.cdmStackFormat ~= "padded" end
   -- Add Text Format Options
   local hidden = function()
     return OptionsPrivate.IsCollapsed("format_option", "text", "text_text" .. index, true)
@@ -638,7 +586,7 @@ local function createOptions(parentData, data, index, subIndex)
 
   local order = 12
   local function addOption(key, option)
-    if OptionsPrivate.Private.IsCDMBuffText(data.text_text, parentData) then return end
+    if data and OptionsPrivate.Private.IsCDMBuffText(data.text_text, parentData) then return end
     option.order = order
     order = order + 0.01
     if option.reloadOptions then

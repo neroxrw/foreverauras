@@ -2,6 +2,10 @@
 
 ## Versions
 ## 0.1.148
+- Blizzard Cooldown Manager trigger fixes.
+- No longer use AuraContainer at all.
+
+## 0.1.148
 - Added new Trigger type "Blizzard Cooldown Manager"
 - Added option to Hide Blizzards CDM.
 - Note, the Blizzard CDM needs to be enabled for the trigger to work. If using these triggers in your Aura, the intended design is to enable the Hide Blizzard CDM option.

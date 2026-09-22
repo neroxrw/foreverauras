@@ -29,7 +29,7 @@ function OptionsPrivate.AddCooldownViewerOptions(options, data, triggernum)
   trigger.cdmSpells = trigger.cdmSpells or {multi = {}}
   trigger.cdmSpells.multi = trigger.cdmSpells.multi or {}
   local selected = trigger.cdmSpells.multi
-  if trigger.cdmSpell ~= nil then
+  if trigger.cdmSpell ~= nil and trigger.cdmSelection ~= "spell" then
     local resolved = Private.ResolveCDMSpell(trigger, "OPTIONS")
     for _, id in ipairs(resolved) do selected[tostring(id)] = true end
     if trigger.event == "Blizzard Cooldown Manager" and #resolved == 1 then
@@ -77,6 +77,13 @@ function OptionsPrivate.AddCooldownViewerOptions(options, data, triggernum)
   Add("includeGCD", {type = "toggle", name = "Show global cooldown", width = "full", hidden = function() return trigger.cdmSource == "buff" or trigger.event == "Blizzard CDM Item" or not view.extra end, get = function() return trigger.use_cdmShowGCD or false end, set = function(_, value) Save("use_cdmShowGCD", value) end})
   Add("hideGCDText", {type = "toggle", name = "Hide global cooldown text", width = "full", hidden = function() return trigger.cdmSource == "buff" or trigger.event == "Blizzard CDM Item" or not view.extra end, desc = "Hides the icon cooldown countdown numbers during a global cooldown. Custom text such as %p is configured separately.", get = function() return trigger.cdmHideGCDText ~= false end, set = function(_, value) Save("cdmHideGCDText", value) end})
 
+  Add("spell", {type = "input", name = "Spell name or ID", width = "full", hidden = function() return trigger.event == "Blizzard CDM Item" end,
+    desc = "When filled, this takes priority over the checklist. Clear it to use checked entries. A name creates one display across aura ranks, or uses the highest available cooldown rank. A spell ID matches that specific spell. The spell must be assigned in Blizzard's CDM.",
+    get = function() return trigger.cdmSpell or "" end,
+    set = function(_, value)
+      trigger.cdmSelection, trigger.cdmExact = "spell", nil
+      Save("cdmSpell", value:match("^%s*(.-)%s*$"))
+    end})
   Add("filters", {type = "header", name = "Blizzard CDM Filters"})
   Add("search", {type = "input", name = "Search", width = "full", get = function() return view.search or "" end,
     set = function(_, value) view.search = value; Refresh() end})

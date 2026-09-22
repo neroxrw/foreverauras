@@ -10,6 +10,26 @@ local ForeverAuras = ForeverAuras
 local L = ForeverAuras.L
 local SharedMedia = LibStub("LibSharedMedia-3.0")
 
+-- Native aura descendants can protect their ancestor control points and group.
+-- Keep the existing hierarchy intact until it is legal to rebuild it.
+local pendingProtectedGroups = setmetatable({}, {__mode = "k"})
+local function DeferProtectedLayout(region, frame)
+  if InCombatLockdown() and ((region.IsProtected and region:IsProtected())
+    or (frame and frame.IsProtected and frame:IsProtected())) then
+    pendingProtectedGroups[region] = true
+    return true
+  end
+end
+local protectedLayoutEvents = CreateFrame("Frame")
+protectedLayoutEvents:RegisterEvent("PLAYER_REGEN_ENABLED")
+protectedLayoutEvents:SetScript("OnEvent", function()
+  if InCombatLockdown() then return end
+  for region in pairs(pendingProtectedGroups) do
+    pendingProtectedGroups[region] = nil
+    region:ReloadControlledChildren()
+  end
+end)
+
 local default = {
   controlledChildren = {},
   border = false,
@@ -1167,6 +1187,7 @@ local function modify(parent, region, data)
   end
 
   function region:ReloadControlledChildren()
+    if DeferProtectedLayout(self) then return end
     -- 'forgets' about regions it controls and starts from scratch. Mostly useful when Add()ing the group
     if not self:IsSuspended() then
       Private.StartProfileSystem("dynamicgroup")
@@ -1206,6 +1227,7 @@ local function modify(parent, region, data)
   end
 
   function region:AddChild(childID, cloneID)
+    if DeferProtectedLayout(self) then return end
     -- adds regionData to the store.
     -- this is useful mostly for when clones are created which we didn't know about last time Reload was called
     cloneID = cloneID or ""
@@ -1253,6 +1275,7 @@ local function modify(parent, region, data)
     -- so that we don't step on our own feet.
     local regionData = getRegionData(childID, cloneID)
     if not regionData then return end
+    if DeferProtectedLayout(self, regionData.controlPoint) then return end
     releaseRegionData(regionData)
     self.updatedChildren[regionData] = false
     clearCache(self.sortStates, childID, cloneID)
@@ -1322,6 +1345,7 @@ local function modify(parent, region, data)
 
   local animate = data.animate
   function region:PositionChildren()
+    if DeferProtectedLayout(self) then return end
     -- Repositions active children according to their index
     -- Positioning is based on grow information from the data
     if not self:IsSuspended() then
@@ -1531,6 +1555,7 @@ local function modify(parent, region, data)
 
 
   function region:Resize()
+    if DeferProtectedLayout(self) then return end
     -- Resizes the dynamic group, for background and border purposes
     if not self:IsSuspended() then
       self.needToResize = false

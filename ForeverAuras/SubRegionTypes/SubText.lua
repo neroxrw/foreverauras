@@ -516,6 +516,12 @@ local function modify(parent, region, parentData, data, first)
 
   local textDegrees = data.rotateText == "LEFT" and 90 or data.rotateText == "RIGHT" and -90 or 0;
 
+  -- Native text follows the same configured anchor without reading a FontString's live points.
+  region.AnchorNativeText = function(self, nativeText)
+    parent:AnchorSubRegion(nativeText, "point", data.anchor_point, selfPoint,
+      self.text_anchorXOffset or 0, self.text_anchorYOffset or 0)
+  end
+
   region.Anchor = function(self)
     local xo, yo = getRotateOffset(text, Private.IsCDMBuffText(region.text_text, parentData) and 0 or textDegrees, selfPoint)
     parent:AnchorSubRegion(text, "point", data.anchor_point, selfPoint,
