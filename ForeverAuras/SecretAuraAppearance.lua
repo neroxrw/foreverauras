@@ -4,10 +4,10 @@ local _, Private = ...
 local Display = Private.BlizzardAuraDisplay
 local Media = LibStub("LibSharedMedia-3.0")
 
-Display.supportedElements = {subbackground = true, subforeground = true, subtext = true, subborder = true, subglow = true, subtexture = true}
+Display.supportedElements = {subbackground = true, subforeground = true, subtext = true, subborder = true, subglow = true, subtexture = true, subcdmdispel = true}
 
 function Display.IsDetachedElement(data, element)
-  return Display.HasTrigger(data) and element and element.secretAuraDetached == true
+  return Display.Enabled(data) and element and element.secretAuraDetached == true
     and (element.type == "subtext" or element.type == "subtexture")
 end
 
@@ -17,8 +17,8 @@ function Display.IsDetachedProperty(data, property)
 end
 
 function Display.CanAddElement(data, kind)
-  if kind == "subcdmdispel" then return Private.CDMAuraProgress.IsConfigured(data) end
-  if not Display.HasTrigger(data) then return true end
+  if kind == "subcdmdispel" then return Display.Enabled(data) or Private.CDMAuraProgress.IsConfigured(data) end
+  if not Display.Enabled(data) then return true end
   if not Display.supportedElements[kind] then return false end
   if kind == "subborder" then
     for _, element in ipairs(data.subRegions or {}) do
@@ -327,6 +327,23 @@ function Display.StyleAppearance(native, data, ElementFrame, StyleText, StyleGlo
         StyleGlow(entry, {width = width, height = height, blizzardAuraDisplay = {glow = element.glow, glowType = element.glowType == "buttonOverlay" and "pulse" or "proc",
           useGlowColor = element.useGlowColor, glowColor = element.glowColor, glowScale = element.glowScale, glowDuration = element.glowDuration,
           glowX = element.glowXOffset, glowY = element.glowYOffset}})
+      elseif element.type == "subcdmdispel" and element.dispelVisible ~= false then
+        entry.texture = entry.texture or frame:CreateTexture(nil, "OVERLAY")
+        local texture = entry.texture
+        texture:ClearAllPoints()
+        if element.anchor_mode == "area" then
+          local target = Area(native, data, element.anchor_area)
+          texture:SetAllPoints(target)
+        else
+          local point = element.anchor_point or "CENTER"
+          local target = button
+          if point:sub(1, 6) == "INNER_" then target = native.inner; point = point:sub(7)
+          elseif point:sub(1, 6) == "OUTER_" then target = native.outer; point = point:sub(7) end
+          texture:SetSize(element.width or 24, element.height or 24)
+          texture:SetPoint(element.self_point or "CENTER", target, point, element.xOffset or 0, element.yOffset or 0)
+        end
+        button:AddDispelTypeTexture(texture, {showWhenHelpful = true, showWhenHarmful = true,
+          style = Enum.CustomAuraButtonDispelTypeTextureStyle[element.dispelStyle or "Icon"]})
       elseif element.type == "subtexture" and element.textureVisible ~= false then
         entry.texture = entry.texture or frame:CreateTexture(nil, "ARTWORK")
         local texture = entry.texture

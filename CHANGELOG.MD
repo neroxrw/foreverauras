@@ -1,6 +1,9 @@
 # Changelog
 
 ## Versions
+## 0.1.180
+- Improved Blizzard Aura integration
+
 ## 0.1.168
 - Minor fixes for CDM
 

@@ -37,7 +37,7 @@ local function GetOptions(data, triggernum)
   end
   local options = {
     help = {type = "description", order = 2, width = "full", fontSize = "small",
-      name = "Trigger Always Active. Blizzard Controls Display.\n\nFor secret auras, Exact Spell IDs can filter friendly buffs. Blizzard also supports filtering enemy debuffs by exact ID. These filters control the display, not readable present/missing checks.\n\nYou can also enter IDs for friendly debuffs or enemy buffs and assign sounds in Actions, but those auras will not display."},
+      name = "Trigger Always Active. Blizzard Controls Display.\n\nDebuff spell ID filtering will cause the display not to show. However sounds will work on filtered spell ID debuffs."},
     unit = {
       type = "select", name = "Unit", order = 3, width = width, values = display.units,
       get = function() return trigger.unit end, set = function(_, value) Save("unit", value) end,
@@ -147,7 +147,7 @@ local function GetOptions(data, triggernum)
   end
   options.useSpellIDs = {
     type = "toggle", name = "Exact Spell ID(s)", order = 4.5, width = "full",
-    desc = "Only show the listed spells. Untick to show all auras matching the other filters. Blizzard's spell-ID restrictions still apply.",
+    desc = function() return trigger.debuffType == "HARMFUL" and "Blizzard may reject spell-ID-filtered debuffs for display. These IDs can still register sounds configured in Actions." or "Only show the listed spells. Blizzard's spell-ID restrictions still apply." end,
     get = function() return display.UsesSpellIDs(trigger) end,
     set = function(_, value) Save("secretUseSpellIDs", value) end,
   }
@@ -235,8 +235,25 @@ local function GetOptions(data, triggernum)
   options.isFromPlayerOrPlayerPet.width = width
   options.nativePLAYER.width = width
   options.nativePLAYER.order = options.isFromPlayerOrPlayerPet.order + 0.01
+  for _, field in ipairs(display.processingOptions) do options[field[1]] = nil end
+  for _, fields in ipairs({display.nativeFilters, display.booleanFilters}) do
+    for _, field in ipairs(fields) do
+      local key = field[1]
+      local option = options[fields == display.nativeFilters and "native" .. key or key]
+      if option then
+        local hidden = option.hidden
+        option.hidden = function()
+          return not display.FilterApplies(key, trigger) or (type(hidden) == "function" and hidden()) or hidden == true
+        end
+      end
+    end
+  end
   OptionsPrivate.commonOptions.AddCommonTriggerOptions(options, data, triggernum, true)
   OptionsPrivate.AuraEditor.AddOptions(options, data, triggernum)
+  local spellDescription = options.spellIDs.desc
+  options.spellIDs.desc = function()
+    return trigger.debuffType == "HARMFUL" and "Enter spell IDs for Blizzard to filter. If Blizzard cannot display those debuffs, sounds can still be registered in Actions." or spellDescription
+  end
   OptionsPrivate.AddTriggerMetaFunctions(options, data, triggernum)
   return {["trigger." .. triggernum .. ".secretAura"] = options}
 end

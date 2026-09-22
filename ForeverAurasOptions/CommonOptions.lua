@@ -2019,7 +2019,7 @@ local function AddCommonTriggerOptions(options, data, triggernum, doubleWidth)
 
   local trigger_types = {};
   for type, triggerSystem in pairs(OptionsPrivate.Private.triggerTypes) do
-    if type ~= "secretAura" then trigger_types[type] = triggerSystem.GetName(type) end
+    trigger_types[type] = triggerSystem.GetName(type)
   end
 
   options.type = {
@@ -2031,12 +2031,16 @@ local function AddCommonTriggerOptions(options, data, triggernum, doubleWidth)
     values = trigger_types,
     sorting = OptionsPrivate.Private.SortOrderForValues(trigger_types),
     get = function()
-      return trigger.type == "secretAura" and "aura2" or trigger.type
+      return trigger.type
     end,
     set = function(info, v)
       local wasSecret = trigger.type == "secretAura"
+      if (trigger.type == "aura2" or trigger.type == "secretAura") and (v == "aura2" or v == "secretAura") then
+        trigger.auraTracking = v == "secretAura" and "native" or "readable"
+        OptionsPrivate.AuraEditor.Resolve(data, triggernum)
+      end
       trigger.type = v;
-      trigger.auraTracking = v == "aura2" and "native" or nil
+      trigger.auraTracking = v == "secretAura" and "native" or v == "aura2" and "readable" or nil
       if data.blizzardAuraDisplay then data.blizzardAuraDisplay.enabled = nil end
       if v == "secretAura" then OptionsPrivate.Private.BlizzardAuraDisplay.Migrate(data) end
       local prototype = trigger.event and OptionsPrivate.Private.event_prototypes[trigger.event];

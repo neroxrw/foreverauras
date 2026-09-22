@@ -376,6 +376,15 @@ Private.triggerTypesOptions = {};
 --  spellId: spellId of the buff/debuff, used to set the tooltip
 
 local triggerState = {}
+function Private.GetActiveTriggerFor(id)
+  local state = triggerState[id]
+  if not state then return end
+  if state.activeTriggerMode and state.activeTriggerMode > 0 then return state.activeTriggerMode end
+  for index = 1, state.numTriggers or 0 do
+    if state.triggers and state.triggers[index] then return index end
+  end
+end
+
 
 -- Fallback states
 local fallbacksStates = {};
@@ -3170,7 +3179,7 @@ function pAdd(data, simpleChange)
     print("Improper? arguments to ForeverAuras.Add - uid is assigned to a id. Uid:", data.uid, "assigned too:", UIDtoID[data.uid], "assigning now to", data.id)
   end
 
-  if not Private.BlizzardAuraDisplay.HasTrigger(data) then
+  if not Private.BlizzardAuraDisplay.Enabled(data) then
     Private.AuraWarnings.UpdateWarning(data.uid, "blizzard_aura_display", nil)
     Private.AuraWarnings.UpdateWarning(data.uid, "blizzard_aura_sound", nil)
   end
@@ -3889,7 +3898,7 @@ function Private.PerformActions(data, when, region)
     Private.BlizzardAuraDisplay.HideUnitGlows(region)
   end
   -- Native aura sounds are registered with Blizzard, never played by the trigger gate.
-  if Private.BlizzardAuraDisplay.HasTrigger(data) then return end
+  local nativeAura = Private.BlizzardAuraDisplay.Enabled(data)
   if (paused or ForeverAuras.IsOptionsOpen()) then
     return;
   end;
@@ -3905,10 +3914,12 @@ function Private.PerformActions(data, when, region)
     return;
   end
 
-  if(actions.do_message and actions.message_type and actions.message) then
-    local customFunc = Private.customActionsFunctions[data.id][when .. "_message"];
+  if(not nativeAura and actions.do_message and actions.message_type and actions.message) then
+    local customFunc = not nativeAura and Private.customActionsFunctions[data.id][when .. "_message"];
     Private.HandleChatAction(actions.message_type, actions.message, actions.message_dest, actions.message_dest_isunit, actions.message_channel, actions.r, actions.g, actions.b, region, {customFunc = customFunc}, when, formatters);
   end
+
+  if nativeAura then return end
 
   if (actions.stop_sound) then
     if (region.SoundStop) then
@@ -4880,6 +4891,7 @@ end
 local function ApplyStateToRegion(id, cloneId, region, parent)
   -- Force custom text function to be run again
   region.values.customTextUpdated = false
+  Private.BlizzardAuraDisplay.SyncProgressSource(region, ForeverAuras.GetData(id))
   region:Update();
 
   region.subRegionEvents:Notify("Update", region.state, region.states)

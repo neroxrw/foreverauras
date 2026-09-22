@@ -72,7 +72,7 @@ function OptionsPrivate.GetSecretAuraSettings(data)
   end
   args.growth = {
     type = "select", name = "Icon growth direction", order = 3.1, disabled = Disabled,
-    values = {RIGHT = "Right", LEFT = "Left", UP = "Up", DOWN = "Down"},
+    values = {RIGHT = "Right", LEFT = "Left", UP = "Up", DOWN = "Down", CENTER_HORIZONTAL = "Centered Horizontal", CENTER_VERTICAL = "Centered Vertical"},
     get = function() return Settings().growth or "RIGHT" end,
     set = function(_, value) Save("growth", value) end,
   }
@@ -112,7 +112,7 @@ end
 -- Keep the standard editor and its getters/setters; restrict only unsupported native features.
 function OptionsPrivate.PrepareSecretDisplayOptions(data, groups)
   local Display = OptionsPrivate.Private.BlizzardAuraDisplay
-  if not Display.HasTrigger(data) then return end
+  if not Display.Enabled(data) then return end
   groups.secretAura = OptionsPrivate.GetSecretAuraSettings(data)
   groups.progressOptions = nil
   local unsupported = {
@@ -177,12 +177,17 @@ end
 
 function OptionsPrivate.PrepareSecretActionOptions(data, action)
   local Display = OptionsPrivate.Private.BlizzardAuraDisplay
-  if not Display.HasTrigger(data) then return end
+  if not Display.Enabled(data) then return end
   local supported = {header = true, do_sound = true, sound = true, sound_channel = true, sound_path = true, hide_all_glows = true}
   for key, option in pairs(action.args) do
     local when, field = key:match("^(%a+)_(.+)$")
     if (when == "start" or when == "finish") and option.type ~= "header" then
-      if not supported[field] then
+      if field == "do_message" or field:match("^message") then
+        option.disabled = true
+        option.desc = "Blizzard controls aura visibility. Use a condition from another trigger to send chat messages."
+      elseif field == "stop_sound" or field == "do_sound_fade" or field:match("^stop_sound_fade") then
+        option.hidden = true
+      elseif not supported[field] then
         -- Leave active toggles usable so imported settings can be switched off.
         option.disabled = function() return option.type ~= "toggle" or not (data.actions[when] or {})[field] end
         option.desc = "Not available for secret aura On Show/On Hide. Sound files are supported; live TTS and custom callbacks are not."

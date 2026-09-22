@@ -52,50 +52,23 @@ function Editor.AddOptions(options, data, triggernum)
   local trigger = data.triggers[triggernum].trigger
   local native = trigger.type == "secretAura"
   local function Save() OptionsPrivate.SaveAuraTrigger(data, triggernum); OptionsPrivate.QueueOptionsRefresh(data.id) end
-  options.auraTracking = {
-    type = "select", name = "Tracking", order = 1.2, width = "full",
-    values = {readable = "Legacy Aura", native = "Blizzard Aura"},
-    sorting = {"native", "readable"},
-    desc = "Legacy Aura reads aura data for conditions, missing checks and clones. Blizzard Aura uses Blizzard-controlled displays and native filters. Your selection only changes here.",
-    get = function() return Editor.Mode(trigger) end,
-    set = function(_, value) trigger.auraTracking = value; Save() end,
-  }
   if native then
     options.help.fontSize = "small"
   else
     options.auraCapabilities = {
       type = "description", order = 1.3, width = "full", fontSize = "small",
-      name = "Legacy Auras rarely function in combat as most are Blizzard-controlled.\n\nUse Exact Spell ID(s) to track readable auras during restrictions. An ID entered under Names still uses name matching. Secret auras cannot be checked reliably.",
+      name = "Legacy Auras rarely function in combat as most are Blizzard-controlled.",
     }
   end
   local auraType = options.debuffType
-  auraType.values = function()
-    local values
-    if native then
-      values = CopyTable(auraTypes)
-      values.BOTH = nil
-    else
-      values = {HELPFUL = "Buff", HARMFUL = "Debuff", BOTH = "Buff or Debuff"}
-    end
-    local selected = trigger.processedAuraType
-    if native and selected and selected ~= "any" and classificationFilters[selected] ~= trigger.debuffType then
-      values[selected .. ":" .. trigger.debuffType] = selected .. " (" .. trigger.debuffType .. " filter)"
-    end
-    return values
-  end
-  auraType.sorting = nil
-  auraType.get = function()
-    local selected = trigger.processedAuraType
-    if native and selected and selected ~= "any" then
-      return classificationFilters[selected] == trigger.debuffType and selected or selected .. ":" .. trigger.debuffType
-    end
-    return trigger.debuffType
-  end
+  auraType.values = native and {HELPFUL = "Buff", HARMFUL = "Debuff"} or {HELPFUL = "Buff", HARMFUL = "Debuff", BOTH = "Buff or Debuff"}
+  auraType.sorting = native and {"HELPFUL", "HARMFUL"} or {"HELPFUL", "HARMFUL", "BOTH"}
+  auraType.get = function() return trigger.debuffType end
   auraType.set = function(_, value)
-    if not auraType.values()[value] then return end
-    trigger.processedAuraType = classificationFilters[value] and value or "any"
-    trigger.debuffType = classificationFilters[value] or value
-    if trigger.sortMethod == "UnitFrameDebuff" and value ~= "Debuff" and value ~= "Dispel" then trigger.sortMethod = "Default" end
+    if not auraType.values[value] then return end
+    trigger.processedAuraType = "any"
+    trigger.debuffType = value
+    if trigger.sortMethod == "UnitFrameDebuff" then trigger.sortMethod = "Default" end
     Save()
   end
   if native then

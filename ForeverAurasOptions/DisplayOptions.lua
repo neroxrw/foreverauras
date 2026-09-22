@@ -27,7 +27,7 @@ local function AddSubRegion(data, subRegionName, detached)
         local subRegionData = type(default) == "function" and default(data.regionType) or CopyTable(default)
         subRegionData.type = subRegionName
         if detached then subRegionData.secretAuraDetached = true end
-        if OptionsPrivate.Private.BlizzardAuraDisplay.HasTrigger(data) then
+        if OptionsPrivate.Private.BlizzardAuraDisplay.Enabled(data) then
           if subRegionName == "subglow" then subRegionData.glowType = "Proc"
           elseif subRegionName == "subtext" then subRegionData.text_text = "Text" end
         end
@@ -37,7 +37,7 @@ local function AddSubRegion(data, subRegionName, detached)
       end
     end
   end
-  if OptionsPrivate.Private.BlizzardAuraDisplay.HasTrigger(data) then
+  if OptionsPrivate.Private.BlizzardAuraDisplay.Enabled(data) then
     OptionsPrivate.QueueOptionsRefresh(data.id)
   else
     ForeverAuras.ClearAndUpdateOptions(data.id)
@@ -78,7 +78,7 @@ local function AddOptionsForSupportedSubRegion(regionOption, data, supported)
       order = order + 1
     end
   end
-  if OptionsPrivate.Private.BlizzardAuraDisplay.HasTrigger(data) then
+  if OptionsPrivate.Private.BlizzardAuraDisplay.Enabled(data) then
     for _, kind in ipairs({"subtext", "subtexture"}) do
       if supported[kind] then
         result[kind .. "Detached"] = {

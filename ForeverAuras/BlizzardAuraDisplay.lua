@@ -27,16 +27,28 @@ Display.booleanFilters = {
   {"nameplateShowPersonal", "Marked for personal debuff display", "Auras Blizzard marks for its personal-debuff display on nameplates."},
 }
 
--- One native display supplies presentation; other triggers use the normal combiner.
-function Display.GetTrigger(data)
-  local found
-  for _, entry in ipairs(data and data.triggers or {}) do
-    if type(entry) == "table" and entry.trigger and entry.trigger.type == "secretAura" then
-      if found then return nil end
-      found = entry.trigger
+function Display.GetTrigger(data, displayFilters)
+  if not data or type(data.triggers) ~= "table" then return end
+  local source = data.progressSource and data.progressSource[1] or -1
+  if source == 0 then return end
+  if source < 0 then source = data.triggers.activeTriggerMode or -1 end
+  if source < 0 then source = (Private.GetActiveTriggerFor and Private.GetActiveTriggerFor(data.id)) or 1 end
+  local entry = data.triggers[source]
+  local trigger = type(entry) == "table" and entry.trigger
+  if trigger and trigger.type == "secretAura" then
+    if displayFilters then
+      trigger = CopyTable(trigger)
+      trigger.processedAuraType = nil
+      if trigger.sortMethod == "UnitFrameDebuff" then trigger.sortMethod = "Default" end
+      for _, field in ipairs(Display.processingOptions) do trigger[field[1]] = nil end
     end
+    if trigger.processedAuraType or trigger.sortMethod == "UnitFrameDebuff" then
+      trigger = CopyTable(trigger)
+      trigger.processedAuraType = nil
+      if trigger.sortMethod == "UnitFrameDebuff" then trigger.sortMethod = "Default" end
+    end
+    return trigger
   end
-  return found
 end
 
 function Display.HasTrigger(data)
@@ -68,11 +80,17 @@ Display.nativeFilters = {
   {"DISPELLABLE", "Dispellable", "Dispellable regardless of your or your raid's current abilities."},
 }
 
+function Display.FilterApplies(key, trigger)
+  local buffOnly = {CANCELABLE=true, EXTERNAL_DEFENSIVE=true, BIG_DEFENSIVE=true, IMPORTANT=true, isStealable=true}
+  local debuffOnly = {CROWD_CONTROL=true, isPriorityAura=true, isBossAura=true, isRoleAura=true, isBossOrRoleAura=true}
+  return not (buffOnly[key] and trigger.debuffType ~= "HELPFUL") and not (debuffOnly[key] and trigger.debuffType ~= "HARMFUL")
+end
+
 local function FilterString(trigger)
   local filters = {trigger.debuffType}
   for _, field in ipairs(Display.nativeFilters) do
     local value = (trigger.nativeFilters or {})[field[1]]
-    if value ~= nil then filters[#filters + 1] = (value and "" or "!") .. field[1] end
+    if value ~= nil and Display.FilterApplies(field[1], trigger) then filters[#filters + 1] = (value and "" or "!") .. field[1] end
   end
   if trigger.includeNameplateOnly and trigger.unit == "nameplate" then filters[#filters + 1] = "INCLUDE_NAME_PLATE_ONLY" end
   return table.concat(filters, "|")
@@ -232,11 +250,11 @@ end
 
 function Display.Validate(data)
   if not Display.Eligible(data) then
-    return "Requires an Icon, Progress Bar or Text with one Secret Auras trigger. Other trigger types can be combined with it."
+    return "Select a Blizzard Aura trigger as the progress source of an Icon, Progress Bar or Text."
   end
   local appearanceProblem = Display.ValidateAppearance(Display.PrepareConditionAppearance(data))
   if appearanceProblem then return appearanceProblem end
-  local trigger = Display.GetTrigger(data)
+  local trigger = Display.GetTrigger(data, true)
   if Display.UsesSpellIDs(trigger) and #(trigger.auraspellids or {}) == 0 then return "Enter an exact spell ID, or untick Exact Spell IDs to show all matching auras." end
   if Display.UsesExcludedSpellIDs(trigger) and #(trigger.excludedAuraSpellIDs or {}) == 0 then return "Enter an ignored spell ID, or untick Ignored Exact Spell IDs." end
   if not Display.units[trigger.unit] or (trigger.debuffType ~= "HELPFUL" and trigger.debuffType ~= "HARMFUL") then
@@ -291,8 +309,8 @@ function Display.Validate(data)
   for when, action in pairs(data.actions or {}) do
     if when ~= "init" then
       for key, value in pairs(action) do
-        if key:match("^do_") and key ~= "do_sound" and value then
-          return "Secret Aura trigger detected. Only Play Sound and Hide Glows are supported in On Show/On Hide. Custom Init is available."
+        if key:match("^do_") and key ~= "do_sound" and key ~= "do_message" and value then
+          return "Secret Aura trigger detected. Only Chat Message, Play Sound and Hide Glows are supported in On Show/On Hide. Custom Init is available."
         end
       end
       if action.stop_sound or (action.do_sound and action.sound == " KitID") then
@@ -682,16 +700,13 @@ local function CandidateFilters(data)
   if Display.UsesSpellIDs(trigger) then filters.includeSpellIDs = SpellIDMap(trigger.auraspellids) end
   if Display.UsesExcludedSpellIDs(trigger) then filters.excludeSpellIDs = SpellIDMap(trigger.excludedAuraSpellIDs) end
   for _, field in ipairs(Display.booleanFilters) do
-    if not IsNameplateFilter(field[1]) or trigger.unit == "nameplate" then filters[field[1]] = trigger[field[1]] end
+    if Display.FilterApplies(field[1], trigger) and (not IsNameplateFilter(field[1]) or trigger.unit == "nameplate") then filters[field[1]] = trigger[field[1]] end
   end
   for _, field in ipairs({"includeDispelTypes", "excludeDispelTypes"}) do
     if next(trigger[field] or {}) then
       filters[field] = {}
       for name, value in pairs(trigger[field]) do filters[field][name] = value end
     end
-  end
-  if trigger.processedAuraType and trigger.processedAuraType ~= "any" then
-    filters.processedAuraType = AuraUtil.AuraUpdateChangedType[trigger.processedAuraType]
   end
   return filters
 end
@@ -784,13 +799,7 @@ local function RefreshPreview(region)
 end
 
 local function ConfigureProcessing(container, trigger)
-  if trigger.processedAuraType and trigger.processedAuraType ~= "any" then
-    local options = {}
-    for _, field in ipairs(Display.processingOptions) do options[field[1]] = trigger[field[1]] or false end
-    container:SetAuraProcessingPolicy(CustomAuraContainerAuraProcessingPolicy.ProcessAura, options)
-  else
-    container:SetAuraProcessingPolicy(CustomAuraContainerAuraProcessingPolicy.None)
-  end
+  container:SetAuraProcessingPolicy(CustomAuraContainerAuraProcessingPolicy.None)
 end
 
 local function ConfigureUnitGlow(instance, region, data)
@@ -838,17 +847,18 @@ local function Layout(native, region, data)
   local width, height = Display.Dimensions(data)
   local settings = data.blizzardAuraDisplay
   local direction = settings.growth or "RIGHT"
-  local vertical = direction == "UP" or direction == "DOWN"
+  local vertical = direction == "UP" or direction == "DOWN" or direction == "CENTER_VERTICAL"
   local anchor = direction == "LEFT" and "TOPRIGHT" or direction == "UP" and "BOTTOMLEFT" or "TOPLEFT"
   local container = native.container
   container:ClearAllPoints()
-  container:SetPoint(anchor, region, anchor)
+  local centered = direction == "CENTER_HORIZONTAL" or direction == "CENTER_VERTICAL"
+  container:SetPoint(centered and "CENTER" or anchor, region, centered and "CENTER" or anchor)
   container:SetFlowLayoutAxis(vertical and AnchorUtil.FlowLayoutAxis.Vertical or AnchorUtil.FlowLayoutAxis.Horizontal)
   container:SetFlowLayoutAnchorPoint(anchor)
   container:SetFlowLayoutGrowthDirection(direction == "LEFT" and AnchorUtil.FlowDirection.Left or AnchorUtil.FlowDirection.Right,
     direction == "UP" and AnchorUtil.FlowDirection.Up or AnchorUtil.FlowDirection.Down)
   local spacing = settings.spacing or 6
-  local compact = CompactUnits(data)
+  local compact = not centered and CompactUnits(data)
   -- Empty native containers are one pixel wide/high. Reserve that pixel after
   -- occupied content too, then subtract it in the anchor chain, without reading sizes.
   container:SetAuraGroupLayout("Auras", {
@@ -940,7 +950,7 @@ local function RefreshUnits(region, removedUnit, changedUnit)
   local trigger = Display.GetTrigger(data)
   local settings = data.blizzardAuraDisplay
   local units = UnitTokens(trigger)
-  local vertical = settings.growth == "UP" or settings.growth == "DOWN"
+  local vertical = settings.growth == "UP" or settings.growth == "DOWN" or settings.growth == "CENTER_VERTICAL"
   for index, instance in ipairs(native.instances) do
     local container = instance.container
     local unit = units[index]
@@ -980,7 +990,9 @@ local function RefreshUnits(region, removedUnit, changedUnit)
         local direction = settings.growth or "RIGHT"
         local anchor = direction == "LEFT" and "TOPRIGHT" or direction == "UP" and "BOTTOMLEFT" or "TOPLEFT"
         container:ClearAllPoints()
-        if CompactUnits(data) and index > 1 then
+        if direction == "CENTER_HORIZONTAL" or direction == "CENTER_VERTICAL" then
+          container:SetPoint("CENTER", region, "CENTER")
+        elseif CompactUnits(data) and index > 1 then
           local previous = native.instances[index - 1].container
           local edge = direction == "LEFT" and "TOPLEFT" or direction == "UP" and "TOPLEFT"
             or direction == "DOWN" and "BOTTOMLEFT" or "TOPRIGHT"
@@ -1118,6 +1130,7 @@ local function Install(region)
 end
 
 function Display.Activate(region, data)
+  if not Display.Enabled(data) then Display.Release(region); return end
   Install(region)
   local native = region.blizzardAuraDisplay
   if native and native.data == data and not pending[region] and Display.Validate(data) == nil then
@@ -1131,7 +1144,21 @@ function Display.Activate(region, data)
   end
 end
 
+function Display.SyncProgressSource(region, data)
+  if not data then return end
+  local trigger = Display.GetTrigger(data)
+  local key = trigger and (data.progressSource and data.progressSource[1] or -1) or 0
+  if key < 0 then key = (data.triggers.activeTriggerMode and data.triggers.activeTriggerMode > 0 and data.triggers.activeTriggerMode)
+    or (Private.GetActiveTriggerFor and Private.GetActiveTriggerFor(data.id)) or 1 end
+  if region.secretAuraProgressSourceIndex ~= key then Display.Modify(region, data) end
+end
+
 function Display.Modify(region, data)
+  local trigger = Display.GetTrigger(data)
+  local key = trigger and (data.progressSource and data.progressSource[1] or -1) or 0
+  if key < 0 then key = (data.triggers.activeTriggerMode and data.triggers.activeTriggerMode > 0 and data.triggers.activeTriggerMode)
+    or (Private.GetActiveTriggerFor and Private.GetActiveTriggerFor(data.id)) or 1 end
+  region.secretAuraProgressSourceIndex = key
   region.secretAuraConditionValues = nil
   if not Display.Enabled(data) then Display.Release(region); Warn(data); SoundWarning(data); return end
   Install(region)
