@@ -14,7 +14,7 @@ function Trigger.Add(data)
 end
 
 function Trigger.CreateFallbackState(data, triggernum, state)
-  state.show = Display.Validate(data) == nil
+  state.show = not Display.Enabled(data) or Display.Validate(data) == nil
   state.changed = true
   state.progressType = "static"
   state.value, state.total = 1, 1
@@ -70,12 +70,14 @@ function Trigger.Rename(oldid, newid)
 end
 
 function Trigger.FinishLoadUnload() end
-function Trigger.GetName() return "Secret Auras" end
+function Trigger.GetName() return "Blizzard Aura" end
 function Trigger.CanHaveTooltip() return false end
 function Trigger.SetToolTip() return false end
 function Trigger.GetOverlayInfo() return {} end
 function Trigger.GetAdditionalProperties() return {} end
-function Trigger.GetProgressSources() end
+function Trigger.GetProgressSources(data, triggernum, values)
+  table.insert(values, {trigger = triggernum, property = "value", type = "number", display = "Blizzard Aura", total = "total"})
+end
 function Trigger.GetTriggerConditions() return {} end
 
 function Trigger.GetNameAndIcon(data, triggernum)

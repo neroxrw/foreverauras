@@ -1986,7 +1986,7 @@ function ForeverAuras.NewAura(sourceData, regionType, targetId)
   AddDefaultSubRegions(data)
 
   if not sourceData or not sourceData.triggers then
-    data.triggers[1].trigger.auraTracking = "native"
+    data.triggers[1].trigger.auraTracking = "readable"
     OptionsPrivate.AuraEditor.Resolve(data, 1)
   end
 

@@ -988,7 +988,7 @@ local function ConstructConditionFunction(data)
     return nil
   end
 
-  if Private.BlizzardAuraDisplay.HasTrigger(data) and Private.BlizzardAuraDisplay.ValidateConditions(data) then return nil end
+  if Private.BlizzardAuraDisplay.Enabled(data) and Private.BlizzardAuraDisplay.ValidateConditions(data) then return nil end
 
   local usedProperties = {}
 
@@ -1073,7 +1073,7 @@ local function ConstructConditionFunction(data)
         base = "region.subRegions[" .. subIndex .. "]:"
       end
 
-    if Private.BlizzardAuraDisplay.HasTrigger(data) and not Private.BlizzardAuraDisplay.IsDetachedProperty(data, baseProperty) then
+    if Private.BlizzardAuraDisplay.Enabled(data) and Private.BlizzardAuraDisplay.IsNativeConditionProperty(data, baseProperty) then
       table.insert(ret, "    Private.ExecEnv.SetSecretAuraConditionProperty(region, " .. string.format("%q", baseProperty) .. ", " .. formatValueForCall(properties[baseProperty].type, baseProperty) .. ")\n")
     else
       table.insert(ret, "    " .. base .. properties[baseProperty].setter .. "(" .. arg1 .. formatValueForCall(properties[baseProperty].type, baseProperty)  .. ")\n")

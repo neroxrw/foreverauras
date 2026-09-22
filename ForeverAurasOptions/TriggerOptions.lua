@@ -136,7 +136,7 @@ local function AddOptions(allOptions, data)
             trigger =
             {
               type = "aura2",
-              auraTracking = "native"
+              auraTracking = "readable"
             },
             untrigger = {
             }
@@ -301,9 +301,9 @@ function OptionsPrivate.GetTriggerTitle(data, triggernum)
       local triggerType = trigger.type
       local name
       if triggerType == "secretAura" then
-        name = L["Aura"]
+        name = "Blizzard Aura"
       elseif triggerType == "aura2" then
-        name = L["Aura"]
+        name = "Aura (Legacy)"
       elseif triggerType == "custom" then
         name = L["Custom"]
       elseif event_prototype then

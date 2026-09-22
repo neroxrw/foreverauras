@@ -2,7 +2,7 @@
 if not ForeverAuras.IsLibsOK() then return end
 local _, Private = ...
 local Display = Private.BlizzardAuraDisplay
-local globalChecks = {incombat = true, hastarget = true, alwaystrue = true, instance_size = true, instance_difficulty = true, instance_type = true}
+local conditionActions = {chat = "chat", sound = "sound", customcode = "customcode", glowexternal = "glowexternal"}
 local rootProperties = {
   icon = {color = 'color', desaturate = 'bool', zoom = 'number', inverse = 'bool', cooldownSwipe = 'bool', cooldownEdge = 'bool', cooldownTextDisabled = 'bool'},
   aurabar = {barColor = 'color', backgroundColor = 'color', icon_color = 'color', desaturate = 'bool'},
@@ -14,6 +14,7 @@ local elementProperties = {
 }
 
 local function PropertyType(data, property)
+  if conditionActions[property] then return conditionActions[property] end
   local index, key = property:match('^sub%.(%d+)%.(.+)$')
   if index then
     local element = data.subRegions and data.subRegions[tonumber(index)]
@@ -33,28 +34,27 @@ local function PropertyType(data, property)
 end
 
 function Display.FilterConditionProperties(data, properties)
-  if not Display.HasTrigger(data) then return properties end
-  for key in pairs(properties) do
-    if not PropertyType(data, key) then properties[key] = nil end
-  end
   return properties
 end
 
+function Display.IsNativeConditionProperty(data, property)
+  return not conditionActions[property]
+    and not Display.IsDetachedProperty(data, property)
+    and PropertyType(data, property) ~= nil
+end
+
 function Display.FilterConditionTemplates(data, templates)
-  if not Display.HasTrigger(data) then return templates end
+  if not Display.Enabled(data) then return templates end
   for index, fields in pairs(templates) do
     local trigger = data.triggers[index] and data.triggers[index].trigger
     -- Secret aura state cannot be used as a condition input.
-    templates[index] = trigger and trigger.type ~= 'secretAura' and {show = fields.show} or {}
+    templates[index] = trigger and trigger.type ~= 'secretAura' and fields or {}
   end
   return templates
 end
 
 function Display.FilterGlobalConditions(data, templates)
-  if not data or not Display.HasTrigger(data) then return templates end
-  local result = {}
-  for key in pairs(globalChecks) do result[key] = templates[key] end
-  return result
+  return templates
 end
 
 local function ValidCheck(data, check)
@@ -65,40 +65,15 @@ local function ValidCheck(data, check)
     end
     return true
   end
-  if check.trigger == -1 then return globalChecks[check.variable] == true end
+  if check.trigger == -1 then return true end
   local trigger = data.triggers[check.trigger] and data.triggers[check.trigger].trigger
-  return trigger and trigger.type ~= 'secretAura' and check.variable == 'show'
+  return trigger and trigger.type ~= 'secretAura'
 end
 
 function Display.ValidateConditions(data)
   for _, condition in ipairs(data.conditions or {}) do
     if not ValidCheck(data, condition.check) then
-      return 'Secret Aura conditions can use another trigger\'s Active state, In Combat, Has Target, instance information or Always True.'
-    end
-    for _, change in ipairs(condition.changes or {}) do
-      if change.property then
-        local kind = PropertyType(data, change.property)
-        if not kind then return 'This property cannot be changed by Secret Aura conditions. Choose a supported appearance property.' end
-        if change.value ~= nil then
-          if kind == 'bool' and type(change.value) ~= 'boolean' then return 'Choose a visibility value for this condition.' end
-          if kind == 'string' and (type(change.value) ~= 'string' or Display.TextKind(change.value) ~= 'literal') then
-            return 'Conditional text must be hardcoded text. Use Visibility to show or hide a %p, %s or %n text element.'
-          end
-          if kind == 'number' then
-            local value = change.value
-            if type(value) ~= 'number' or value ~= value or math.abs(value) == math.huge then return 'Choose a valid number for this condition.' end
-            if (change.property == 'zoom' or change.property:match('%.text_alpha$')) and (value < 0 or value > 1) then return 'Choose a value between 0 and 100%.' end
-            if (change.property == 'fontSize' or change.property:match('%.text_fontSize$')) and value < 6 then return 'Choose a font size of at least 6.' end
-          end
-          if kind == 'color' then
-            if type(change.value) ~= 'table' then return 'Choose a color for this condition.' end
-            for index = 1, 4 do
-              local value = change.value[index]
-              if type(value) ~= 'number' or value ~= value or value < 0 or value > 1 then return 'Choose a valid color for this condition.' end
-            end
-          end
-        end
-      end
+      return 'Use another trigger or a global condition. Blizzard Aura does not expose aura state to conditions.'
     end
   end
 end

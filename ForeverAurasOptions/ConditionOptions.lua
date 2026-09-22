@@ -3347,13 +3347,8 @@ function OptionsPrivate.GetConditionOptions(data)
   }
 
   local args = options.args
-  if OptionsPrivate.Private.BlizzardAuraDisplay.HasTrigger(data) then
-    args.secretAuraNotice = {type = "description", order = 0, width = "full",
-      name = "Blizzard-controlled aura display: native elements cannot update in combat or while aura access is restricted. Detached elements can."}
-  end
-
   local conditionVariable = "conditions"
-  local startorder = args.secretAuraNotice and 1 or 0
+  local startorder = 0
   local category = nil
   -- Build potential Conditions Templates structure
   local conditionTemplates, conditionTemplateWithoutCombinations = createConditionTemplates(data);
