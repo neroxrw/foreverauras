@@ -439,9 +439,6 @@ local barPrototype = {
 
   ["UpdateAdditionalBars"] = function(self)
     if (type(self.additionalBars) == "table") then
-      -- there are issues with how fake states trigger this without changing active mask
-      -- so just enforce it, we lost clipping but its fine until someone pokes me about it
-      -- also old thing doesn't support .durationObject for displaying progress inside overlay
       if self.activeMask == "secret" or true then
         for i = 1, #self.extraTextures do
           self.extraTextures[i]:Hide();
@@ -450,6 +447,7 @@ local barPrototype = {
           local abar = self.secretExtraTextures[index];
           if not abar then
             abar = CreateFrame("StatusBar", nil, self);
+            abar:SetFrameLevel(self:GetFrameLevel());
             abar:SetStatusBarTexture("Interface\\AddOns\\ForeverAuras\\Media\\Textures\\Square_FullWhite");
             abar:SetColorFill(1, 1, 1, 0);
 
@@ -479,10 +477,6 @@ local barPrototype = {
             abar.offsetBar2 = CreateFrame("StatusBar", nil, abar);
             abar.offsetBar2:SetStatusBarTexture("Interface\\AddOns\\ForeverAuras\\Media\\Textures\\Square_FullWhite");
             abar.offsetBar2:SetColorFill(1, 1, 1, 0);
-            -- borders for testing
-            -- GREMINDER.MLib:Border(abar, 2, 1, 0, 0, 1, 1)
-            -- GREMINDER.MLib:Border(abar.offsetBar1:GetStatusBarTexture(), 2, 0, 1, 0, 1, 3)
-            -- GREMINDER.MLib:Border(abar.offsetBar2:GetStatusBarTexture(), 3, 0, 0, 1, 1, 6)
 
             self.secretExtraTextures[index] = abar;
           end
@@ -1663,6 +1657,12 @@ local function create(parent)
   end
   bar.extraTextures = {};
   bar.secretExtraTextures = {};
+  hooksecurefunc(bar, "SetFrameLevel", function(self)
+    for _, overlay in ipairs(self.secretExtraTextures) do
+      overlay:SetFrameLevel(self:GetFrameLevel())
+    end
+  end)
+
   bar:SetRotatesTexture(true);
   bar:HookScript("OnSizeChanged", bar.OnSizeChanged);
   region.bar = bar;
