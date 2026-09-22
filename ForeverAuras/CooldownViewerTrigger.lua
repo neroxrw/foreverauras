@@ -61,7 +61,7 @@ function Private.ResolveCDMSpell(trigger, event)
   if trigger.cdmExact and not id then return {} end
   local spell = id and C_Spell.GetSpellInfo(id)
   local name = (spell and spell.name or query):lower()
-  local exact = trigger.cdmExact or id ~= nil
+  local exact = trigger.cdmExact == true
   local anyBuffRank = not exact and trigger.cdmSource == "buff"
   local buffSpellIDs, seen, buffEntryIDs = {}, {}, {}
   local function AddBuffID(spellID)
@@ -147,7 +147,7 @@ end
 function Private.CDMNativeSelections(trigger)
   if trigger.cdmSpell ~= nil and tostring(trigger.cdmSpell):find("%S") and trigger.event ~= "Blizzard CDM Item" then
     local selected = Private.ResolveCDMSpell(trigger)
-    local id = tonumber(trigger.cdmSpell)
+    local id = trigger.cdmExact and tonumber(trigger.cdmSpell)
     return {id and selected[1] and {id} or selected.buffSpellIDs}
   end
   local selected = Private.GetCDMPickerSelections(trigger, "OPTIONS")
@@ -307,7 +307,7 @@ end
 Private.ExecEnv.UpdateCooldownViewerStates = Private.UpdateCooldownViewerStates
 Private.ExecEnv.UpdateCDMSpell = function(allstates, config, event)
   local selected = Private.ResolveCDMSpell(config, event)
-  return Private.UpdateCooldownViewerStates(allstates, selected, event, config.showGCD, config.track, config.hideGCDText, config.showMode, tonumber(config.cdmSpell), config.requireTarget)
+  return Private.UpdateCooldownViewerStates(allstates, selected, event, config.showGCD, config.track, config.hideGCDText, config.showMode, config.cdmExact and tonumber(config.cdmSpell) or nil, config.requireTarget)
 end
 
 local function BooleanCondition(field)

@@ -2,7 +2,7 @@
 ## Interface: 16001
 ## Title: ForeverAuras Options
 ## Author: m33shoq, WeakAuras contributors
-## Version: 0.1.165
+## Version: 0.1.168
 ## IconTexture: Interface\AddOns\ForeverAuras\Media\Textures\foreverauras_logo.tga
 ## Notes: Options for ForeverAuras
 ## Notes-esES: Opciones para ForeverAuras
