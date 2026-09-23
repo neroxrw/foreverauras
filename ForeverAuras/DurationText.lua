@@ -4,6 +4,12 @@ local _, Private = ...
 
 local formatters = {}
 
+-- CDM can show a GCD swipe while its text uses only the spell/recharge timer.
+-- Keep this choice independent of whether IsZero() is readable in combat.
+function Private.GetTextDuration(state)
+  return state.cdmTextDurationObject or state.durationObject
+end
+
 function Private.GetDurationTextFormatter(format, threshold, precision, secondsOnly)
   local key = format .. ":" .. threshold .. ":" .. precision .. ":" .. tostring(secondsOnly == true)
   local formatter = formatters[key]

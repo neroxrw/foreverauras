@@ -37,13 +37,21 @@ local function GetOptions(data, triggernum)
   end
   local options = {
     help = {type = "description", order = 2, width = "full", fontSize = "small",
-      name = "Trigger Always Active. Blizzard Controls Display.\n\nDebuff spell ID filtering will cause the display not to show. However sounds will work on filtered spell ID debuffs."},
+      name = "Trigger Always Active. Blizzard Controls Display."},
+    unitLabel = {
+      type = "toggle", name = "Unit", order = 3, width = width,
+      disabled = true, get = function() return true end,
+    },
     unit = {
-      type = "select", name = "Unit", order = 3, width = width, values = display.units,
+      type = "select", name = "Unit", order = 3.01, width = width, values = display.units,
       get = function() return trigger.unit end, set = function(_, value) Save("unit", value) end,
     },
+    auraTypeLabel = {
+      type = "toggle", name = "Aura Type", order = 4, width = width,
+      disabled = true, get = function() return true end,
+    },
     debuffType = {
-      type = "select", name = "Aura Type", order = 4, width = width, values = AuraTypeValues,
+      type = "select", name = "Aura Type", order = 4.01, width = width, values = AuraTypeValues,
       sorting = function()
         local order = {"HELPFUL", "HARMFUL", "Buff", "Debuff", "Dispel"}
         local selected = SelectedAuraType()
@@ -123,44 +131,46 @@ local function GetOptions(data, triggernum)
     },
 
   }
-  local function SpellIDs(key, storageKey, name, order)
-    options[key] = {
-      type = "input", name = name, order = order, width = "full",
-      desc = "Separate spell IDs with spaces or commas. Untick the checkbox to stop filtering by these IDs. Ignored IDs take priority when Blizzard allows spell-ID filtering.",
-      get = function() return table.concat(trigger[storageKey] or {}, ", ") end,
-      validate = function(_, value)
-        if value:find("[^%d%s,]") then return "Enter positive spell IDs separated by spaces or commas." end
-        for id in value:gmatch("%d+") do
-          if tonumber(id) <= 0 or tonumber(id) == math.huge then return "Spell IDs must be positive finite numbers." end
+  options.spellSelectionHeader = {type = "header", name = "Spell Selection Filters", order = 4.5}
+  options.debuffSpellIDWarning = {
+    type = "description", order = 4.9, width = "full", fontSize = "small",
+    name = "|cffff0000Filtering Debuffs by spell ID will cause the Aura not display. Sounds can still be added in Actions.|r",
+    hidden = function()
+      return trigger.debuffType ~= "HARMFUL"
+        or not (display.UsesSpellIDs(trigger) or display.UsesExcludedSpellIDs(trigger))
+    end,
+  }
+  local function SpellIDs(toggleKey, prefix, storageKey, title, inputName, order, Enabled, flag)
+    options[toggleKey] = {
+      type = "toggle", name = title, order = order, width = width - 0.2,
+      get = function() return Enabled(trigger) end,
+      set = function(_, value) Save(flag, value) end,
+    }
+    options[prefix .. "DisabledSpace"] = {
+      type = "description", name = "", order = order + 0.001, width = width + 0.2,
+      hidden = function() return Enabled(trigger) end,
+    }
+    local size = #(trigger[storageKey] or {}) + 1
+    OptionsPrivate.CreateAuraSpellOptions(options, data, triggernum, size,
+      true, false, prefix, order, flag, storageKey, inputName,
+      nil,
+      false, function() return Enabled(trigger) end)
+    -- Unlike Legacy, these values are also sent to Blizzard's native filters.
+    for i = 1, size do
+      options[prefix .. i].validate = function(_, value)
+        if value == "" then return true end
+        local id = tonumber(value)
+        if not id or id <= 0 or id >= 2147483647 or id ~= math.floor(id) then
+          return "Enter a positive whole-number Spell ID."
         end
         return true
-      end,
-      set = function(_, value)
-        local ids, seen = {}, {}
-        for id in value:gmatch("%d+") do
-          id = tostring(tonumber(id))
-          if not seen[id] then ids[#ids + 1] = id; seen[id] = true end
-        end
-        Save(storageKey, ids)
-      end,
-    }
+      end
+    end
   end
-  options.useSpellIDs = {
-    type = "toggle", name = "Exact Spell ID(s)", order = 4.5, width = "full",
-    desc = function() return trigger.debuffType == "HARMFUL" and "Blizzard may reject spell-ID-filtered debuffs for display. These IDs can still register sounds configured in Actions." or "Only show the listed spells. Blizzard's spell-ID restrictions still apply." end,
-    get = function() return display.UsesSpellIDs(trigger) end,
-    set = function(_, value) Save("secretUseSpellIDs", value) end,
-  }
-  SpellIDs("spellIDs", "auraspellids", "Spell IDs", 5)
-  options.spellIDs.hidden = function() return not display.UsesSpellIDs(trigger) end
-  options.useExcludedSpellIDs = {
-    type = "toggle", name = "Ignored Exact Spell ID(s)", order = 5.5, width = "full",
-    desc = "Remove these spells from the matching auras. Usually useful when Exact Spell IDs is unticked. An ignored ID also removes it from an include list, where Blizzard permits ID matching.",
-    get = function() return display.UsesExcludedSpellIDs(trigger) end,
-    set = function(_, value) Save("secretUseExcludedSpellIDs", value) end,
-  }
-  SpellIDs("excludedSpellIDs", "excludedAuraSpellIDs", "Ignored Spell IDs", 6)
-  options.excludedSpellIDs.hidden = function() return not display.UsesExcludedSpellIDs(trigger) end
+  SpellIDs("useSpellIDs", "spellid", "auraspellids", "Exact Spell ID(s)", "Spell ID", 5,
+    display.UsesSpellIDs, "secretUseSpellIDs")
+  SpellIDs("useExcludedSpellIDs", "ignorespellid", "excludedAuraSpellIDs", "Ignored Exact Spell ID(s)", "Ignored Spell ID", 7,
+    display.UsesExcludedSpellIDs, "secretUseExcludedSpellIDs")
   local function TriState(key, title, order, description, GetValue, SetValue)
     options[key] = {
       type = "toggle", width = "full", order = order,
@@ -250,10 +260,6 @@ local function GetOptions(data, triggernum)
   end
   OptionsPrivate.commonOptions.AddCommonTriggerOptions(options, data, triggernum, true)
   OptionsPrivate.AuraEditor.AddOptions(options, data, triggernum)
-  local spellDescription = options.spellIDs.desc
-  options.spellIDs.desc = function()
-    return trigger.debuffType == "HARMFUL" and "Enter spell IDs for Blizzard to filter. If Blizzard cannot display those debuffs, sounds can still be registered in Actions." or spellDescription
-  end
   OptionsPrivate.AddTriggerMetaFunctions(options, data, triggernum)
   return {["trigger." .. triggernum .. ".secretAura"] = options}
 end

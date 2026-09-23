@@ -64,7 +64,13 @@ function OptionsPrivate.GetActionOptions(data)
       else
         data.actions[field][value] = v;
       end
-      if(value == "sound" or value == "sound_path") then
+      if value == "sound_fojji" or (value == "sound" and v == " Fojji") then
+        local file = OptionsPrivate.Private.ResolveFojjiRecordedSound(data.actions[field].sound_fojji or "")
+        if file and lastPlayedSoundFromSet ~= GetTime() then
+          pcall(PlaySoundFile, file, data.actions[field].sound_channel or "Master")
+          lastPlayedSoundFromSet = GetTime()
+        end
+      elseif(value == "sound" or value == "sound_path") then
         if lastPlayedSoundFromSet ~= GetTime() then
           pcall(PlaySoundFile, v, "Master")
           lastPlayedSoundFromSet = GetTime()
@@ -1158,7 +1164,7 @@ function OptionsPrivate.GetActionOptions(data)
         type = "toggle",
         width = ForeverAuras.doubleWidth,
         name = L["Hide Glows applied by this aura"],
-        desc = "Also clears unit-frame glows from Display > Blizzard Aura Settings. Secret glows additionally stop when no aura matches or the display unloads.",
+        desc = "Also clears unit-frame glows from Display > Aura (Blizzard) Settings. Secret glows additionally stop when no aura matches or the display unloads.",
         order = 31,
       },
       finish_do_custom = {
@@ -1306,6 +1312,15 @@ function OptionsPrivate.GetActionOptions(data)
   OptionsPrivate.commonOptions.AddCodeOption(action.args, data, L["Custom Code"], "finish", "https://github.com/WeakAuras/WeakAuras2/wiki/Custom-Code-Blocks#on-hide",
                           32, function() return not data.actions.finish.do_custom end, {"actions", "finish", "custom"}, true);
 
+  for _, when in ipairs({"start", "finish"}) do
+    action.args[when .. "_sound_fojji"] = {
+      type = "input", name = "Recorded phrase", width = "full",
+      order = action.args[when .. "_sound"].order + 0.01,
+      hidden = function() return data.actions[when].sound ~= " Fojji" end,
+      disabled = function() return not data.actions[when].do_sound end,
+      desc = "Exact phrase in your selected FojjiCore recorded voice pack. Live TTS is not supported."
+    }
+  end
   OptionsPrivate.PrepareSecretActionOptions(data, action)
 
   if data.controlledChildren then

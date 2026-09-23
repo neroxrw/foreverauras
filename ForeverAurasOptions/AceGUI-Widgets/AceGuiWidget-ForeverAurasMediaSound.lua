@@ -14,6 +14,7 @@ local media = LibStub("LibSharedMedia-3.0")
 local prototype = LibStub("AceGUI-3.0-DropDown-ItemBase"):GetItemBase()
 
 local ignore = {
+  ["FojjiCore recorded voice"] = true,
   [" " ..L["Custom"]] = true,
   [" " ..L["Sound by Kit ID"]] = true,
   [L["None"]] = true

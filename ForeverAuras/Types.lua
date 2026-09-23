@@ -568,7 +568,7 @@ Private.format_types = {
           end
           if state.progressType == "durationObject" and ForeverAuras.IsDurationObject(state.durationObject)
              and (format == 0 or format == 99) then
-            return Private.FormatDurationText(state.durationObject, sym == "t", format, threshold, precision, modRate)
+            return Private.FormatDurationText(Private.GetTextDuration(state), sym == "t", format, threshold, precision, modRate)
           end
           return formatter(value, state, trigger)
         end, next(timePointProperty) ~= nil
@@ -3231,6 +3231,7 @@ LSM:Register("sound", "Yeehaw", PowerAurasSoundPath.."yeehaw.ogg")
 
 ---@type table<string, string>
 Private.sound_types = {
+  [" Fojji"] = "FojjiCore recorded voice",
   [" custom"] = " " .. L["Custom"],
   [" KitID"] = " " .. L["Sound by Kit ID"]
 }

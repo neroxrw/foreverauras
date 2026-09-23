@@ -1,6 +1,15 @@
 if not ForeverAuras.IsLibsOK() then return end
 local _, Private = ...
 local identities = {}
+local requestedItems = {}
+
+function Private.CDMRequestItemData(itemID)
+  if itemID and C_Item and C_Item.IsItemDataCachedByID and C_Item.RequestLoadItemDataByID
+      and not requestedItems[itemID] and not C_Item.IsItemDataCachedByID(itemID) then
+    requestedItems[itemID] = true
+    C_Item.RequestLoadItemDataByID(itemID)
+  end
+end
 
 function Private.CDMResetIdentities()
   identities = {}
@@ -44,20 +53,62 @@ local function NativeRefresh()
     if Private.ScanEvents then Private.ScanEvents("FA_CDM_REFRESH") end
   end)
 end
+local function Boolean(value)
+  if Readable(value) and type(value) == "boolean" then return value end
+end
+
 local function Observe(frame)
   if observed[frame] or not hooksecurefunc then return end
   local record = {}
   observed[frame] = record
+  local function CaptureIdentity()
+    local previousGCD, previousSpell, previousID = record.onGCD, record.spellID, record.cooldownID
+    record.cooldownID = Number(frame.cooldownID)
+    record.spellID = frame.GetSpellID and Number(frame:GetSpellID())
+    record.onCooldown = Boolean(frame.isOnActualCooldown)
+    record.recharging = Boolean(frame.wasSetFromCharges)
+    record.onGCD = Boolean(frame.isOnGCD)
+    -- A charge or aura visual may take precedence even during a GCD.
+    if record.onCooldown == true or record.recharging == true
+        or Boolean(frame.cooldownUseAuraDisplayTime) == true then
+      record.onGCD = false
+    end
+    record.paused = Boolean(frame.cooldownPaused) == true
+    -- Hold a new GCD for 200 ms so a following real cooldown can replace it
+    -- before it is drawn. Repeated writes of the same GCD must not restart this.
+    local start = record.raw and Number(record.raw.start)
+    if record.onGCD == true then
+      if not record.gcdReadyAt or previousGCD ~= true or previousSpell ~= record.spellID
+          or previousID ~= record.cooldownID or (start and record.gcdStart and start ~= record.gcdStart) then
+        local readyAt = GetTime() + 0.20
+        record.gcdReadyAt = readyAt
+        C_Timer.After(0.20, function()
+          if record.gcdReadyAt == readyAt then NativeRefresh() end
+        end)
+      end
+      record.gcdStart = start or record.gcdStart
+    else
+      record.gcdReadyAt, record.gcdStart = nil, nil
+    end
+  end
   local function Clear()
-    record.duration, record.raw = nil, nil
+    record.duration, record.raw, record.converted = nil, nil, nil
+    CaptureIdentity()
+    record.gcdReadyAt, record.gcdStart = nil, nil
     NativeRefresh()
   end
-  for _, method in ipairs({"ClearAuraInstanceInfo", "OnAuraInstanceInfoCleared", "OnCooldownIDSet", "OnCooldownIDCleared"}) do
+  -- Aura bookkeeping must not erase a committed spell timer. Keep the existing
+  -- buff invalidation, but wait for the actual cooldown setter for spell icons.
+  local function ClearAura()
+    if not frame.RefreshSpellCooldownInfo then Clear() else NativeRefresh() end
+  end
+  for _, method in ipairs({"ClearAuraInstanceInfo", "OnAuraInstanceInfoCleared", "OnAuraInstanceInfoSet"}) do
+    if type(frame[method]) == "function" then hooksecurefunc(frame, method, ClearAura) end
+  end
+  for _, method in ipairs({"OnCooldownIDSet", "OnCooldownIDCleared", "ResetCooldownData"}) do
     if type(frame[method]) == "function" then hooksecurefunc(frame, method, Clear) end
   end
-  if type(frame.OnAuraInstanceInfoSet) == "function" then hooksecurefunc(frame, "OnAuraInstanceInfoSet", Clear) end
-  if type(frame.SetAuraInstanceInfo) == "function" then hooksecurefunc(frame, "SetAuraInstanceInfo", NativeRefresh) end
-  for _, method in ipairs({"OnUnitAuraRemovedEvent", "OnUnitAuraUpdatedEvent", "OnNewTarget", "OnActiveStateChanged"}) do
+  for _, method in ipairs({"SetAuraInstanceInfo", "OnUnitAuraRemovedEvent", "OnUnitAuraUpdatedEvent", "OnNewTarget", "OnActiveStateChanged", "RefreshData", "RefreshCooldownOnly"}) do
     if type(frame[method]) == "function" then hooksecurefunc(frame, method, NativeRefresh) end
   end
   if frame.HookScript then frame:HookScript("OnShow", NativeRefresh); frame:HookScript("OnHide", NativeRefresh) end
@@ -65,18 +116,59 @@ local function Observe(frame)
   if cooldown then
     if cooldown.SetCooldownFromDurationObject then
       hooksecurefunc(cooldown, "SetCooldownFromDurationObject", function(_, duration)
-        record.duration, record.raw = duration, nil
+        record.duration, record.raw, record.converted = duration, nil, nil
+        CaptureIdentity()
         NativeRefresh()
       end)
     end
     if cooldown.SetCooldown then
       hooksecurefunc(cooldown, "SetCooldown", function(_, start, duration, modRate)
-        record.duration, record.raw = nil, {start = start, duration = duration, modRate = modRate}
+        record.duration, record.raw, record.converted = nil, {start = start, duration = duration, modRate = modRate}, nil
+        CaptureIdentity()
         NativeRefresh()
       end)
     end
     if cooldown.Clear then hooksecurefunc(cooldown, "Clear", Clear) end
+    if cooldown.Pause then hooksecurefunc(cooldown, "Pause", function() record.paused = true; NativeRefresh() end) end
+    if cooldown.Resume then hooksecurefunc(cooldown, "Resume", function() record.paused = false; NativeRefresh() end) end
+    -- Initial observation may happen after Blizzard installed an ongoing timer.
+    -- Read the widget, never seed it from a separate spell API query.
+    if cooldown.GetCooldownTimes then
+      local ok, start, duration = pcall(cooldown.GetCooldownTimes, cooldown)
+      start, duration = Number(start), Number(duration)
+      if ok and start and duration then
+        record.raw = {start = start / 1000, duration = duration / 1000, modRate = frame.cooldownModRate}
+      elseif frame.RefreshSpellCooldownInfo then
+        -- Blizzard's committed cache is already in seconds and can be passed
+        -- opaquely to DurationObject when widget milliseconds are restricted.
+        record.raw = {start = frame.cooldownStartTime, duration = frame.cooldownDuration, modRate = frame.cooldownModRate}
+      end
+    end
+    CaptureIdentity()
   end
+end
+
+-- The viewer's committed timer is the sole source for CDM spell progress.
+-- In particular, SPELL_UPDATE_COOLDOWN must not inject a predicted GCD while
+-- the native widget is still empty or already displaying the real cooldown.
+function Private.CDMGetNativeCooldown(frame, spellID)
+  if not frame then return end
+  local record = observed[frame]
+  if not record or record.cooldownID ~= Number(frame.cooldownID)
+      or record.spellID ~= spellID then return end
+  local nativeID = frame.GetSpellID and Number(frame:GetSpellID())
+  if nativeID ~= spellID then return end
+  local duration = record.duration or record.converted
+  local raw = record.raw
+  if not duration and raw and C_DurationUtil and C_DurationUtil.CreateDuration then
+    local candidate = C_DurationUtil.CreateDuration()
+    if candidate.SetTimeFromStart then
+      local ok = pcall(candidate.SetTimeFromStart, candidate, raw.start, raw.duration, raw.modRate)
+      if ok then duration = candidate; record.converted = candidate end
+    end
+  end
+  return {duration = duration, onGCD = record.onGCD, onCooldown = record.onCooldown,
+    recharging = record.recharging, paused = record.paused, gcdReadyAt = record.gcdReadyAt}
 end
 
 function Private.CDMFrames()
@@ -163,15 +255,17 @@ function Private.CDMIdentity(id, entry, info, frame)
   local categoryID = Number(info.spellCategoryID)
   if not spellID and categoryID and C_Spell.GetLastCategoryCooldownSource then
     local sourceSpell, sourceItem = C_Spell.GetLastCategoryCooldownSource(categoryID)
-    spellID, itemID = Number(sourceSpell), Number(sourceItem)
+    spellID, itemID = Number(sourceSpell), itemID or Number(sourceItem)
   end
   local spell = spellID and spellID > 0 and C_Spell.GetSpellInfo(spellID)
   local name, icon = spell and spell.name, spell and spell.iconID
   if itemID and C_Item then
+    Private.CDMRequestItemData(itemID)
     name = C_Item.GetItemNameByID and C_Item.GetItemNameByID(itemID) or ("Item " .. itemID)
     icon = C_Item.GetItemIconByID and C_Item.GetItemIconByID(itemID) or icon
   end
   local previous = identities[id] or {}
+  if slot or (itemID and itemID ~= previous.itemID) then previous = {} end
   local identity = {spellID = spellID or previous.spellID, itemID = itemID or previous.itemID, slot = slot, name = name or previous.name or (slot and ("Equipment slot " .. slot)) or ("CDM entry " .. id), icon = icon or previous.icon or 134400}
   identities[id] = identity
   return identity

@@ -137,7 +137,7 @@ local function TextSettings(element)
     textX = element.text_anchorXOffset or element.anchorXOffset, textY = element.text_anchorYOffset or element.anchorYOffset}
 end
 
-local function BindText(button, text, value, config, prefix)
+local function BindText(button, text, value, config, prefix, data, baseColor, property)
   local kind = Display.TextKind(value)
   if kind == "duration" then
     local format = config[prefix .. "p_time_format"]
@@ -146,8 +146,20 @@ local function BindText(button, text, value, config, prefix)
       options = {textFormatter = Private.GetDurationTextFormatter(config[prefix .. "p_time_legacy_floor"] and 0 or 99,
         config[prefix .. "p_time_dynamic_threshold"] or 3, config[prefix .. "p_time_precision"] or 1, format == -2)}
     end
+    local color = Display.DurationColorCondition(data, baseColor, property)
+    if color then
+      options = options or {}
+      options.textColor = color
+      -- An older client may expose the enums before accepting the binding option.
+      -- Preserve the countdown if it rejects color registration.
+      if pcall(button.SetDurationText, button, text, options) then return end
+      options.textColor = nil
+    end
     button:SetDurationText(text, options)
-  elseif kind == "stack" then button:SetApplicationCount(text)
+  elseif kind == "stack" then
+    local formatter = Display.StackTextCondition(data, property)
+    if formatter and pcall(button.SetApplicationCount, button, text, {formatter = formatter}) then return end
+    button:SetApplicationCount(text)
   elseif kind == "name" then button:SetSpellName(text)
   else text:SetText((value or ""):gsub("%%%%", "%%")) end
 end
@@ -291,7 +303,7 @@ function Display.StyleAppearance(native, data, ElementFrame, StyleText, StyleGlo
       textJustify = data.justify, textShadowColor = data.shadowColor, textShadowX = data.shadowXOffset, textShadowY = data.shadowYOffset}, "text", 18, "CENTER", 0, 0)
     native.mainText:Show()
     TextLayout(native.mainText, data.automaticWidth, data.fixedWidth, data.wordWrap)
-    BindText(button, native.mainText, data.displayText, data, "displayText_format_")
+    BindText(button, native.mainText, data.displayText, data, "displayText_format_", data, data.color, "color")
   end
   local borderSeen
   for index, element in ipairs(data.subRegions or {}) do
@@ -315,7 +327,7 @@ function Display.StyleAppearance(native, data, ElementFrame, StyleText, StyleGlo
         entry.text:SetAlpha(element.text_alpha or 1)
         TextLayout(entry.text, element.text_automaticWidth, element.text_fixedWidth, element.text_wordWrap)
         entry.text:Show()
-        BindText(button, entry.text, element.text_text, element, "text_text_format_")
+        BindText(button, entry.text, element.text_text, element, "text_text_format_", data, element.text_color, "sub." .. index .. ".text_color")
       elseif element.type == "subborder" then
         if not borderSeen and element.border_visible ~= false then
           local target, borderWidth, borderHeight = Area(native, data, element.anchor_area)
@@ -371,4 +383,5 @@ function Display.StyleAppearance(native, data, ElementFrame, StyleText, StyleGlo
       end
     end
   end
+  Display.StyleNativeConditionIndicators(native, data)
 end

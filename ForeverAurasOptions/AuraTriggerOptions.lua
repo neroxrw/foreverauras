@@ -80,6 +80,6 @@ function Editor.AddOptions(options, data, triggernum)
     options.combineMode = {type = "select", name = "Preferred Match", order = 72.6, width = ForeverAuras.normalWidth,
       values = OptionsPrivate.Private.bufftrigger_2_preferred_match_types, get = function() return trigger.combineMode or "showLowest" end, disabled = true}
     options.nativeShowNotice = {type = "description", order = 73, width = "full", fontSize = "small",
-      name = "You cannot control clones with a Blizzard Aura. Use the Blizzard Aura Settings under Display."}
+      name = "You cannot control clones with an Aura (Blizzard). Use the Aura (Blizzard) Settings under Display."}
   end
 end

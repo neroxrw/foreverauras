@@ -153,14 +153,18 @@ local function CanHaveMatchCheck(trigger)
   return trigger.showClones
 end
 
-local function CreateNameOptions(aura_options, data, triggernum, size, isExactSpellId, isIgnoreList, prefix, baseOrder, useKey, optionKey, name, desc, inverse)
+local function CreateNameOptions(aura_options, data, triggernum, size, isExactSpellId, isIgnoreList, prefix, baseOrder, useKey, optionKey, name, desc, inverse, enabled, onChanged)
   local trigger = data.triggers[triggernum].trigger
 
   local spellCache = ForeverAuras.spellCache
 
   for i = 1, size do
     local hiddenFunction
-    if isIgnoreList then
+    if enabled then
+      hiddenFunction = function()
+        return not (enabled() and (i == 1 or trigger[optionKey] and trigger[optionKey][i - 1]))
+      end
+    elseif isIgnoreList then
       hiddenFunction = function()
         return not (trigger.type == "aura2" and trigger[useKey] and (i == 1 or trigger[optionKey] and trigger[optionKey][i - 1]) and trigger.unit ~= "multi" and CanHaveMatchCheck(trigger))
       end
@@ -250,8 +254,10 @@ local function CreateNameOptions(aura_options, data, triggernum, size, isExactSp
           local _, bestSuggestion = getAuraMatchesList(input)
           if bestSuggestion then
             trigger[optionKey][i] = bestSuggestion
-            OptionsPrivate.SaveAuraTrigger(data, triggernum)
-            ForeverAuras.ClearAndUpdateOptions(data.id)
+            if onChanged then onChanged() else
+              OptionsPrivate.SaveAuraTrigger(data, triggernum)
+              ForeverAuras.ClearAndUpdateOptions(data.id)
+            end
           end
         end
       end
@@ -293,9 +299,11 @@ local function CreateNameOptions(aura_options, data, triggernum, size, isExactSp
           end
         end
 
-        OptionsPrivate.SaveAuraTrigger(data, triggernum)
-        ForeverAuras.UpdateThumbnail(data)
-        ForeverAuras.ClearAndUpdateOptions(data.id)
+        if onChanged then onChanged() else
+          OptionsPrivate.SaveAuraTrigger(data, triggernum)
+          ForeverAuras.UpdateThumbnail(data)
+          ForeverAuras.ClearAndUpdateOptions(data.id)
+        end
       end,
       validate = isExactSpellId and ForeverAuras.ValidateNumeric or nil,
       control = "ForeverAurasInputFocus",
@@ -303,6 +311,9 @@ local function CreateNameOptions(aura_options, data, triggernum, size, isExactSp
   end
   -- VALIDATE ?
 end
+
+-- Shared selector: keep icon previews, resolved labels and row geometry identical.
+OptionsPrivate.CreateAuraSpellOptions = CreateNameOptions
 
 local function GetBuffTriggerOptions(data, triggernum)
   local trigger = data.triggers[triggernum].trigger

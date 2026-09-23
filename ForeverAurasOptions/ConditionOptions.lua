@@ -232,6 +232,7 @@ local lastPlayedSoundFromSet
 local function wrapWithPlaySound(func, kit)
   return function(info, v)
     func(info, v);
+    if v == " Fojji" then return end
     if (tonumber(v)) then
       if lastPlayedSoundFromSet ~= GetTime() then
         pcall(PlaySound, tonumber(v), "Master")
@@ -255,6 +256,13 @@ local function addControlsForChange(args, order, data, conditionVariable, totalA
   local propertyType = propertyData and propertyData.type or nil
   local display = isSubset(data, conditions[i].changes[j], totalAuraCount) and allProperties.displayWithCopy or allProperties.display;
   local valuesForProperty = filterUsedProperties(allProperties.indexToProperty, display, usedProperties, conditions[i].changes[j].property);
+  for index in pairs(valuesForProperty) do
+    local property = allProperties.indexToProperty[index]
+    if property and property ~= "DELETE" and property ~= "COPY"
+        and not OptionsPrivate.Private.BlizzardAuraDisplay.NativeConditionAllowsProperty(data, conditions[i].check, property) then
+      valuesForProperty[index] = nil
+    end
+  end
   args["condition" .. i .. "property" .. j] = {
     type = "select",
     width = ForeverAuras.normalWidth,
@@ -1069,6 +1077,26 @@ local function addControlsForChange(args, order, data, conditionVariable, totalA
       end
       return false;
     end
+
+    args["condition" .. i .. "value" .. j .. "sound_fojji"] = {
+      type = "input", width = ForeverAuras.doubleWidth,
+      name = blueIfNoValue2(data, conditions[i].changes[j], "value", "sound_fojji", "Recorded phrase", "Recorded phrase"),
+      desc = "Exact phrase in your selected FojjiCore recorded voice pack. Live TTS is not supported.",
+      order = order,
+      get = function()
+        return type(conditions[i].changes[j].value) == "table" and conditions[i].changes[j].value.sound_fojji
+      end,
+      set = function(info, value)
+        setValueComplex("sound_fojji")(info, value)
+        local file = OptionsPrivate.Private.ResolveFojjiRecordedSound(value or "")
+        if file and lastPlayedSoundFromSet ~= GetTime() then
+          pcall(PlaySoundFile, file, "Master")
+          lastPlayedSoundFromSet = GetTime()
+        end
+      end,
+      hidden = function() return not (anySoundValue(" Fojji") and (anySoundType("Loop") or anySoundType("Play"))) end
+    }
+    order = order + 1
 
     args["condition" .. i .. "value" .. j .. "sound_path"] = {
       type = "input",
@@ -2009,6 +2037,15 @@ local function addControlsForIfLine(args, order, data, conditionVariable, totalA
     valuesForIf = isSubset(data, conditions[i].check, totalAuraCount) and conditionTemplatesToUse.displayWithCopy or conditionTemplatesToUse.display;
   end
 
+  if indentDepth > 0 then
+    valuesForIf = CopyTable(valuesForIf)
+    for index in pairs(valuesForIf) do
+      if OptionsPrivate.Private.BlizzardAuraDisplay.NativeConditionKind(data, {
+          trigger = conditionTemplatesToUse.indexToTrigger[index], variable = conditionTemplatesToUse.indexToVariable[index]}) then
+        valuesForIf[index] = nil
+      end
+    end
+  end
   args["condition" .. i .. tostring(path) .. "if"] = {
     type = "select",
     name = optionsName,
@@ -2109,6 +2146,20 @@ local function addControlsForIfLine(args, order, data, conditionVariable, totalA
         end
         check.variable = variable;
         check.trigger = trigger;
+        if indentDepth == 0 then
+          local display = OptionsPrivate.Private.BlizzardAuraDisplay
+          for _, change in ipairs(conditions[i].changes or {}) do
+            if change.property and not display.NativeConditionAllowsProperty(data, check, change.property) then
+              change.property, change.value = nil, nil
+            end
+          end
+          if display.NativeConditionKind(data, check) then
+            conditions[i].linked = false
+            if conditions[i + 1] then conditions[i + 1].linked = false end
+            if display.IsNativeDurationCondition(check) then check.op = "<"
+            elseif check.variable == "faAuraDispel" or check.variable == "faAuraType" then check.op = "==" end
+          end
+        end
         local newType = conditionTemplatesToUse.all[trigger][variable].type;
         if (newType ~= oldType) then
           check.value = nil;
@@ -2182,7 +2233,9 @@ local function addControlsForIfLine(args, order, data, conditionVariable, totalA
 
     if (currentConditionTemplate.type == "number" or currentConditionTemplate.type == "timer" or currentConditionTemplate.type == "elapsedTimer") then
       local opTypes = OptionsPrivate.Private.operator_types
-      if currentConditionTemplate.operator_types == "without_equal" then
+      if currentConditionTemplate.operator_types == "native_aura_duration" then
+        opTypes = {['<'] = '<', ['>='] = '>='}
+      elseif currentConditionTemplate.operator_types == "without_equal" then
         opTypes = OptionsPrivate.Private.operator_types_without_equal
       elseif currentConditionTemplate.operator_types == "only_equal" then
         opTypes = OptionsPrivate.Private.equality_operator_types
@@ -2223,7 +2276,7 @@ local function addControlsForIfLine(args, order, data, conditionVariable, totalA
           type = "select",
           width = ForeverAuras.normalWidth,
           order = order,
-          values = OptionsPrivate.Private.equality_operator_types,
+          values = currentConditionTemplate.operator_types == "native_aura_dispel" and {["=="] = "="} or OptionsPrivate.Private.equality_operator_types,
           get = function()
             return check.op;
           end,
@@ -2844,6 +2897,8 @@ local function addControlsForCondition(args, order, data, conditionVariable, tot
     end
   end
 
+  if OptionsPrivate.Private.BlizzardAuraDisplay.ContainsNativeCondition(data, conditions[i].check)
+      or (i > 1 and OptionsPrivate.Private.BlizzardAuraDisplay.ContainsNativeCondition(data, conditions[i - 1].check)) then showElseIf = isLinked and true or false end
   if showElseIf then
     args["condition" .. i .. "_else"] = {
       type = "toggle",
@@ -3156,7 +3211,7 @@ end
 
 local function SubPropertiesForChange(change)
   if change.property == "sound" then
-    return { "sound", "sound_channel", "sound_path", "sound_kit_id", "sound_repeat", "sound_type", "sound_fade"}
+    return { "sound", "sound_channel", "sound_path", "sound_fojji", "sound_kit_id", "sound_repeat", "sound_type", "sound_fade"}
   elseif change.property == "customcode" then
     return { "custom" }
   elseif change.property == "glowexternal" then
@@ -3339,6 +3394,7 @@ local fixupConditions = function(conditions)
 end
 
 function OptionsPrivate.GetConditionOptions(data)
+  OptionsPrivate.Private.BlizzardAuraDisplay.MigrateNativeConditions(data)
   local  options = {
     type = "group",
     name = L["Conditions"],
