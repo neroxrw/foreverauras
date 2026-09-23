@@ -29,15 +29,24 @@ function OptionsPrivate.AddCooldownViewerOptions(options, data, triggernum)
   trigger.cdmSpells = trigger.cdmSpells or {multi = {}}
   trigger.cdmSpells.multi = trigger.cdmSpells.multi or {}
   local selected = trigger.cdmSpells.multi
-  if trigger.cdmSpell ~= nil and trigger.cdmSelection ~= "spell" then
-    local resolved = Private.ResolveCDMSpell(trigger, "OPTIONS")
-    for _, id in ipairs(resolved) do selected[tostring(id)] = true end
-    if trigger.event == "Blizzard Cooldown Manager" and #resolved == 1 then
+  if trigger.cdmSpell ~= nil then
+    if trigger.cdmSelection ~= "spell" and trigger.event == "Blizzard Cooldown Manager" then
+      local resolved = Private.ResolveCDMSpell(trigger, "OPTIONS")
       local entries = Private.CDMCatalog()
-      local entry, info = entries[resolved[1]], C_CooldownViewer.GetCooldownViewerCooldownInfo(resolved[1])
-      if entry and info then
+      local entry = #resolved == 1 and entries[resolved[1]]
+      local info = entry and C_CooldownViewer.GetCooldownViewerCooldownInfo(resolved[1])
+      if info then
         if info.equipSlot or info.spellCategoryID then trigger.event = "Blizzard CDM Item"
         elseif entry.category == Enum.CooldownViewerCategory.Utility then trigger.event = "Blizzard CDM Utility" end
+      end
+    end
+    if tostring(trigger.cdmSpell):find("%S") then
+      if trigger.cdmExact then
+        trigger.cdmExactIDs = trigger.cdmExactIDs or {tostring(trigger.cdmSpell)}
+        trigger.cdmUseExactIDs = true
+      else
+        trigger.cdmNames = trigger.cdmNames or {tostring(trigger.cdmSpell)}
+        trigger.cdmUseNames = true
       end
     end
     trigger.cdmSpell, trigger.cdmExact = nil, nil
@@ -65,6 +74,7 @@ function OptionsPrivate.AddCooldownViewerOptions(options, data, triggernum)
     name = function()
       local settings = {}
       if trigger.cdmTrack == "cooldown" then settings[#settings + 1] = "Cooldown" elseif trigger.cdmTrack == "charges" then settings[#settings + 1] = "Charge recharge" end
+      if trigger.use_ignoreSpellKnown then settings[#settings + 1] = "Disable Spell Known Check" end
       if trigger.use_cdmShowGCD then settings[#settings + 1] = "Show GCD" end
       if trigger.cdmHideGCDText ~= false then settings[#settings + 1] = "Hide GCD text" end
       return "|cFFffcc00Extra Options:|r " .. (#settings > 0 and table.concat(settings, "; ") or "None")
@@ -75,23 +85,68 @@ function OptionsPrivate.AddCooldownViewerOptions(options, data, triggernum)
   Add("track", {type = "select", name = "Track cooldowns", width = ForeverAuras.normalWidth, hidden = function() return trigger.cdmSource == "buff" or trigger.event == "Blizzard CDM Item" or not view.extra end, values = {auto = "Auto", cooldown = "Cooldown", charges = "Charge recharge"}, get = function() return trigger.cdmTrack or "auto" end, set = function(_, value) Save("cdmTrack", value) end})
   Add("trackSpacer", {type = "description", name = "", width = ForeverAuras.normalWidth, hidden = function() return trigger.cdmSource == "buff" or trigger.event == "Blizzard CDM Item" or not view.extra end})
   Add("includeGCD", {type = "toggle", name = "Show global cooldown", width = "full", hidden = function() return trigger.cdmSource == "buff" or trigger.event == "Blizzard CDM Item" or not view.extra end, get = function() return trigger.use_cdmShowGCD or false end, set = function(_, value) Save("use_cdmShowGCD", value) end})
-  Add("hideGCDText", {type = "toggle", name = "Hide global cooldown text", width = "full", hidden = function() return trigger.cdmSource == "buff" or trigger.event == "Blizzard CDM Item" or not view.extra end, desc = "Hides the icon cooldown countdown numbers during a global cooldown. Custom text such as %p is configured separately.", get = function() return trigger.cdmHideGCDText ~= false end, set = function(_, value) Save("cdmHideGCDText", value) end})
+  Add("hideGCDText", {type = "toggle", name = "Hide global cooldown text", width = "full", hidden = function() return trigger.cdmSource == "buff" or trigger.event == "Blizzard CDM Item" or not view.extra end, desc = "Hides GCD countdown numbers, including %p and %t text. Spell cooldown and charge recharge text remain visible while the GCD swipe is shown.", get = function() return trigger.cdmHideGCDText ~= false end, set = function(_, value) Save("cdmHideGCDText", value) end})
+  Add("ignoreSpellKnown", {type = "toggle", name = "Disable Spell Known Check", width = "full",
+    hidden = function() return trigger.cdmSource == "buff" or trigger.event == "Blizzard CDM Item" or not view.extra end,
+    get = function() return trigger.use_ignoreSpellKnown or false end,
+    set = function(_, value) Save("use_ignoreSpellKnown", value) end})
 
-  Add("spell", {type = "input", name = "Spell name or ID", width = ForeverAuras.normalWidth, hidden = function() return trigger.event == "Blizzard CDM Item" end,
-    desc = "Enter name or spell ID. This creates one display across spell ranks, using the highest available rank. Use exact spell match for strict spell ID only filtering.",
-    get = function() return trigger.cdmSpell or "" end,
-    set = function(_, value)
-      trigger.cdmSelection = "spell"
-      if not tonumber(value) then trigger.cdmExact = nil end
-      Save("cdmSpell", value:match("^%s*(.-)%s*$"))
-    end})
-  Add("exactSpellMatch", {type = "toggle", name = "Exact Spell Match", width = ForeverAuras.normalWidth,
-    hidden = function() return trigger.event == "Blizzard CDM Item" end,
-    disabled = function() return not tonumber(trigger.cdmSpell) end,
-    desc = "Match only the entered spell ID, without matching other ranks. Requires a spell ID.",
-    get = function() return trigger.cdmExact == true end,
-    set = function(_, value) Save("cdmExact", value) end})
-  Add("spellSpacer", {type = "description", name = " ", width = "full", hidden = function() return trigger.event == "Blizzard CDM Item" end})
+
+  do
+    order = 20
+    Add("spellSelection", {type = "header", name = "Spell Selection Filters"})
+    local function Selector(title, label, prefix, flag, storage, exact, baseOrder, itemID)
+      options[prefix .. "Toggle"] = {
+        type = "toggle", name = title, width = ForeverAuras.normalWidth - 0.2, order = baseOrder,
+        get = function() return trigger[flag] or false end,
+        set = function(_, value) Save(flag, value) end,
+      }
+      options[prefix .. "DisabledSpace"] = {
+        type = "description", name = "", width = ForeverAuras.normalWidth + 0.2, order = baseOrder + 0.001,
+        hidden = function() return trigger[flag] == true end,
+      }
+      local size = #(trigger[storage] or {}) + 1
+      OptionsPrivate.CreateAuraSpellOptions(options, data, triggernum, size, exact, false,
+        prefix, baseOrder, flag, storage, label, nil, false, function() return trigger[flag] == true end,
+        function() Save(storage, trigger[storage]) end)
+      for i = 1, size do
+        local input = options[prefix .. i]
+        if itemID then
+          local function ItemName()
+            local id = tonumber(trigger[storage] and trigger[storage][i])
+            Private.CDMRequestItemData(id)
+            return id and C_Item and C_Item.GetItemNameByID(id)
+          end
+          local icon = options[prefix .. "icon" .. i]
+          icon.name = function() return ItemName() or "" end
+          icon.image = function()
+            local id = tonumber(trigger[storage] and trigger[storage][i])
+            local texture = id and C_Item and C_Item.GetItemIconByID(id)
+            return texture and tostring(texture) or "", 18, 18
+          end
+          icon.disabled = function() return not ItemName() end
+          input.get = function()
+            local raw = trigger[storage] and trigger[storage][i]
+            if not raw then return "" end
+            return ("%s (%s)"):format(raw, ItemName() or "Unknown Item") .. "\0" .. raw
+          end
+        end
+        if exact then
+          input.validate = function(_, value)
+            if value == "" then return true end
+            local id = tonumber(value)
+            return (id and id > 0 and id < 2147483647 and id == math.floor(id)) or (itemID and "Enter a positive whole-number Item ID." or "Enter a positive whole-number Spell ID.")
+          end
+        end
+      end
+    end
+    Selector("Name(s)", trigger.cdmSource == "buff" and "Aura Name" or "Spell Name", "cdmPicker_name", "cdmUseNames", "cdmNames", false, 21)
+    Selector("Exact Spell ID(s)", "Spell ID", "cdmPicker_spellid", "cdmUseExactIDs", "cdmExactIDs", true, 25)
+    if trigger.event == "Blizzard CDM Item" then
+      Selector("Exact Item ID(s)", "Item ID", "cdmPicker_itemid", "cdmUseItemIDs", "cdmItemIDs", true, 29, true)
+    end
+    order = 35
+  end
   Add("filters", {type = "header", name = "Blizzard CDM Filters"})
   Add("search", {type = "input", name = "Search", width = "full", get = function() return view.search or "" end,
     set = function(_, value) view.search = value; Refresh() end})

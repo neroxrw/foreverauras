@@ -1,6 +1,22 @@
 # Changelog
 
 ## Versions
+## 0.1.196
+Improved the functionality of the Aura (Blizzard) trigger
+- Added Name(s) and Exact Spell ID filter options
+- Added allowed conditions for Blizzard Auras
+- Improved wording
+
+Improved the functionality of the Blizzard Cooldown Manager Trigger
+- GCD Features now properly work
+- By default, adding a spell into CDM will not display if you do not know the spell
+- Added "Disable Spell Known Check"
+- Added Name(s) and Exact Spell ID filter options
+
+Misc fixes
+- Fix several backend APIs
+- Fix text being blank on Client Notice
+
 ## 0.1.180
 - Improved Blizzard Aura integration
 

@@ -32,7 +32,7 @@ function OptionsPrivate.GetSecretAuraSettings(data)
     OptionsPrivate.QueueOptionsRefresh(data.id)
   end
   local function Disabled() return not Display.Enabled(data) end
-  local args = {__title = "Blizzard Aura Settings", __order = 8, __collapsed = true}
+  local args = {__title = "Aura (Blizzard) Settings", __order = 8, __collapsed = true}
   args.sortMethod = {
     type = "select", name = "Sort by", disabled = Disabled, values = Display.sortMethods,
     sorting = {"Default", "ExpirationOnly", "Expiration", "NameOnly", "Name", "ImportantOnly", "BigDefensive", "UnitFrameDebuff", "AuraInstanceIDOnly"},
@@ -178,7 +178,7 @@ end
 function OptionsPrivate.PrepareSecretActionOptions(data, action)
   local Display = OptionsPrivate.Private.BlizzardAuraDisplay
   if not Display.Enabled(data) then return end
-  local supported = {header = true, do_sound = true, sound = true, sound_channel = true, sound_path = true, hide_all_glows = true}
+  local supported = {header = true, do_sound = true, sound = true, sound_channel = true, sound_path = true, sound_fojji = true, hide_all_glows = true}
   for key, option in pairs(action.args) do
     local when, field = key:match("^(%a+)_(.+)$")
     if (when == "start" or when == "finish") and option.type ~= "header" then
@@ -205,13 +205,6 @@ function OptionsPrivate.PrepareSecretActionOptions(data, action)
   for _, when in ipairs({"start", "finish"}) do
     local title = when == "start" and "added" or "removed"
     action.args[when .. "_do_sound"].desc = "Play when one of the trigger's exact spell IDs is " .. title .. ". Works even if Blizzard cannot display the aura. Uses the selected unit and exact spell IDs, excluding ignored IDs; other display filters do not affect sounds."
-    local soundOrder = action.args[when .. "_sound"].order
-    action.args[when .. "_sound_fojji"] = {
-      type = "input", name = "Recorded phrase", width = "full", order = soundOrder + 0.01,
-      hidden = function() return data.actions[when].sound ~= " Fojji" end,
-      disabled = function() return not data.actions[when].do_sound end,
-      desc = "Exact phrase in your selected FojjiCore recorded voice pack. Live TTS is not supported."
-    }
   end
   -- Reuse the native unit-glow settings, never the Lua On Show glow action.
   local settings = data.blizzardAuraDisplay
@@ -272,3 +265,4 @@ function OptionsPrivate.PrepareSecretActionOptions(data, action)
   action.args.secretSoundNotice = {type = "description", order = 0, width = "full",
     name = "|cffff2020Blizzard-controlled aura display: only supported actions are available.|r"}
 end
+

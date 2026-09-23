@@ -250,7 +250,7 @@ end
 
 function Display.Validate(data)
   if not Display.Eligible(data) then
-    return "Select a Blizzard Aura trigger as the progress source of an Icon, Progress Bar or Text."
+    return "Select an Aura (Blizzard) trigger as the progress source of an Icon, Progress Bar or Text."
   end
   local appearanceProblem = Display.ValidateAppearance(Display.PrepareConditionAppearance(data))
   if appearanceProblem then return appearanceProblem end
@@ -337,12 +337,12 @@ local function SoundWarning(data, message)
   Private.AuraWarnings.UpdateWarning(data.uid, "blizzard_aura_sound", message and "warning" or nil, message)
 end
 
-local function ResolveRecordedSound(value)
+function Private.ResolveFojjiRecordedSound(value)
   local db = FojjiCoreDB
   if not FojjiCore or not db then return nil, "FojjiCore is not loaded." end
   if db.disableTTS then return nil, "Speech is disabled in FojjiCore." end
   if db.ttsVoiceType ~= "custom" or db.ttsRandomFavorites then
-    return nil, "Select one recorded voice pack in FojjiCore. Native aura sounds cannot use synthesized TTS or random favorites."
+    return nil, "Select one recorded voice pack in FojjiCore. Recorded sounds cannot use synthesized TTS or random favorites."
   end
   local pack = FojjiCore.voicePacks and FojjiCore.voicePacks[db.ttsVoicePack]
   local file = pack and pack[value]
@@ -431,7 +431,7 @@ local function SyncSounds(region)
     if action.do_sound then
       local file, message
       if action.sound == " Fojji" then
-        file, message = ResolveRecordedSound(action.sound_fojji or "")
+        file, message = Private.ResolveFojjiRecordedSound(action.sound_fojji or "")
       elseif action.sound == " custom" then
         file = tonumber(action.sound_path) or action.sound_path
       elseif action.sound ~= " KitID" then

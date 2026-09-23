@@ -51,9 +51,15 @@ local function ShowNotice()
   title:SetTextColor(0.96, 0.94, 0.87)
   title:SetText("ForeverAuras")
   local message = panel:CreateFontString(nil, "OVERLAY")
-  message:SetFont(font, 20, "")
+  message:SetFontObject(GameFontNormalLarge)
+  if not message:SetFont(font, 20, "") then
+    message:SetFontObject(GameFontNormalLarge)
+  end
   message:SetPoint("TOPLEFT", 50, -204)
-  message:SetPoint("BOTTOMRIGHT", -50, 92)
+  -- Let the wrapped text determine its height instead of clipping to two anchors.
+  message:SetWidth(460)
+  message:SetHeight(0)
+  message:SetJustifyV("TOP")
   message:SetWordWrap(true)
   message:SetJustifyH("CENTER")
   message:SetTextColor(1, 0.95, 0.88)

@@ -129,10 +129,11 @@ local function formatValueForAssignment(vType, value, pathToCustomFunction, path
     end
   elseif(vType == "sound") then
     if (value and type(value) == "table") then
-      return string.format("{ sound = %s, sound_channel = %s, sound_path = %s, sound_kit_id = %s, sound_type = %s, %s, %s}",
+      return string.format("{ sound = %s, sound_channel = %s, sound_path = %s, sound_fojji = %s, sound_kit_id = %s, sound_type = %s, %s, %s}",
         Private.QuotedString(tostring(value.sound or "")),
         Private.QuotedString(tostring(value.sound_channel or "")),
         Private.QuotedString(tostring(value.sound_path or "")),
+        Private.QuotedString(tostring(value.sound_fojji or "")),
         Private.QuotedString(tostring(value.sound_kit_id or "")),
         Private.QuotedString(tostring(value.sound_type or "")),
         value.sound_repeat and "sound_repeat = " .. tostring(value.sound_repeat) or "nil",
@@ -287,6 +288,7 @@ function Private.ExecEnv.GetConditionValue(state, variable)
 end
 
 local function CreateTestForCondition(data, input, allConditionsTemplate, usedStates)
+  if Private.BlizzardAuraDisplay.ContainsNativeCondition(data, input) then return "false" end
   local uid = data.uid
   local trigger = input and input.trigger;
   local variable = input and input.variable;

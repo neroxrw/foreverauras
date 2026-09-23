@@ -465,6 +465,12 @@ local function modify(parent, region, data)
     -- If cooldown.inverse == false then effectiveReverse = not inverse
     -- If cooldown.inverse == true then effectiveReverse = inverse
     local effectiveReverse = not region.inverseDirection == not cooldown.inverse
+    local progressState = region.cdmProgressState
+    if progressState and progressState.cooldownID and not progressState.cdmBuff then
+      -- CDM supplies Blizzard's cooldown timer. Its default swipe is not reversed;
+      -- the generic progress inversion would turn a brief GCD into a filling wedge.
+      effectiveReverse = region.inverseDirection == true
+    end
     cooldown:SetReverse(effectiveReverse)
     Private.CDMAuraProgress.Style(region)
     if (cooldown.expirationTime and cooldown.duration and cooldown:IsShown()) then
@@ -481,7 +487,7 @@ local function modify(parent, region, data)
   function region:SetHideCountdownNumbers(cooldownTextDisabled)
     self.cdmConfiguredHideNumbers = cooldownTextDisabled
     Private.CDMAuraProgress.Style(self)
-    local state = self.state
+    local state = self.cdmProgressState or self.state
     cooldownTextDisabled = cooldownTextDisabled or (state and state.cdmHideGCDText and state.cdmGCDOnly) or false
     if OmniCC and OmniCC.Cooldown and OmniCC.Cooldown.SetNoCooldownCount then
       cooldown:SetHideCountdownNumbers(true)
@@ -598,15 +604,24 @@ local function modify(parent, region, data)
 
 
 
+  function region:UpdateCooldownDrawState()
+    local suppressed = self.cdmProgressState and self.cdmProgressState.cdmSuppressGCD or false
+    -- Suppress the drawing itself: Show/SetCooldown can re-show a hidden widget.
+    -- Use the original swipe setter, since this icon masks the public setter.
+    cooldown:SetDrawSwipeOrg(not suppressed and self.cooldownSwipe ~= false)
+    cooldown:SetDrawEdge(not suppressed and self.cooldownEdge == true)
+    return suppressed
+  end
+
   function region:SetCooldownSwipe(cooldownSwipe)
     region.cooldownSwipe = cooldownSwipe;
-    cooldown:SetDrawSwipeOrg(cooldownSwipe);
+    self:UpdateCooldownDrawState()
     Private.CDMAuraProgress.Style(region)
   end
 
   function region:SetCooldownEdge(cooldownEdge)
     region.cooldownEdge = cooldownEdge;
-    cooldown:SetDrawEdge(cooldownEdge);
+    self:UpdateCooldownDrawState()
     Private.CDMAuraProgress.Style(region)
   end
 
@@ -626,6 +641,7 @@ local function modify(parent, region, data)
   if(data.cooldown) then
     function region:UpdateValue()
       if region.cdmNativeProgress then return end
+      if self:UpdateCooldownDrawState() then cooldown:Hide(); return end
       if hasanysecretvalues(self.value, self.total) then
         cooldown:Hide()
         return
@@ -655,6 +671,7 @@ local function modify(parent, region, data)
 
     function region:UpdateTime()
       if region.cdmNativeProgress then return end
+      if self:UpdateCooldownDrawState() then cooldown:Hide(); return end
       if self.paused then
         cooldown:Pause()
       else
@@ -680,6 +697,7 @@ local function modify(parent, region, data)
 
     function region:UpdateDuration()
       if region.cdmNativeProgress then return end
+      if self:UpdateCooldownDrawState() then cooldown:Hide(); return end
       cooldown:Show()
       cooldown:Resume()
       local durationObject = self.durationObject
@@ -690,13 +708,17 @@ local function modify(parent, region, data)
       cooldown.duration = nil
 
       region:UpdateEffectiveInverse()
+      -- Apply the current state's text policy before installing a new timer.
+      self:SetHideCountdownNumbers(self.cdmConfiguredHideNumbers)
       cooldown:SetCooldownFromDurationObject(durationObject, true)
+      if self.cdmProgressState and self.cdmProgressState.cdmNativePaused then cooldown:Pause() end
       local alpha = durationObject:EvaluateRemainingDuration(cooldownAlphaCurve)
       cooldown:SetAlpha(alpha)
     end
 
     function region:PreShow()
       if region.cdmNativeProgress then return end
+      if self:UpdateCooldownDrawState() then cooldown:Hide(); return end
       if (cooldown.duration and cooldown.duration > 0.01 and cooldown.duration ~= math.huge and cooldown.expirationTime ~= math.huge) then
         cooldown:Show();
         cooldown:SetCooldown(cooldown.expirationTime - cooldown.duration,

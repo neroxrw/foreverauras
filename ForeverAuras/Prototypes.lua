@@ -10153,7 +10153,7 @@ Private.dynamic_texts = {
         return remaining >= 0 and remaining or nil
       end
       if state.progressType == "durationObject" and ForeverAuras.IsDurationObject(state.durationObject) then
-        return state.durationObject:GetRemainingDuration()
+        return Private.GetTextDuration(state):GetRemainingDuration()
       end
     end,
     func = function(remaining, state, progressPrecision)
@@ -10169,7 +10169,7 @@ Private.dynamic_texts = {
         local precision = progressPrecision or 1
         local threshold = precision >= 4 and 3 or 60
         if precision >= 4 then precision = precision - 3 end
-        return Private.FormatDurationText(state.durationObject, false, 0, threshold, precision)
+        return Private.FormatDurationText(Private.GetTextDuration(state), false, 0, threshold, precision)
       end
       if issecretvalue(remaining) then
         return string.format("%.1f", remaining)
@@ -10213,7 +10213,7 @@ Private.dynamic_texts = {
         return state.duration, true
       end
       if state.progressType == "durationObject" and ForeverAuras.IsDurationObject(state.durationObject) then
-        return state.durationObject:GetTotalDuration(), true
+        return Private.GetTextDuration(state):GetTotalDuration(), true
       end
     end,
     func = function(duration, state, totalPrecision)
@@ -10227,7 +10227,7 @@ Private.dynamic_texts = {
         local precision = totalPrecision or 1
         local threshold = precision >= 4 and 3 or 60
         if precision >= 4 then precision = precision - 3 end
-        return Private.FormatDurationText(state.durationObject, true, 0, threshold, precision)
+        return Private.FormatDurationText(Private.GetTextDuration(state), true, 0, threshold, precision)
       end
       if issecretvalue(duration) then
         return string.format("%.1f", duration)

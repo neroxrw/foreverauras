@@ -7,6 +7,7 @@ local displays = {}
 local loaded = {}
 
 function Trigger.Add(data)
+  Display.MigrateNativeConditions(data)
   displays[data.id] = nil
   for _, entry in ipairs(data.triggers) do
     if entry.trigger.type == "secretAura" then displays[data.id] = data; break end
@@ -70,13 +71,13 @@ function Trigger.Rename(oldid, newid)
 end
 
 function Trigger.FinishLoadUnload() end
-function Trigger.GetName() return "Blizzard Aura" end
+function Trigger.GetName() return "Aura (Blizzard)" end
 function Trigger.CanHaveTooltip() return false end
 function Trigger.SetToolTip() return false end
 function Trigger.GetOverlayInfo() return {} end
 function Trigger.GetAdditionalProperties() return {} end
 function Trigger.GetProgressSources(data, triggernum, values)
-  table.insert(values, {trigger = triggernum, property = "value", type = "number", display = "Blizzard Aura", total = "total"})
+  table.insert(values, {trigger = triggernum, property = "value", type = "number", display = "Aura (Blizzard)", total = "total"})
 end
 function Trigger.GetTriggerConditions() return {} end
 

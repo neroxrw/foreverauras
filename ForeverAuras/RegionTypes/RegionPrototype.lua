@@ -192,7 +192,15 @@ local function SoundPlayHelper(self)
     return;
   end
 
-  if (options.sound == " custom") then
+  if options.sound == " Fojji" then
+    local file, message = Private.ResolveFojjiRecordedSound(options.sound_fojji or "")
+    local data = ForeverAuras.GetData(self.id)
+    if data then Private.AuraWarnings.UpdateWarning(data.uid, "fojji_recorded_sound", message and "warning" or nil, message) end
+    if file then
+      local ok, _, handle = pcall(PlaySoundFile, file, options.sound_channel or "Master")
+      if ok then self.soundHandle = handle end
+    end
+  elseif (options.sound == " custom") then
     local ok, _, handle = pcall(PlaySoundFile, options.sound_path, options.sound_channel or "Master")
     if ok then
       self.soundHandle = handle
@@ -215,7 +223,9 @@ local function hasSound(options)
   if options.sound_type == "Stop" then
     return true
   end
-  if (options.sound == " custom") then
+  if options.sound == " Fojji" then
+    return true
+  elseif (options.sound == " custom") then
     if (options.sound_path and options.sound_path ~= "") then
       return true
     end
@@ -418,6 +428,8 @@ local function GetMinMaxProgress(self)
 end
 
 local function UpdateProgressFromState(self, minMaxConfig, state, progressSource)
+  -- Use the selected progress source, which can differ from the active trigger.
+  self.cdmProgressState = state
   local progressType = progressSource[2]
   local property = progressSource[3]
   local totalProperty = progressSource[4]
@@ -629,6 +641,7 @@ local autoTimedProgressSource = {-1, "timer", "expirationTime", "duration", "mod
 local autoStaticProgressSource = {-1, "number", "value", "total", nil, nil, nil, nil, true}
 local autoDurationObjectProgressSource = {-1, "durationObject", nil, nil, nil, "inverse", nil, nil, true}
 local function UpdateProgressFromAuto(self, minMaxConfig, state)
+  self.cdmProgressState = state
   if state.progressType == "timed"  then
     UpdateProgressFromState(self, minMaxConfig, state, autoTimedProgressSource)
   elseif state.progressType == "static" then
@@ -654,6 +667,7 @@ local function UpdateProgressFromAuto(self, minMaxConfig, state)
 end
 
 local function UpdateProgressFromManual(self, minMaxConfig, state, value, total)
+  self.cdmProgressState = nil
   value = type(value) == "number" and value or 0
   total = type(total) == "number" and total or 0
   local adjustMin
