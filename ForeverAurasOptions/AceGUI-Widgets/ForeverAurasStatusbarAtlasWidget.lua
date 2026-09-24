@@ -1,4 +1,4 @@
--- Modified for ForeverAuras; namespace and/or implementation changes through 2026-09-18.
+-- Modified for ForeverAuras, 2026-09-18.
 -- Widget is based on the AceGUIWidget-DropDown.lua supplied with AceGUI-3.0
 -- Original Widget created by Yssaril, modified by ForeverAuras Team to handle Atlas
 

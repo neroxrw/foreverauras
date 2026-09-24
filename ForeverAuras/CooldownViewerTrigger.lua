@@ -7,8 +7,6 @@ local refreshEvents = {
   PLAYER_SPECIALIZATION_CHANGED = true,
   SPELLS_CHANGED = true,
   PLAYER_EQUIPMENT_CHANGED = true,
-  GET_ITEM_INFO_RECEIVED = true,
-  ITEM_DATA_LOAD_RESULT = true,
   FA_CDM_LAYOUT_CHANGED = true,
   COOLDOWN_VIEWER_DATA_LOADED = true,
   COOLDOWN_VIEWER_TABLE_HOTFIXED = true,
@@ -24,8 +22,14 @@ local function IsAvailable()
 end
 
 local function GetCatalog(refresh)
-  if catalog and not refresh then return catalog end
+  local batch = Private.cdmScanBatch
+  if batch and batch.catalog then return batch.catalog end
+  if catalog and not refresh then
+    if batch then batch.catalog = catalog end
+    return catalog
+  end
   catalog = IsAvailable() and Private.CDMCatalog() or {}
+  if batch then batch.catalog = catalog end
   return catalog
 end
 
@@ -48,8 +52,7 @@ local function ExactMatch(info, id)
   return 0
 end
 
--- A nil result keeps the existing CDM-entry picker path; an empty list is
--- an enabled name/ID filter with no entries and must not select everything.
+-- nil uses the entry picker; an empty filter selects nothing.
 function Private.CDMSpellQueries(trigger)
   if not (trigger.cdmUseNames or trigger.cdmUseExactIDs or (trigger.event == "Blizzard CDM Item" and trigger.cdmUseItemIDs)) then return end
   local queries, seen = {}, {}
@@ -258,17 +261,11 @@ local function ReadBoolean(value)
   if IsReadable(value) and type(value) == "boolean" then return value end
 end
 
-local refreshQueued = false
 local function QueueRefresh()
-  if refreshQueued then return end
-  refreshQueued = true
-  C_Timer.After(0, function()
-    refreshQueued = false
-    if Private.ScanEvents then Private.ScanEvents("FA_CDM_REFRESH") end
-  end)
+  Private.QueueCDMRefresh()
 end
 
-function Private.UpdateCooldownViewerStates(allstates, selected, event, showGCD, track, hideGCDText, showMode, exactID, requireTarget, ignoreSpellKnown)
+local function BuildCooldownViewerStates(allstates, selected, event, showGCD, track, hideGCDText, showMode, exactID, requireTarget, ignoreSpellKnown)
   if event == "PLAYER_SPECIALIZATION_CHANGED" or event == "PLAYER_EQUIPMENT_CHANGED" or event == "PLAYER_ENTERING_WORLD" then Private.CDMResetIdentities() end
   local available = GetCatalog(refreshEvents[event] or event == "OPTIONS")
   local frames = Private.CDMFrames()
@@ -277,7 +274,9 @@ function Private.UpdateCooldownViewerStates(allstates, selected, event, showGCD,
     state.changed = true
   end
 
-  if event ~= "FA_CDM_REFRESH" and event ~= "OPTIONS" and #selected > 0 then QueueRefresh() end
+  if event ~= "FA_CDM_REFRESH" and event ~= "OPTIONS"
+      and event ~= "GET_ITEM_INFO_RECEIVED" and event ~= "ITEM_DATA_LOAD_RESULT"
+      and #selected > 0 then QueueRefresh() end
   if not IsAvailable() then return true end
   if requireTarget and event ~= "OPTIONS" then
     local exists = UnitExists("target")
@@ -359,9 +358,9 @@ function Private.UpdateCooldownViewerStates(allstates, selected, event, showGCD,
               state.isReady = charges.currentCharges > 0
             end
           end
-          -- For CDM progress, the committed viewer timer is authoritative.
-          -- Keep spell API updates from replacing the viewer's selected timer.
+          -- Follow the timer selected by the CDM viewer.
           local native = Private.CDMGetNativeCooldown(frames[cooldownID], spellID)
+          state.cdmNativeRevision = native and native.revision
           local duration = native and native.duration or nil
           state.cdmNativePaused = native and native.paused == true or false
           if native then
@@ -371,8 +370,7 @@ function Private.UpdateCooldownViewerStates(allstates, selected, event, showGCD,
               if state.stacks == nil then state.isReady = not native.onCooldown end
             end
             if native.recharging ~= nil then state.recharging = native.recharging end
-            -- Only the explicit charge-recharge option opts out of the CDM's
-            -- selected visual source. Auto and Cooldown use the viewer timer.
+            -- Explicit charge tracking uses the recharge timer.
             if track == "charges" and C_Spell.GetSpellChargeDuration then
               local chargeDuration = C_Spell.GetSpellChargeDuration(spellID)
               if chargeDuration then
@@ -390,14 +388,12 @@ function Private.UpdateCooldownViewerStates(allstates, selected, event, showGCD,
             state.progressType, state.durationObject = "durationObject", duration
             state.value, state.total = nil, nil
           else
-            -- An empty native widget is zero progress, not a static value of 1
-            -- (which would appear as a stray "1" in %p and fill progress bars).
+            -- Zero duration keeps %p empty and progress bars unfilled.
             state.progressType, state.duration, state.expirationTime = "timed", 0, 0
             state.value, state.total = nil, nil
           end
           if hideGCDText then
-            -- Preserve GCD-free %p while using the native real-CD/recharge timer
-            -- as soon as it is committed (even if the spell API is still behind).
+            -- Hide GCD text without hiding a real cooldown or recharge timer.
             state.cdmTextDurationObject = state.cdmGCDOnly and realDuration or duration
           end
           if cooldown and ReadBoolean(cooldown.isEnabled) == false then state.isReady, state.onCooldown = false, true end
@@ -420,6 +416,71 @@ function Private.UpdateCooldownViewerStates(allstates, selected, event, showGCD,
   return true
 end
 
+-- Compare snapshots because the trigger engine modifies live states.
+-- Secret values and mutable aura bindings still require an update.
+local previousOutputs = setmetatable({}, {__mode = "k"})
+local function GetOutputs(selected, event, showGCD, track, hideGCDText, showMode, exactID, requireTarget, ignoreSpellKnown)
+  local batch = Private.cdmScanBatch
+  local cache, key
+  if batch then
+    batch.outputs = batch.outputs or {}
+    cache = batch.outputs[selected]
+    if not cache then cache = {}; batch.outputs[selected] = cache end
+    key = table.concat({event or "", tostring(showGCD), tostring(track), tostring(hideGCDText),
+      tostring(showMode), tostring(exactID), tostring(requireTarget), tostring(ignoreSpellKnown)}, ":")
+    if cache[key] then return cache[key] end
+  end
+  local outputs = {}
+  BuildCooldownViewerStates(outputs, selected, event, showGCD, track, hideGCDText, showMode, exactID, requireTarget, ignoreSpellKnown)
+  if cache then cache[key] = outputs end
+  return outputs
+end
+local function SameOutput(previous, current)
+  if not previous or current.cdmBuff then return false end
+  for key, value in pairs(current) do
+    if key ~= "changed" then
+      local old = previous[key]
+      if not IsReadable(value) or not IsReadable(old) or value ~= old then return false end
+    end
+  end
+  for key in pairs(previous) do
+    if key ~= "changed" and current[key] == nil then return false end
+  end
+  return true
+end
+
+local function CommitStates(allstates, outputs)
+  local previous = previousOutputs[allstates] or {}
+  local changed = false
+  for key, output in pairs(outputs) do
+    local state = allstates[key]
+    if not state or not SameOutput(previous[key], output) or state.show ~= output.show then
+      if not state then state = {}; allstates[key] = state end
+      for field in pairs(previous[key] or {}) do
+        if field ~= "changed" then state[field] = nil end
+      end
+      for field, value in pairs(output) do state[field] = value end
+      state.changed = true
+      changed = true
+    end
+  end
+  for key, state in pairs(allstates) do
+    if not outputs[key] and state.show then
+      for field in pairs(previous[key] or {}) do
+        if field ~= "changed" then state[field] = nil end
+      end
+      state.show, state.changed = false, true
+      changed = true
+    end
+  end
+  previousOutputs[allstates] = outputs
+  return changed
+end
+
+function Private.UpdateCooldownViewerStates(allstates, ...)
+  return CommitStates(allstates, GetOutputs(...))
+end
+
 Private.ExecEnv.UpdateCooldownViewerStates = Private.UpdateCooldownViewerStates
 Private.ExecEnv.UpdateCDMSpell = function(allstates, config, event, ...)
   local selected = Private.ResolveCDMSpell(config, event)
@@ -427,19 +488,18 @@ Private.ExecEnv.UpdateCDMSpell = function(allstates, config, event, ...)
 end
 
 function Private.ExecEnv.UpdateCDMSelectionList(allstates, queries, event)
-  for _, state in pairs(allstates) do state.show, state.changed = false, true end
+  local outputs = {}
   for _, query in ipairs(queries) do
     local selected = Private.ResolveCDMSpell(query, event)
-    local temporary = {}
-    Private.UpdateCooldownViewerStates(temporary, selected, event, query.showGCD, query.track, query.hideGCDText,
+    local temporary = GetOutputs(selected, event, query.showGCD, query.track, query.hideGCDText,
       query.showMode, query.event ~= "Blizzard CDM Item" and query.cdmExact and tonumber(query.cdmSpell) or nil, query.requireTarget, query.use_ignoreSpellKnown)
     for _, state in pairs(temporary) do
       -- Overlapping name/ID selections represent the same displayed aura once.
       local key = tostring(state.cooldownID) .. ":" .. tostring(state.spellId)
-      if not allstates[key] or not allstates[key].show or state.show then allstates[key] = state end
+      if not outputs[key] or not outputs[key].show or state.show then outputs[key] = state end
     end
   end
-  return true
+  return CommitStates(allstates, outputs)
 end
 
 local function BooleanCondition(field)
@@ -469,7 +529,7 @@ Private.CooldownViewerPrototype = {
     return "Cooldown Manager", 134400
   end,
   events = function()
-    local events = {"PLAYER_ENTERING_WORLD", "PLAYER_SPECIALIZATION_CHANGED", "SPELLS_CHANGED", "SPELL_UPDATE_COOLDOWN", "SPELL_UPDATE_CHARGES", "SPELL_UPDATE_ICON", "PLAYER_EQUIPMENT_CHANGED", "BAG_UPDATE_COOLDOWN", "GET_ITEM_INFO_RECEIVED", "ITEM_DATA_LOAD_RESULT", "PLAYER_TARGET_CHANGED", "PLAYER_TOTEM_UPDATE"}
+    local events = {"PLAYER_ENTERING_WORLD", "PLAYER_SPECIALIZATION_CHANGED", "SPELLS_CHANGED", "SPELL_UPDATE_COOLDOWN", "SPELL_UPDATE_CHARGES", "SPELL_UPDATE_ICON", "PLAYER_EQUIPMENT_CHANGED", "BAG_UPDATE_COOLDOWN", "PLAYER_TARGET_CHANGED", "PLAYER_TOTEM_UPDATE"}
     if IsAvailable() then
       events[#events + 1] = "COOLDOWN_VIEWER_DATA_LOADED"
       events[#events + 1] = "COOLDOWN_VIEWER_TABLE_HOTFIXED"
@@ -592,3 +652,10 @@ for key, value in pairs(Private.CooldownViewerPrototype) do
 end
 Private.CooldownViewerUtilityPrototype.name = "Utility Cooldowns"
 Private.CooldownViewerItemPrototype.name = "Item"
+-- Item metadata events only update item triggers; they do not change the catalog.
+Private.CooldownViewerItemPrototype.events = function()
+  local result = Private.CooldownViewerPrototype.events()
+  result.events[#result.events + 1] = "GET_ITEM_INFO_RECEIVED"
+  result.events[#result.events + 1] = "ITEM_DATA_LOAD_RESULT"
+  return result
+end

@@ -1,4 +1,4 @@
--- Modified for ForeverAuras; namespace and/or implementation changes through 2026-09-18.
+-- Modified for ForeverAuras, 2026-09-18.
 --[[-----------------------------------------------------------------------------
 Input Widget that allows to show an alternative text when it does not have focus
 -------------------------------------------------------------------------------]]

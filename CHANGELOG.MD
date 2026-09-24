@@ -1,6 +1,12 @@
 # Changelog
 
 ## Versions
+## 0.1.203
+- Substantial performance fix for Blizzard CDM Trigger
+- Fixed fonts not displaying on first click
+- Fix multi select conditioning
+- Fix group select -> conditions
+
 ## 0.1.196
 Improved the functionality of the Aura (Blizzard) trigger
 - Added Name(s) and Exact Spell ID filter options

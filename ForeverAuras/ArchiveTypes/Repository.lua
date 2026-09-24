@@ -1,4 +1,4 @@
--- Modified for ForeverAuras; namespace and/or implementation changes through 2026-09-18.
+-- Modified for ForeverAuras, 2026-09-18.
 --[[
 Repository store type. This is a meta-archive of sorts.
   Store contains 0 or more substores, each of which is essentially

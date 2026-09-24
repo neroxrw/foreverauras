@@ -1,4 +1,4 @@
--- Modified for ForeverAuras; namespace and/or implementation changes through 2026-09-19.
+-- Modified for ForeverAuras, 2026-09-19.
 if not ForeverAuras.IsLibsOK() then return end
 ---@type string
 local AddonName = ...
@@ -109,6 +109,7 @@ local function setValue(trigger, field, value, multiEntry, entryNumber)
 end
 
 function OptionsPrivate.ConstructOptions(prototype, data, startorder, triggernum, triggertype)
+  local SaveData = triggertype == "load" and ForeverAuras.UpdateLoadConditions or ForeverAuras.Add
   local trigger
   -- For load options only the hidden property counts, but for the generic trigger
   -- we look at enabled.
@@ -227,7 +228,7 @@ function OptionsPrivate.ConstructOptions(prototype, data, startorder, triggernum
                 trigger["use_"..realname] = false
               end
             end
-            ForeverAuras.Add(data);
+            SaveData(data);
             ForeverAuras.ClearAndUpdateOptions(data.id)
             OptionsPrivate.Private.ScanForLoads({[data.id] = true});
             ForeverAuras.UpdateThumbnail(data);
@@ -292,7 +293,7 @@ function OptionsPrivate.ConstructOptions(prototype, data, startorder, triggernum
                 end
               end
             end
-            ForeverAuras.Add(data);
+            SaveData(data);
             ForeverAuras.ClearAndUpdateOptions(data.id)
             OptionsPrivate.Private.ScanForLoads({[data.id] = true});
             ForeverAuras.UpdateThumbnail(data);
@@ -347,7 +348,7 @@ function OptionsPrivate.ConstructOptions(prototype, data, startorder, triggernum
           get = function() return trigger["use_"..realname]; end,
           set = function(info, v)
             trigger["use_"..realname] = v;
-            ForeverAuras.Add(data);
+            SaveData(data);
             ForeverAuras.ClearAndUpdateOptions(data.id)
             OptionsPrivate.Private.ScanForLoads({[data.id] = true});
             ForeverAuras.UpdateThumbnail(data);
@@ -452,7 +453,7 @@ function OptionsPrivate.ConstructOptions(prototype, data, startorder, triggernum
               end,
               set = function(info, v)
                 setValue(trigger, realname.."_operator", v, multiEntry, entryNumber)
-                ForeverAuras.Add(data);
+                SaveData(data);
                 if (reloadOptions) then
                   ForeverAuras.ClearAndUpdateOptions(data.id)
                 end
@@ -474,7 +475,7 @@ function OptionsPrivate.ConstructOptions(prototype, data, startorder, triggernum
             get = function() return getValue(trigger, "use_"..realname, realname, multiEntry, entryNumber) end,
             set = function(info, v)
               setValue(trigger, realname, v, multiEntry, entryNumber)
-              ForeverAuras.Add(data);
+              SaveData(data);
               if (reloadOptions) then
                 ForeverAuras.ClearAndUpdateOptions(data.id)
               end
@@ -520,7 +521,7 @@ function OptionsPrivate.ConstructOptions(prototype, data, startorder, triggernum
             end,
             set = function(info, v)
               setValue(trigger, realname, v, multiEntry, entryNumber)
-              ForeverAuras.Add(data);
+              SaveData(data);
               if (reloadOptions) then
                 ForeverAuras.ClearAndUpdateOptions(data.id)
               end
@@ -554,7 +555,7 @@ function OptionsPrivate.ConstructOptions(prototype, data, startorder, triggernum
             get = function() return getValue(trigger, "use_"..realname, realname.."_operator", multiEntry, entryNumber) end,
             set = function(info, v)
               setValue(trigger, realname.."_operator", v, multiEntry, entryNumber)
-              ForeverAuras.Add(data);
+              SaveData(data);
               if (reloadOptions) then
                 ForeverAuras.ClearAndUpdateOptions(data.id)
               end
@@ -574,7 +575,7 @@ function OptionsPrivate.ConstructOptions(prototype, data, startorder, triggernum
             get = function() return getValue(trigger, "use_"..realname, realname, multiEntry, entryNumber) end,
             set = function(info, v)
               setValue(trigger, realname, v, multiEntry, entryNumber)
-              ForeverAuras.Add(data);
+              SaveData(data);
               if (reloadOptions) then
                 ForeverAuras.ClearAndUpdateOptions(data.id)
               end
@@ -594,7 +595,7 @@ function OptionsPrivate.ConstructOptions(prototype, data, startorder, triggernum
               get = function() return getValue(trigger, "use_"..realname, realname.."_caseInsensitive", multiEntry, entryNumber) end,
               set = function(info, v)
                 setValue(trigger, realname.."_caseInsensitive", v, multiEntry, entryNumber)
-                ForeverAuras.Add(data);
+                SaveData(data);
                 if (reloadOptions) then
                   ForeverAuras.ClearAndUpdateOptions(data.id)
                 end
@@ -631,7 +632,7 @@ function OptionsPrivate.ConstructOptions(prototype, data, startorder, triggernum
               end,
               set = function(info, v)
                 setValue(trigger, "use_exact_"..realname, v, multiEntry, entryNumber)
-                ForeverAuras.Add(data);
+                SaveData(data);
                 OptionsPrivate.Private.ScanForLoads({[data.id] = true});
                 ForeverAuras.UpdateThumbnail(data);
                 OptionsPrivate.SortDisplayButtons(nil, true);
@@ -768,7 +769,7 @@ function OptionsPrivate.ConstructOptions(prototype, data, startorder, triggernum
                 end
               end
               setValue(trigger, realname, fixedInput, multiEntry, entryNumber)
-              ForeverAuras.Add(data);
+              SaveData(data);
               if (reloadOptions) then
                 ForeverAuras.ClearAndUpdateOptions(data.id)
               end
@@ -841,7 +842,7 @@ function OptionsPrivate.ConstructOptions(prototype, data, startorder, triggernum
               else
                 trigger["use_specific_"..realname] = nil;
               end
-              ForeverAuras.Add(data);
+              SaveData(data);
               if (reloadOptions) then
                 ForeverAuras.ClearAndUpdateOptions(data.id)
               end
@@ -871,7 +872,7 @@ function OptionsPrivate.ConstructOptions(prototype, data, startorder, triggernum
               set = function(info, v)
                 trigger["use_specific_"..realname] = nil;
                 options[name .. suffix].set(info, "player");
-                ForeverAuras.Add(data)
+                SaveData(data)
               end
             }
             order = order + 1;
@@ -886,7 +887,7 @@ function OptionsPrivate.ConstructOptions(prototype, data, startorder, triggernum
               get = function() return trigger[realname] end,
               set = function(info, v)
                 trigger[realname] = v;
-                ForeverAuras.Add(data);
+                SaveData(data);
                 if (reloadOptions) then
                   ForeverAuras.ClearAndUpdateOptions(data.id)
                 end
@@ -934,7 +935,7 @@ function OptionsPrivate.ConstructOptions(prototype, data, startorder, triggernum
             set = function(info, v)
               trigger[realname] = trigger[realname] or {};
               trigger[realname].single = v;
-              ForeverAuras.Add(data);
+              SaveData(data);
               if (reloadOptions) then
                 ForeverAuras.ClearAndUpdateOptions(data.id)
               end
@@ -958,7 +959,7 @@ function OptionsPrivate.ConstructOptions(prototype, data, startorder, triggernum
               end,
               set = function(info, v)
                 trigger[realname .. "_extraOption"] = v
-                ForeverAuras.Add(data)
+                SaveData(data)
                 OptionsPrivate.Private.ScanForLoads({[data.id] = true})
                 OptionsPrivate.SortDisplayButtons(nil, true)
               end
@@ -999,7 +1000,7 @@ function OptionsPrivate.ConstructOptions(prototype, data, startorder, triggernum
                 else
                   trigger[realname].multi[v] = true;
                 end
-                ForeverAuras.Add(data);
+                SaveData(data);
                 if (reloadOptions) then
                   -- Hack specifally for dragon flight mini talent
                   -- That widget needs to be informed before and
@@ -1037,7 +1038,7 @@ function OptionsPrivate.ConstructOptions(prototype, data, startorder, triggernum
       end,
       set = function(info, v)
         trigger.use_count = v
-        ForeverAuras.Add(data)
+        SaveData(data)
         ForeverAuras.ClearAndUpdateOptions(data.id)
       end
     };
@@ -1066,7 +1067,7 @@ function OptionsPrivate.ConstructOptions(prototype, data, startorder, triggernum
         end,
         set = function(info, v)
           trigger.count = v
-          ForeverAuras.Add(data)
+          SaveData(data)
         end,
         hidden = disabled
       };
@@ -1084,7 +1085,7 @@ function OptionsPrivate.ConstructOptions(prototype, data, startorder, triggernum
       end,
       set = function(info, v)
         trigger.use_delay = v
-        ForeverAuras.Add(data)
+        SaveData(data)
         ForeverAuras.ClearAndUpdateOptions(data.id)
       end
     };
@@ -1113,7 +1114,7 @@ function OptionsPrivate.ConstructOptions(prototype, data, startorder, triggernum
         end,
         set = function(info, v)
           trigger.delay = ForeverAuras.TimeToSeconds(v)
-          ForeverAuras.Add(data)
+          SaveData(data)
         end
       };
       order = order + 1;
@@ -1146,7 +1147,7 @@ function OptionsPrivate.ConstructOptions(prototype, data, startorder, triggernum
       end,
       set = function(info, v)
         trigger.duration = tostring(ForeverAuras.TimeToSeconds(v))
-        ForeverAuras.Add(data)
+        SaveData(data)
       end
     }
     order = order + 1;
@@ -1176,7 +1177,7 @@ function OptionsPrivate.GetLoadOptions(data)
     get = function(info) return data.load[info[#info]] end,
     set = function(info, v)
         data.load[info[#info]] = (v ~= "" and v) or nil;
-        ForeverAuras.Add(data);
+        ForeverAuras.UpdateLoadConditions(data);
         ForeverAuras.UpdateThumbnail(data);
         OptionsPrivate.Private.ScanForLoads({[data.id] = true});
         OptionsPrivate.SortDisplayButtons(nil, true);
@@ -1196,7 +1197,7 @@ function OptionsPrivate.GetLoadOptions(data)
       load.set = function(info, ...)
         setAll(data, info, ...);
         if(type(data.id) == "string") then
-          ForeverAuras.Add(data);
+          ForeverAuras.UpdateLoadConditions(data);
           ForeverAuras.UpdateThumbnail(data);
           OptionsPrivate.ResetMoverSizer();
         end

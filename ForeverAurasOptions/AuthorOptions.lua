@@ -1,4 +1,4 @@
--- Modified for ForeverAuras; namespace and/or implementation changes through 2026-09-18.
+-- Modified for ForeverAuras, 2026-09-18.
 --[[
   writes to options field of aura data, which is then read to construct the user config panel
 

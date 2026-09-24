@@ -1,4 +1,4 @@
--- Modified for ForeverAuras; namespace and/or implementation changes through 2026-09-18.
+-- Modified for ForeverAuras, 2026-09-18.
 if not ForeverAuras.IsLibsOK() then return end
 
 --[[-----------------------------------------------------------------------------

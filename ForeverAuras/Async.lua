@@ -1,4 +1,4 @@
--- Modified for ForeverAuras; namespace and/or implementation changes through 2026-09-19.
+-- Modified for ForeverAuras, 2026-09-19.
 local GlobalAddonName = ...
 
 ---@class AddonDB
@@ -27,8 +27,7 @@ local type = type
 local xpcall = xpcall
 local IsEncounterInProgress = C_InstanceEncounter and C_InstanceEncounter.IsEncounterInProgress or IsEncounterInProgress
 
--- FIFO multi stream Async Handler
--- Streams are ran in parallel*(bless for pairs), but each stream is ran in FIFO order
+-- Each stream runs in FIFO order; streams share the frame budget.
 
 --- @class AsyncConfig
 --- @field maxTime number
@@ -87,6 +86,7 @@ local function runThread(threadData, config, finalTime, globalStart)
   while debugprofilestop() < finalTime do
     local co = threadData.co
     if co and coroutine_status(co) ~= "dead" then
+      local previousThreadData = currentThreadData
       currentThreadData = threadData
       local ok, msg, msg2
       local s = debugprofilestop()
@@ -96,7 +96,7 @@ local function runThread(threadData, config, finalTime, globalStart)
       else
         ok, msg, msg2 = coroutine_resume(co)
       end
-      currentThreadData = nil
+      currentThreadData = previousThreadData
 
       -- tracking execution time takes about 20% of the whole overhead
       local elapsed = debugprofilestop() - s
@@ -118,7 +118,9 @@ local function runThread(threadData, config, finalTime, globalStart)
         threadData.yieldDebugsByStack[stack] = (threadData.yieldDebugsByStack[stack] or 0) + elapsed
       end
 
-      if coroutine_status(co) == "dead" then -- function returned or errored
+      -- A rejected resume need not leave a dead coroutine. Do not retry it in
+      -- this budget loop (or indefinitely from ForceRun).
+      if not ok or coroutine_status(co) == "dead" then
         if config.debug then
           sort(threadData.yieldDebugsByTime or {}, function(a, b) return a.time > b.time end)
         end
@@ -131,15 +133,17 @@ local function runThread(threadData, config, finalTime, globalStart)
             xpcall(func, geterrorhandler(), msg)
           end
         elseif not ok then
+          msg = tostring(msg or "Async coroutine could not be resumed")
+          local stack = (debugstack(co) or "") .. (threadData.debugStack or "")
           if threadData._onError then
             for _, func in ipairs(threadData._onError) do
-              xpcall(func, geterrorhandler(), msg .. "\n" .. debugstack(co) .. threadData.debugStack)
+              xpcall(func, geterrorhandler(), msg .. "\n" .. stack)
             end
           end
           if config.errorHandler == geterrorhandler() then -- combine full stack if default error handler
-            config.errorHandler(msg .. "\n" .. debugstack(co) .. threadData.debugStack)
+            xpcall(config.errorHandler, geterrorhandler(), msg .. "\n" .. stack)
           else
-            config.errorHandler(msg, debugstack(co) .. threadData.debugStack)
+            xpcall(config.errorHandler, geterrorhandler(), msg, stack)
           end
         end
         threadData:Kill()
@@ -304,7 +308,7 @@ function AddonDB:Async(config, func, ...)
 	local data = {
 		type = "AsyncThreadData",
 		co = co,
-		debugStack = "Async start:\n"..debugstack(2),
+		debugStack = "Async start:\n"..(debugstack(2) or ""),
 		args = overload and SafePack(func, ...) or SafePack(...),
 		executionTime = 0,
 		startTime = debugprofilestop(),
@@ -326,7 +330,6 @@ function AddonDB:Async(config, func, ...)
 		end
 	end
 
-	-- ddt(data, "AsyncThreadData")
 	tinsert(streams[config], data)
 	AsyncFrame:Show()
   if config.debug then
@@ -344,8 +347,6 @@ local function wrapper(config, func)
 end
 
 
---- We can't annotate that returned function returns AsyncThreadData because luals doesn't support this.
---- Could move to EmmyLua but it sounds like a lot of work
 ---@generic T: function
 ---@param config table|T
 ---@param func T?

@@ -12,6 +12,10 @@ function Private.CDMRequestItemData(itemID)
 end
 
 function Private.CDMResetIdentities()
+  if Private.cdmScanBatch then
+    if Private.cdmScanBatch.identitiesReset then return end
+    Private.cdmScanBatch.identitiesReset = true
+  end
   identities = {}
 end
 
@@ -53,6 +57,7 @@ local function NativeRefresh()
     if Private.ScanEvents then Private.ScanEvents("FA_CDM_REFRESH") end
   end)
 end
+Private.QueueCDMRefresh = NativeRefresh
 local function Boolean(value)
   if Readable(value) and type(value) == "boolean" then return value end
 end
@@ -62,6 +67,7 @@ local function Observe(frame)
   local record = {}
   observed[frame] = record
   local function CaptureIdentity()
+    record.revision = (record.revision or 0) + 1
     local previousGCD, previousSpell, previousID = record.onGCD, record.spellID, record.cooldownID
     record.cooldownID = Number(frame.cooldownID)
     record.spellID = frame.GetSpellID and Number(frame:GetSpellID())
@@ -97,8 +103,7 @@ local function Observe(frame)
     record.gcdReadyAt, record.gcdStart = nil, nil
     NativeRefresh()
   end
-  -- Aura bookkeeping must not erase a committed spell timer. Keep the existing
-  -- buff invalidation, but wait for the actual cooldown setter for spell icons.
+  -- Spell timers are cleared by cooldown callbacks, not aura callbacks.
   local function ClearAura()
     if not frame.RefreshSpellCooldownInfo then Clear() else NativeRefresh() end
   end
@@ -131,16 +136,14 @@ local function Observe(frame)
     if cooldown.Clear then hooksecurefunc(cooldown, "Clear", Clear) end
     if cooldown.Pause then hooksecurefunc(cooldown, "Pause", function() record.paused = true; NativeRefresh() end) end
     if cooldown.Resume then hooksecurefunc(cooldown, "Resume", function() record.paused = false; NativeRefresh() end) end
-    -- Initial observation may happen after Blizzard installed an ongoing timer.
-    -- Read the widget, never seed it from a separate spell API query.
+    -- The viewer may already have an active timer when first observed.
     if cooldown.GetCooldownTimes then
       local ok, start, duration = pcall(cooldown.GetCooldownTimes, cooldown)
       start, duration = Number(start), Number(duration)
       if ok and start and duration then
         record.raw = {start = start / 1000, duration = duration / 1000, modRate = frame.cooldownModRate}
       elseif frame.RefreshSpellCooldownInfo then
-        -- Blizzard's committed cache is already in seconds and can be passed
-        -- opaquely to DurationObject when widget milliseconds are restricted.
+        -- Cached times are in seconds and can be passed through as secret values.
         record.raw = {start = frame.cooldownStartTime, duration = frame.cooldownDuration, modRate = frame.cooldownModRate}
       end
     end
@@ -148,9 +151,7 @@ local function Observe(frame)
   end
 end
 
--- The viewer's committed timer is the sole source for CDM spell progress.
--- In particular, SPELL_UPDATE_COOLDOWN must not inject a predicted GCD while
--- the native widget is still empty or already displaying the real cooldown.
+-- Use the viewer timer; spell API events can arrive before the viewer updates.
 function Private.CDMGetNativeCooldown(frame, spellID)
   if not frame then return end
   local record = observed[frame]
@@ -167,11 +168,13 @@ function Private.CDMGetNativeCooldown(frame, spellID)
       if ok then duration = candidate; record.converted = candidate end
     end
   end
-  return {duration = duration, onGCD = record.onGCD, onCooldown = record.onCooldown,
+  return {duration = duration, revision = record.revision, onGCD = record.onGCD, onCooldown = record.onCooldown,
     recharging = record.recharging, paused = record.paused, gcdReadyAt = record.gcdReadyAt}
 end
 
 function Private.CDMFrames()
+  local batch = Private.cdmScanBatch
+  if batch and batch.frames then return batch.frames end
   local frames = {}
   for _, name in ipairs(viewerNames) do
     local viewer = _G[name]
@@ -190,6 +193,7 @@ function Private.CDMFrames()
       end
     end
   end
+  if batch then batch.frames = frames end
   return frames
 end
 

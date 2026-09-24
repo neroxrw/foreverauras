@@ -1,4 +1,4 @@
--- Modified for ForeverAuras; namespace and/or implementation changes through 2026-09-19.
+-- Modified for ForeverAuras, 2026-09-19.
 ---@type string
 local AddonName = ...
 ---@class Private
@@ -6,7 +6,7 @@ local Private = select(2, ...)
 
 local L = ForeverAuras.L
 
-local optionsVersion = "0.1.196"
+local optionsVersion = "0.1.203"
 
 
 if optionsVersion ~= ForeverAuras.versionString then
