@@ -8,10 +8,12 @@ local AGSMW = LibStub("AceGUISharedMediaWidgets-1.0")
 
 do
 	local widgetType = "LSM30_Font"
-	local widgetVersion = 13
+	local widgetVersion = 15
 
 	local contentFrameCache = {}
 	local function ReturnSelf(self)
+		self:SetScript("OnUpdate", nil)
+		self.previewFont, self.previewName = nil, nil
 		self:ClearAllPoints()
 		self:Hide()
 		self.check:Hide()
@@ -26,13 +28,22 @@ do
 		end
 	end
 
+	-- Refresh font previews once after the initial scroll layout.
+	local function RefreshPreview(frame)
+		frame:SetScript("OnUpdate", nil)
+		local fallback, size, outline = GameFontWhite:GetFont()
+		frame.text:SetText("")
+		frame.text:SetFont(fallback, size, outline)
+		if frame.previewFont then frame.text:SetFont(frame.previewFont, size, outline) end
+		frame.text:SetText(frame.previewName or "")
+	end
+
 	local function GetContentLine()
 		local frame
 		if next(contentFrameCache) then
 			frame = table.remove(contentFrameCache)
 		else
 			frame = CreateFrame("Button", nil, UIParent)
-				--frame:SetWidth(200)
 				frame:SetHeight(18)
 				frame:SetHighlightTexture([[Interface\QuestFrame\UI-QuestTitleHighlight]], "ADD")
 				frame:SetScript("OnClick", ContentOnClick)
@@ -44,10 +55,12 @@ do
 				check:Hide()
 			frame.check = check
 			local text = frame:CreateFontString(nil,"OVERLAY","GameFontWhite")
-				text:SetPoint("TOPLEFT", check, "TOPRIGHT", 1, 0)
-				text:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -2, 0)
+				text:SetPoint("LEFT", frame, "LEFT", 18, 0)
+				text:SetPoint("RIGHT", frame, "RIGHT", -2, 0)
+				text:SetHeight(18)
 				text:SetJustifyH("LEFT")
-				text:SetText("Test Test Test Test Test Test Test")
+				text:SetWordWrap(false)
+				text:SetNonSpaceWrap(false)
 			frame.text = text
 			frame.ReturnSelf = ReturnSelf
 		end
@@ -141,16 +154,18 @@ do
 			table.sort(sortedlist, textSort)
 			for i, k in ipairs(sortedlist) do
 				local f = GetContentLine()
-				local _, size, outline= f.text:GetFont()
-				local font = self.list[k] ~= k and self.list[k] or Media:Fetch('font',k)
-				f.text:SetFont(font,size,outline)
-				f.text:SetText(k)
+				f.obj = self
+				-- Resolve the row's parent and width before laying out its preview text.
+				self.dropdown:AddFrame(f)
+				f.previewFont = self.list[k] ~= k and self.list[k] or Media:Fetch('font',k)
+				f.previewName = k
+				RefreshPreview(f)
+				f:SetScript("OnUpdate", RefreshPreview)
 				if k == self.value then
 					f.check:Show()
 				end
-				f.obj = self
-				self.dropdown:AddFrame(f)
 			end
+			self.dropdown.scrollframe:UpdateScrollChildRect()
 			wipe(sortedlist)
 		end
 	end

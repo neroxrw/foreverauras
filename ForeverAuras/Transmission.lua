@@ -1,4 +1,4 @@
--- Modified for ForeverAuras; namespace and/or implementation changes through 2026-09-18.
+-- Modified for ForeverAuras, 2026-09-18.
 --[[ Transmission.lua
 This file contains all transmission related functionality, e.g. import/export and chat links.
 For that it hooks into the chat frame and addon message channels.

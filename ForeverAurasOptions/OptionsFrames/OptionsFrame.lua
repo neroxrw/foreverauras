@@ -1,4 +1,4 @@
--- Modified for ForeverAuras; namespace and/or implementation changes through 2026-09-19.
+-- Modified for ForeverAuras, 2026-09-19.
 if not ForeverAuras.IsLibsOK() then return end
 ---@type string
 local AddonName = ...
@@ -345,7 +345,18 @@ function OptionsPrivate.CreateFrame()
     local right, top = frame:GetRight(), frame:GetTop()
     frame:ClearAllPoints()
     frame:SetPoint("TOPRIGHT", UIParent, "BOTTOMLEFT", right, top)
-    frame:SetHeight(75)
+    -- Keep the portrait frame corners from overlapping and inverting the side edges.
+    local minimizedHeight = 100
+    local border = frame.NineSlice
+    if border then
+      for _, side in ipairs({"Left", "Right"}) do
+        local topCorner, bottomCorner = border["Top" .. side .. "Corner"], border["Bottom" .. side .. "Corner"]
+        if topCorner and bottomCorner then
+          minimizedHeight = max(minimizedHeight, topCorner:GetHeight() + bottomCorner:GetHeight() - 19 + 1)
+        end
+      end
+    end
+    frame:SetHeight(minimizedHeight)
     frame:SetWidth(160)
     frame:UpdateFrameVisible()
   end)

@@ -29,8 +29,10 @@ for key in pairs(durationVariables) do nativeVariables[key] = true end
 local indicatorProperties = {faAuraHighlightColor = true, faAuraHighlightStyle = true, faAuraHighlightSize = true, faAuraHighlightTexture = true}
 function Display.IsNativeDurationCondition(check) return check and durationVariables[check.variable] ~= nil end
 function Display.NativeConditionKind(data, check)
-  local trigger = check and data.triggers and data.triggers[check.trigger]
-  return trigger and trigger.trigger.type == "secretAura" and nativeVariables[check.variable] and check.variable or nil
+  local entry = check and data.triggers and data.triggers[check.trigger]
+  local trigger = type(entry) == "table" and entry.trigger
+  -- Multi-selection trigger slots can be placeholders rather than trigger entries.
+  return type(trigger) == "table" and trigger.type == "secretAura" and nativeVariables[check.variable] and check.variable or nil
 end
 function Display.ContainsNativeCondition(data, check)
   if Display.NativeConditionKind(data, check) then return true end

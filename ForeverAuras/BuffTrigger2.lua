@@ -1,4 +1,4 @@
--- Modified for ForeverAuras; namespace and/or implementation changes through 2026-09-19.
+-- Modified for ForeverAuras, 2026-09-19.
 --[=[ BuffTrigger2.lua
 This file contains the "aura2" trigger for buffs and debuffs. It has replaced the older Bufftrigger 1, which is now gone.
 

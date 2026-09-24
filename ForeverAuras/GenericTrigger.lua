@@ -1,4 +1,4 @@
--- Modified for ForeverAuras; namespace and/or implementation changes through 2026-09-19.
+-- Modified for ForeverAuras, 2026-09-19.
 --[[ GenericTrigger.lua
 This file contains the generic trigger system. That is every trigger except the aura triggers.
 
@@ -931,6 +931,10 @@ end
 ---@param unit UnitToken
 ---@param ... any
 function Private.ScanUnitEvents(event, unit, ...)
+  -- All CDM triggers in one synchronous dispatch share catalog/frame discovery.
+  -- Restore the outer snapshot for nested scans; later events always get fresh frames.
+  local previousCDMBatch = Private.cdmScanBatch
+  Private.cdmScanBatch = {}
   Private.StartProfileSystem("generictrigger " .. event .. " " .. unit)
   local unit_list = loaded_unit_events[unit]
   local inRaid = IsInRaid()
@@ -968,6 +972,7 @@ function Private.ScanUnitEvents(event, unit, ...)
     end
   end
   Private.StopProfileSystem("generictrigger " .. event .. " " .. unit)
+  Private.cdmScanBatch = previousCDMBatch
 end
 
 function ForeverAuras.ScanUnitEvents(event, unit, ...)
@@ -993,6 +998,10 @@ end
 ---@param arg2? any
 ---@param ... any
 function Private.ScanEventsInternal(event_list, event, arg1, arg2, ... )
+  -- All CDM triggers in one synchronous dispatch share catalog/frame discovery.
+  -- Restore the outer snapshot for nested scans; later events always get fresh frames.
+  local previousCDMBatch = Private.cdmScanBatch
+  Private.cdmScanBatch = {}
   for id, triggers in pairs(event_list) do
     Private.StartProfileAura(id);
     Private.ActivateAuraEnvironment(id);
@@ -1023,6 +1032,7 @@ function Private.ScanEventsInternal(event_list, event, arg1, arg2, ... )
     Private.StopProfileAura(id);
     Private.ActivateAuraEnvironment(nil);
   end
+  Private.cdmScanBatch = previousCDMBatch
 end
 
 function ForeverAuras.ScanEventsInternal(event_list, event, arg1, arg2, ... )
@@ -1469,6 +1479,10 @@ end
 local eventsToRegister = {};
 local unitEventsToRegister = {};
 function GenericTrigger.LoadDisplays(toLoad, loadEvent, ...)
+  -- All CDM triggers in one synchronous dispatch share catalog/frame discovery.
+  -- Restore the outer snapshot for nested scans; later events always get fresh frames.
+  local previousCDMBatch = Private.cdmScanBatch
+  Private.cdmScanBatch = {}
   for id in pairs(toLoad) do
     local register_for_frame_updates = false;
     if(events[id]) then
@@ -1549,6 +1563,7 @@ function GenericTrigger.LoadDisplays(toLoad, loadEvent, ...)
 
   wipe(eventsToRegister);
   wipe(unitEventsToRegister);
+  Private.cdmScanBatch = previousCDMBatch
 end
 
 function GenericTrigger.FinishLoadUnload()

@@ -1,4 +1,4 @@
--- Modified for ForeverAuras; namespace and/or implementation changes through 2026-09-18.
+-- Modified for ForeverAuras, 2026-09-18.
 -- Item: Toggle
 -- Some sort of checkbox for dropdown menus.
 -- Does not close the pullout on click.

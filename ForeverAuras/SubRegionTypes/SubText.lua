@@ -1,4 +1,4 @@
--- Modified for ForeverAuras; namespace and/or implementation changes through 2026-09-18.
+-- Modified for ForeverAuras, 2026-09-18.
 if not ForeverAuras.IsLibsOK() then return end
 ---@type string
 local AddonName = ...
@@ -391,7 +391,8 @@ local function modify(parent, region, parentData, data, first)
     end
 
     local FrameTick
-    if nativeKind or Private.ContainsPlaceHolders(region.text_text, "p")
+    if (nativeKind and Private.IsCDMBuffText(region.text_text, parentData))
+       or Private.ContainsPlaceHolders(region.text_text, "p")
        or Private.AnyEveryFrameFormatters(region.text_text, region.everyFrameFormatters)
     then
       FrameTick = UpdateText

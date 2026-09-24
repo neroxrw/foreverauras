@@ -1,4 +1,4 @@
--- Modified for ForeverAuras; namespace and/or implementation changes through 2026-09-19.
+-- Modified for ForeverAuras, 2026-09-19.
 ---@type string
 local AddonName = ...
 ---@class Private
@@ -3354,6 +3354,29 @@ end
 function ForeverAuras.Add(data, simpleChange)
   Private.TimeMachine:DestroyTheUniverse(data.id)
   Private.Add(data, simpleChange)
+end
+
+-- Load edits do not change the display, triggers, actions, or native widget bindings.
+function ForeverAuras.UpdateLoadConditions(data)
+  if Private.IsGroupType(data) or not db.displays[data.id] or not loadFuncs[data.id] then
+    ForeverAuras.Add(data)
+    return
+  end
+  Private.TimeMachine:DestroyTheUniverse(data.id)
+  local id = data.id
+  local loadFuncStr, events = ConstructFunction(load_prototype, data.load)
+  local optionsStr = ConstructFunction(load_prototype, data.load, true)
+  loadFuncs[id] = Private.LoadFunction(loadFuncStr, id)
+  loadFuncsForOptions[id] = Private.LoadFunction(optionsStr, id)
+  for _, eventData in pairs(loadEvents) do eventData[id] = nil end
+  for event in pairs(events) do
+    loadEvents[event] = loadEvents[event] or {}
+    loadEvents[event][id] = true
+  end
+  loadEvents.SCAN_ALL = loadEvents.SCAN_ALL or {}
+  loadEvents.SCAN_ALL[id] = true
+  db.displays[id] = data
+  Private.ScanForLoads({[id] = true})
 end
 
 function Private.AddParents(data)

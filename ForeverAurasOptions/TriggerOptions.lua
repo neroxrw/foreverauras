@@ -1,4 +1,4 @@
--- Modified for ForeverAuras; namespace and/or implementation changes through 2026-09-18.
+-- Modified for ForeverAuras, 2026-09-18.
 if not ForeverAuras.IsLibsOK() then return end
 ---@type string
 local AddonName = ...
@@ -294,9 +294,20 @@ function OptionsPrivate.ClearTriggerExpandState()
 end
 
 function OptionsPrivate.GetTriggerTitle(data, triggernum)
-  if data.triggers[triggernum] then
+  if data.controlledChildren then
+    local title
+    for child in OptionsPrivate.Private.TraverseLeafs(data) do
+      if child.triggers and child.triggers[triggernum] then
+        local childTitle = OptionsPrivate.GetTriggerTitle(child, triggernum)
+        if title and title ~= childTitle then return L["Trigger %i"]:format(triggernum) end
+        title = childTitle
+      end
+    end
+    return title or L["Trigger %i"]:format(triggernum)
+  end
+  if data.triggers and type(data.triggers[triggernum]) == "table" then
     local trigger = data.triggers[triggernum].trigger
-    if trigger then
+    if type(trigger) == "table" then
       local event_prototype = OptionsPrivate.Private.event_prototypes[trigger.event]
       local triggerType = trigger.type
       local name
