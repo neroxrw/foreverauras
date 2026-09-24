@@ -481,6 +481,11 @@ local function RunOverlayFuncs(event, state, id, errorHandler)
   for i, overlayFunc in ipairs(event.overlayFuncs) do
     state.additionalProgress[i] = state.additionalProgress[i] or {};
     local additionalProgress = state.additionalProgress[i];
+    local underlay = event.overlayUnderlays and event.overlayUnderlays[i] == true or false
+    if additionalProgress.underlay ~= underlay then
+      additionalProgress.underlay = underlay
+      changed = true
+    end
     local ok, a, b, c, d, e = xpcall(overlayFunc, errorHandler or Private.GetErrorHandlerId(id, L["Overlay %s"]:format(i)), event.trigger, state);
     if (not ok) then
       additionalProgress.min = nil;
@@ -1672,6 +1677,7 @@ function GenericTrigger.Add(data, region)
         ---@type boolean|string|table
         local force_events = false;
         local durationFunc, overlayFuncs, nameFunc, iconFunc, textureFunc, stacksFunc, loadFunc, loadInternalEventFunc;
+        local overlayUnderlays
         local tsuConditionVariables;
         local prototype = nil
         local automaticAutoHide
@@ -1715,6 +1721,7 @@ function GenericTrigger.Add(data, region)
 
             if (prototype.overlayFuncs) then
               overlayFuncs = {};
+              overlayUnderlays = {};
               local dest = 1;
               for i, v in ipairs(prototype.overlayFuncs) do
                 local enable = true
@@ -1725,6 +1732,7 @@ function GenericTrigger.Add(data, region)
                 end
                 if enable then
                   overlayFuncs[dest] = v.func;
+                  overlayUnderlays[dest] = v.underlay == true;
                   dest = dest + 1;
                 end
               end
@@ -1908,6 +1916,7 @@ function GenericTrigger.Add(data, region)
           subevents = trigger_subevents,
           durationFunc = durationFunc,
           overlayFuncs = overlayFuncs,
+          overlayUnderlays = overlayUnderlays,
           nameFunc = nameFunc,
           iconFunc = iconFunc,
           textureFunc = textureFunc,
@@ -4724,6 +4733,9 @@ function GenericTrigger.GetTriggerConditions(data, triggernum)
           end
           if (v.conditionTest) then
             result[v.name].test = v.conditionTest;
+          end
+          if v.conditionRecheckTime then
+            result[v.name].recheckTime = v.conditionRecheckTime
           end
           if (v.conditionEvents) then
             result[v.name].events = v.conditionEvents;

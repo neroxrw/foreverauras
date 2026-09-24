@@ -8287,6 +8287,7 @@ if free == nil then return false end
     overlayFuncs = {
       {
         name = L["Latency"],
+        underlay = true,
         func = function(trigger, state)
           local latency = ForeverAuras.GetCastLatency()
           if not latency then return 0, 0 end

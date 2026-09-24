@@ -636,6 +636,13 @@ Private.CooldownViewerPrototype = {
     return {events = events, unit_events = {player = {"UNIT_AURA"}, target = {"UNIT_AURA", "UNIT_FACTION", "UNIT_FLAGS"}}}
   end,
   triggerFunction = function(trigger)
+    if trigger.event == "Blizzard CDM Buff" and (trigger.cdmUseRemaining or trigger.cdmUseStacks or trigger.cdmUseTotal or trigger.cdmUseElapsed) then
+      local base = {}
+      for key, value in pairs(trigger) do base[key] = value end
+      base.cdmUseRemaining, base.cdmUseStacks, base.cdmUseTotal, base.cdmUseElapsed = nil, nil, nil, nil
+      local source = Private.CooldownViewerPrototype.triggerFunction(base)
+      return ("local update=(function() %s end)()\nlocal rawStates={}\nreturn function(allstates,event) update(rawStates,event); return Private.ExecEnv.UpdateCDMBuffFilters(allstates,rawStates,event,%q,%q,%q,%q,%q,%q,%q,%q) end"):format(source, trigger.cdmUseRemaining and tostring(trigger.cdmRemainingTime or 10) or "", trigger.cdmRemainingOperator or "<", trigger.cdmUseStacks and tostring(trigger.cdmStackCount or 1) or "", trigger.cdmStackOperator or ">=", trigger.cdmUseTotal and tostring(trigger.cdmTotalTime or 10) or "", trigger.cdmTotalOperator or "<", trigger.cdmUseElapsed and tostring(trigger.cdmElapsedTime or 10) or "", trigger.cdmElapsedOperator or ">=")
+    end
     local queries = Private.CDMSpellQueries(trigger)
     if queries then
       local serialized = {}
@@ -739,6 +746,151 @@ for _, arg in ipairs(Private.CooldownViewerPrototype.args) do
   end
 end
 Private.CooldownViewerBuffPrototype.args = buffArgs
+local function BuffRemainingTime(state)
+  if not state or not state.show or not state.cdmBuff or state.auraActive ~= true then return end
+  local remaining, timeScale = nil, 1
+  if state.durationObject then
+    local total = state.durationObject:GetTotalDuration()
+    if not IsReadable(total) or type(total) ~= "number" or total <= 0 then return end
+    remaining = state.durationObject:GetRemainingDuration()
+  else
+    local duration, expiration, rate = state.duration, state.expirationTime, state.modRate
+    if not IsReadable(duration) or not IsReadable(expiration) or not IsReadable(rate) then return end
+    if type(duration) ~= "number" or duration <= 0 or type(expiration) ~= "number" then return end
+    rate = rate or 1
+    if type(rate) ~= "number" or rate <= 0 then return end
+    remaining = (expiration - GetTime()) / rate
+    timeScale = rate
+  end
+  if IsReadable(remaining) and type(remaining) == "number" and remaining == remaining and remaining < math.huge then
+    return math.max(0, remaining), timeScale
+  end
+end
+local remainingCondition = {
+  name = "cdmRemaining",
+  display = "Remaining Time (when readable)",
+  hidden = true,
+  conditionType = "number",
+  noProgressSource = true,
+  conditionTest = function(state, value, op)
+    local remaining = BuffRemainingTime(state)
+    value = tonumber(value)
+    if remaining == nil or not value then return false end
+    if op == "<" then return remaining < value
+    elseif op == "<=" then return remaining <= value
+    elseif op == ">" then return remaining > value
+    elseif op == ">=" then return remaining >= value
+    elseif op == "==" then return math.abs(remaining - value) < 0.05
+    elseif op == "~=" then return math.abs(remaining - value) >= 0.05 end
+    return false
+  end,
+  conditionRecheckTime = function(state, value)
+    local remaining, timeScale = BuffRemainingTime(state)
+    value = tonumber(value)
+    if not remaining or remaining <= 0 or not value then return end
+    local delay = remaining * timeScale
+    for _, boundary in ipairs({value + 0.05, value, value - 0.05}) do
+      if boundary >= 0 and remaining >= boundary then
+        delay = math.min(delay, (remaining - boundary) * timeScale + 0.001)
+      end
+    end
+    return GetTime() + math.max(0.001, delay)
+  end,
+}
+buffArgs[#buffArgs + 1] = remainingCondition
+local remainingWakeups = setmetatable({}, {__mode = "k"})
+local function BuffStacksMatch(state, value, op)
+  local stacks = state.stacks
+  if state.auraActive ~= true or not IsReadable(stacks) or type(stacks) ~= "number" then return false end
+  if op == "<" then return stacks < value
+  elseif op == "<=" then return stacks <= value
+  elseif op == ">" then return stacks > value
+  elseif op == ">=" then return stacks >= value
+  elseif op == "==" then return stacks == value
+  elseif op == "~=" then return stacks ~= value end
+  return false
+end
+local function BuffTimeValue(state, elapsed)
+  if not state.show or not state.cdmBuff or state.auraActive ~= true then return end
+  local total, value, timeScale = nil, nil, 1
+  if state.durationObject then
+    total = state.durationObject:GetTotalDuration()
+    if not IsReadable(total) or type(total) ~= "number" or total <= 0 or total >= math.huge then return end
+    if elapsed then value = state.durationObject:GetElapsedDuration()
+    else value = total end
+  else
+    total, timeScale = state.duration, state.modRate
+    if not IsReadable(total) or not IsReadable(timeScale) then return end
+    timeScale = timeScale or 1
+    if type(total) ~= "number" or total <= 0 or total >= math.huge then return end
+    if type(timeScale) ~= "number" or timeScale <= 0 or timeScale >= math.huge then return end
+    value = total / timeScale
+    if elapsed then
+      local expiration = state.expirationTime
+      if not IsReadable(expiration) or type(expiration) ~= "number" then return end
+      value = (GetTime() - (expiration - total)) / timeScale
+    end
+  end
+  if IsReadable(value) and type(value) == "number" and value == value and value < math.huge then
+    return math.max(0, value), timeScale
+  end
+end
+local function BuffTimeMatches(value, threshold, op)
+  if value == nil then return false end
+  if op == "<" then return value < threshold
+  elseif op == "<=" then return value <= threshold
+  elseif op == ">" then return value > threshold
+  elseif op == ">=" then return value >= threshold end
+  return false
+end
+function Private.ExecEnv.UpdateCDMBuffFilters(allstates, rawStates, event, value, op, stackValue, stackOp, totalValue, totalOp, elapsedValue, elapsedOp)
+  value, stackValue = tonumber(value), tonumber(stackValue)
+  totalValue, elapsedValue = tonumber(totalValue), tonumber(elapsedValue)
+  local outputs, nextCheck = {}, nil
+  for key, state in pairs(rawStates) do
+    local output = {}
+    for field, entry in pairs(state) do output[field] = entry end
+    if event ~= "OPTIONS" then
+      if value then
+        output.show = state.show and remainingCondition.conditionTest(state, value, op) or false
+        local nextTime = remainingCondition.conditionRecheckTime(state, value)
+        if nextTime and (not nextCheck or nextTime < nextCheck) then nextCheck = nextTime end
+      end
+      if stackValue then output.show = output.show and BuffStacksMatch(state, stackValue, stackOp) or false end
+      if totalValue then output.show = output.show and BuffTimeMatches(BuffTimeValue(state), totalValue, totalOp) or false end
+      if elapsedValue then
+        local elapsed, timeScale = BuffTimeValue(state, true)
+        output.show = output.show and BuffTimeMatches(elapsed, elapsedValue, elapsedOp) or false
+        local remaining = BuffRemainingTime(state)
+        if elapsed and remaining and remaining > 0 and elapsed <= elapsedValue then
+          local delay = math.min((elapsedValue - elapsed) * timeScale + 0.001, remaining * timeScale)
+          local nextTime = GetTime() + math.max(0.001, delay)
+          if not nextCheck or nextTime < nextCheck then nextCheck = nextTime end
+        end
+      end
+    end
+    outputs[key] = output
+  end
+  local pending = remainingWakeups[rawStates]
+  if not pending or pending.at ~= nextCheck then
+    if pending and pending.timer and pending.timer.Cancel then pending.timer:Cancel() end
+    remainingWakeups[rawStates] = nil
+    if nextCheck then
+      local wakeup = {at = nextCheck}
+      remainingWakeups[rawStates] = wakeup
+      local function Refresh()
+        if remainingWakeups[rawStates] == wakeup then
+          remainingWakeups[rawStates] = nil
+          Private.QueueCDMRefresh()
+        end
+      end
+      local delay = math.max(0.001, nextCheck - GetTime())
+      if C_Timer.NewTimer then wakeup.timer = C_Timer.NewTimer(delay, Refresh)
+      else C_Timer.After(delay, Refresh) end
+    end
+  end
+  return CommitStates(allstates, outputs)
+end
 Private.CooldownViewerPrototype.args = cooldownArgs
 
 Private.ExecEnv.GetCDMPickerSelections = Private.GetCDMPickerSelections

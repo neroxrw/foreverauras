@@ -1,6 +1,9 @@
 # Changelog
 
 ## Versions
+## 0.1.217
+- Added remaining time to CDM Buff/Debuff
+
 ## 0.1.212
 - Fix Name multi matching Buff/Debuff CDM Trigger
 
