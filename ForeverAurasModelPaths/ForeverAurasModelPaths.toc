@@ -2,7 +2,7 @@
 ## Interface: 16001
 ## Title: ForeverAuras Model Paths (RG fork)
 ## Author: m33shoq, WeakAuras contributors
-## Version: 0.1.203
+## Version: 0.1.210
 ## IconTexture: Interface\AddOns\ForeverAuras\Media\Textures\foreverauras_logo.tga
 ## Notes: Model paths for ForeverAuras
 ## Notes-esES: Las rutas de modelos para ForeverAuras

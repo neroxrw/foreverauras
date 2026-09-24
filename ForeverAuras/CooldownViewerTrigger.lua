@@ -261,6 +261,37 @@ local function ReadBoolean(value)
   if IsReadable(value) and type(value) == "boolean" then return value end
 end
 
+local spellCooldowns = {}
+local function GetSpellCooldownState(spellID, event)
+  local info = C_Spell.GetSpellCooldown and C_Spell.GetSpellCooldown(spellID)
+  local active = info and ReadBoolean(info.isActive)
+  if active == nil then return end
+  local status = spellCooldowns[spellID]
+  if not status then status = {}; spellCooldowns[spellID] = status end
+  if not active then
+    status.onCooldown, status.onGCD, status.gcdReadyAt, status.gcdStart = false, false, nil, nil
+  end
+  -- Blizzard only guarantees isOnGCD during SPELL_UPDATE_COOLDOWN.
+  if active and event == "SPELL_UPDATE_COOLDOWN" and IsReadable(info.isOnGCD) then
+    local onGCD = info.isOnGCD == true
+    local start = IsReadable(info.startTime) and type(info.startTime) == "number" and info.startTime or nil
+    if onGCD then
+      if status.onGCD ~= true or (start and status.gcdStart and start ~= status.gcdStart) then
+        local readyAt = GetTime() + 0.20
+        status.gcdReadyAt = readyAt
+        C_Timer.After(0.20, function()
+          if status.gcdReadyAt == readyAt then Private.QueueCDMRefresh() end
+        end)
+      end
+      status.gcdStart = start
+    else
+      status.gcdReadyAt, status.gcdStart = nil, nil
+    end
+    status.onCooldown, status.onGCD = not onGCD, onGCD
+  end
+  return status.onCooldown, true, status.onGCD, status.gcdReadyAt
+end
+
 local function QueueRefresh()
   Private.QueueCDMRefresh()
 end
@@ -342,45 +373,65 @@ local function BuildCooldownViewerStates(allstates, selected, event, showGCD, tr
           Private.CDMApplyItem(state, identity)
         elseif identity.spellID then
           local spellID = identity.spellID
-          local cooldown = C_Spell.GetSpellCooldown(spellID)
+          if C_SpellBook and C_SpellBook.FindSpellOverrideByID then
+            local override = C_SpellBook.FindSpellOverrideByID(spellID)
+            if IsReadable(override) and type(override) == "number" and override > 0 then spellID = override end
+          end
           local realDuration = C_Spell.GetSpellCooldownDuration(spellID, true)
-          local zero = realDuration and ReadBoolean(realDuration:IsZero())
-          if zero ~= nil then
-            state.onCooldown, state.isReady = not zero, zero
-          elseif cooldown and ReadBoolean(cooldown.isActive) == false then
-            state.onCooldown, state.isReady = false, true
-          end
-          local charges = C_Spell.GetSpellCharges and C_Spell.GetSpellCharges(spellID)
-          if charges then
-            state.recharging = ReadBoolean(charges.isActive)
-            if IsReadable(charges.currentCharges) and type(charges.currentCharges) == "number" then
-              state.stacks = charges.currentCharges
-              state.isReady = charges.currentCharges > 0
-            end
-          end
-          -- Follow the timer selected by the CDM viewer.
-          local native = Private.CDMGetNativeCooldown(frames[cooldownID], spellID)
+          local onCooldown, hasCooldownFlags, onGCD, gcdReadyAt = GetSpellCooldownState(spellID, event)
+          local native = Private.CDMGetNativeCooldown(frames[cooldownID], identity.spellID)
           state.cdmNativeRevision = native and native.revision
           local duration = native and native.duration or nil
           state.cdmNativePaused = native and native.paused == true or false
           if native then
+            state.inRange = native.inRange
+            state.stacks = native.charges
+            if native.charges ~= nil then state.isReady = native.charges > 0 end
             if native.onGCD ~= nil then state.cdmGCDOnly = native.onGCD end
             if native.onCooldown ~= nil then
               state.onCooldown = native.onCooldown
               if state.stacks == nil then state.isReady = not native.onCooldown end
             end
             if native.recharging ~= nil then state.recharging = native.recharging end
-            -- Explicit charge tracking uses the recharge timer.
-            if track == "charges" and C_Spell.GetSpellChargeDuration then
-              local chargeDuration = C_Spell.GetSpellChargeDuration(spellID)
-              if chargeDuration then
-                duration = chargeDuration
-                state.cdmGCDOnly = false
-              end
+          end
+          -- Native frame flags can be secret even when these API flags are public.
+          if onCooldown ~= nil then
+            state.onCooldown, state.isReady = onCooldown, not onCooldown
+            if onCooldown then
+              duration = realDuration
+              state.cdmGCDOnly, state.cdmNativePaused = false, false
+            elseif onGCD then
+              duration = showGCD and C_Spell.GetSpellCooldownDuration(spellID) or nil
+              state.cdmGCDOnly, state.cdmNativePaused = true, false
+            else
+              duration = realDuration
+              state.cdmGCDOnly, state.cdmNativePaused = false, false
+            end
+          elseif hasCooldownFlags and not state.cdmGCDOnly then
+            duration = realDuration
+            state.cdmNativePaused = false
+          end
+          local charges = C_Spell.GetSpellCharges and C_Spell.GetSpellCharges(spellID)
+          if charges then
+            local count = charges.currentCharges
+            local recharging = ReadBoolean(charges.isActive)
+            if recharging ~= nil then state.recharging = recharging end
+            if IsReadable(count) and type(count) == "number" then
+              state.stacks = count
+              state.isReady, state.onCooldown = count > 0, count == 0
+            elseif native and native.recharging == true then
+              state.isReady, state.onCooldown = true, false
             end
           end
-          if state.cdmGCDOnly and (not showGCD
-              or (native and native.gcdReadyAt and GetTime() < native.gcdReadyAt)) then
+          if C_Spell.GetSpellChargeDuration and (track == "charges" or (track == "auto" and state.recharging == true)) then
+            local chargeDuration = C_Spell.GetSpellChargeDuration(spellID)
+            if chargeDuration then
+              duration = chargeDuration
+              state.cdmGCDOnly, state.cdmNativePaused = false, false
+            end
+          end
+          local holdUntil = onGCD and gcdReadyAt or (native and native.gcdReadyAt)
+          if state.cdmGCDOnly and (not showGCD or (holdUntil and GetTime() < holdUntil)) then
             duration = nil
           end
           state.cdmSuppressGCD = not duration
@@ -396,7 +447,6 @@ local function BuildCooldownViewerStates(allstates, selected, event, showGCD, tr
             -- Hide GCD text without hiding a real cooldown or recharge timer.
             state.cdmTextDurationObject = state.cdmGCDOnly and realDuration or duration
           end
-          if cooldown and ReadBoolean(cooldown.isEnabled) == false then state.isReady, state.onCooldown = false, true end
         end
         if event ~= "OPTIONS" then
           if not ignoreSpellKnown and not state.cdmBuff and not Private.CDMEntryMatches({event = "Blizzard CDM Item"}, entry, info) then
@@ -437,6 +487,8 @@ local function GetOutputs(selected, event, showGCD, track, hideGCDText, showMode
 end
 local function SameOutput(previous, current)
   if not previous or current.cdmBuff then return false end
+  -- Combat timers can change in place while their values remain unreadable.
+  if InCombatLockdown and InCombatLockdown() then return false end
   for key, value in pairs(current) do
     if key ~= "changed" then
       local old = previous[key]
@@ -652,6 +704,12 @@ for key, value in pairs(Private.CooldownViewerPrototype) do
 end
 Private.CooldownViewerUtilityPrototype.name = "Utility Cooldowns"
 Private.CooldownViewerItemPrototype.name = "Item"
+local spellArgs = {}
+for i, arg in ipairs(Private.CooldownViewerPrototype.args) do spellArgs[i] = arg end
+spellArgs[#spellArgs + 1] = {name = "inRange", display = "Spell In Range", hidden = true,
+  conditionType = "bool", conditionTest = BooleanCondition("inRange")}
+Private.CooldownViewerPrototype.args = spellArgs
+Private.CooldownViewerUtilityPrototype.args = spellArgs
 -- Item metadata events only update item triggers; they do not change the catalog.
 Private.CooldownViewerItemPrototype.events = function()
   local result = Private.CooldownViewerPrototype.events()
