@@ -384,7 +384,7 @@ ForeverAuras.normalWidth = 1.3
 ForeverAuras.halfWidth = ForeverAuras.normalWidth / 2
 ForeverAuras.doubleWidth = ForeverAuras.normalWidth * 2
 local versionStringFromToc = C_AddOns.GetAddOnMetadata("ForeverAuras", "Version")
-local versionString = "0.1.210"
+local versionString = "0.1.212"
 local buildTime = "2026-09-23"
 
 if not versionString:find("beta", 1, true) then
