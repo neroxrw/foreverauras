@@ -122,6 +122,37 @@ function Private.ResolveCDMSpell(trigger, event)
   local spell = id and C_Spell.GetSpellInfo(id)
   local name = (spell and spell.name or query):lower()
   local exact = trigger.cdmExact == true
+  if trigger.event == "Blizzard CDM Buff" and not exact then
+    local frames = Private.CDMFrames()
+    local bestEntry, bestSpell, bestRank, bestDirect
+    for entryID, entry in pairs(entries) do
+      local info = C_CooldownViewer.GetCooldownViewerCooldownInfo(entryID)
+      if info and Private.CDMIsBuff(entry.category) then
+        local displayed = Private.CDMEntryMatches(trigger, entry, info)
+        local ids = Private.CDMAuraSpellIDs(info)
+        local frame = frames[entryID]
+        local frameSpell = frame and frame.GetSpellID and frame:GetSpellID()
+        if IsReadable(frameSpell) and type(frameSpell) == "number" then ids[#ids + 1] = frameSpell end
+        for _, spellID in ipairs(ids) do
+          local candidate = C_Spell.GetSpellInfo(spellID)
+          if candidate and candidate.name:lower() == name and ForeverAuras.IsSpellKnownIncludingPet(spellID) then
+            local rank = SpellRank(spellID) or 0
+            local direct = IsReadable(info.spellID) and info.spellID == spellID and 1 or 0
+            if not bestSpell or rank > bestRank or (rank == bestRank and displayed and (not bestEntry or direct > bestDirect or (direct == bestDirect and entryID < bestEntry))) then
+              bestEntry, bestSpell, bestRank, bestDirect = displayed and entryID or nil, spellID, rank, direct
+            end
+          end
+        end
+      end
+    end
+    -- Names follow one learned rank and one CDM entry, never a union of rank states.
+    local selected = bestEntry and {bestEntry} or {}
+    selected.singleClone, selected.buffName = true, name
+    selected.buffResolvedSpellID = bestSpell
+    selected.buffSpellIDs = bestSpell and {bestSpell} or {}
+    resolved[key] = selected
+    return selected
+  end
   local anyBuffRank = not exact and trigger.cdmSource == "buff"
   local buffSpellIDs, seen, buffEntryIDs = {}, {}, {}
   local function AddBuffID(spellID)
@@ -137,11 +168,18 @@ function Private.ResolveCDMSpell(trigger, event)
         local identity = Private.CDMIdentity(entryID, entry, info)
         local score = exact and ExactMatch(info, id) or 1
         local matches = exact and score > 0 or not exact and identity.name:lower() == name
+        local auraSpellIDs = anyBuffRank and Private.CDMAuraSpellIDs(info)
+        -- A CDM entry can display a linked effect with a different name from its base aura.
+        if anyBuffRank and not matches then
+          for _, spellID in ipairs(auraSpellIDs) do
+            local spellInfo = C_Spell.GetSpellInfo(spellID)
+            if spellInfo and spellInfo.name:lower() == name then matches = true; break end
+          end
+        end
         if matches and anyBuffRank then
           buffEntryIDs[#buffEntryIDs + 1] = entryID
-          AddBuffID(info.spellID)
           AddBuffID(identity.spellID)
-          for _, linked in ipairs(info.linkedSpellIDs or {}) do AddBuffID(linked) end
+          for _, spellID in ipairs(auraSpellIDs) do AddBuffID(spellID) end
           score = entry.known and 1 or 0
         end
         if matches and identity.spellID then
@@ -322,9 +360,10 @@ local function BuildCooldownViewerStates(allstates, selected, event, showGCD, tr
       local info = C_CooldownViewer.GetCooldownViewerCooldownInfo(cooldownID)
       if info then
         local identity = Private.CDMIdentity(cooldownID, entry, info, frames[cooldownID])
-        if exactID then
-          local spell = C_Spell.GetSpellInfo(exactID)
-          identity = {spellID = exactID, name = spell and spell.name or identity.name, icon = spell and spell.iconID or identity.icon}
+        local displaySpellID = exactID or selected.buffResolvedSpellID
+        if displaySpellID then
+          local spell = C_Spell.GetSpellInfo(displaySpellID)
+          identity = {spellID = displaySpellID, name = spell and spell.name or identity.name, icon = spell and spell.iconID or identity.icon}
         end
         local cloneID = selected.singleClone and "spell" or tostring(cooldownID)
         if not allstates[cloneID] then
@@ -541,13 +580,20 @@ end
 
 function Private.ExecEnv.UpdateCDMSelectionList(allstates, queries, event)
   local outputs = {}
-  for _, query in ipairs(queries) do
+  for queryIndex, query in ipairs(queries) do
     local selected = Private.ResolveCDMSpell(query, event)
     local temporary = GetOutputs(selected, event, query.showGCD, query.track, query.hideGCDText,
       query.showMode, query.event ~= "Blizzard CDM Item" and query.cdmExact and tonumber(query.cdmSpell) or nil, query.requireTarget, query.use_ignoreSpellKnown)
     for _, state in pairs(temporary) do
-      -- Overlapping name/ID selections represent the same displayed aura once.
+      -- Cooldown and item aliases share a clone; buff filters each own their clone.
       local key = tostring(state.cooldownID) .. ":" .. tostring(state.spellId)
+      if query.event == "Blizzard CDM Buff" then
+        key = query.cdmExact and ("id:" .. tostring(tonumber(query.cdmSpell))) or ("name:" .. selected.buffName)
+        local clone = {}
+        for field, value in pairs(state) do clone[field] = value end
+        clone.index = queryIndex
+        state = clone
+      end
       if not outputs[key] or not outputs[key].show or state.show then outputs[key] = state end
     end
   end

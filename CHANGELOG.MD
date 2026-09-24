@@ -1,6 +1,9 @@
 # Changelog
 
 ## Versions
+## 0.1.212
+- Fix Name multi matching Buff/Debuff CDM Trigger
+
 ## 0.1.210
 - Fix CDM Trigger Combat handler
 - Add Spell in Range condition
