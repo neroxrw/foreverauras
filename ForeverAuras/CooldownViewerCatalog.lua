@@ -62,24 +62,45 @@ local function Boolean(value)
   if Readable(value) and type(value) == "boolean" then return value end
 end
 
+local function TimerExpired(record)
+  if record.paused then return end
+  local duration = record.duration or record.converted
+  if duration and duration.GetRemainingDuration then
+    local remaining = Number(duration:GetRemainingDuration())
+    if remaining then return remaining <= 0 end
+    return
+  end
+  local raw = record.raw
+  if not raw then return end
+  local start, total = Number(raw.start), Number(raw.duration)
+  local rate = Number(raw.modRate)
+  if Readable(raw.modRate) and raw.modRate == nil then rate = 1 end
+  if start and total and rate and rate > 0 then
+    return GetTime() >= start + total / rate
+  end
+end
+
 local function Observe(frame)
   if observed[frame] or not hooksecurefunc then return end
   local record = {}
   observed[frame] = record
   local function CaptureIdentity()
-    record.revision = (record.revision or 0) + 1
     local previousGCD, previousSpell, previousID = record.onGCD, record.spellID, record.cooldownID
     record.cooldownID = Number(frame.cooldownID)
     record.spellID = frame.GetSpellID and Number(frame:GetSpellID())
     record.onCooldown = Boolean(frame.isOnActualCooldown)
     record.recharging = Boolean(frame.wasSetFromCharges)
+    record.paused = Boolean(frame.cooldownPaused) == true
+    if record.completedRevision and record.completedRevision == record.revision then
+      record.onCooldown, record.recharging = false, false
+    end
+    record.charges = Number(frame.cooldownChargesCount)
     record.onGCD = Boolean(frame.isOnGCD)
     -- A charge or aura visual may take precedence even during a GCD.
     if record.onCooldown == true or record.recharging == true
         or Boolean(frame.cooldownUseAuraDisplayTime) == true then
       record.onGCD = false
     end
-    record.paused = Boolean(frame.cooldownPaused) == true
     -- Hold a new GCD for 200 ms so a following real cooldown can replace it
     -- before it is drawn. Repeated writes of the same GCD must not restart this.
     local start = record.raw and Number(record.raw.start)
@@ -98,6 +119,7 @@ local function Observe(frame)
     end
   end
   local function Clear()
+    record.revision = (record.revision or 0) + 1
     record.duration, record.raw, record.converted = nil, nil, nil
     CaptureIdentity()
     record.gcdReadyAt, record.gcdStart = nil, nil
@@ -107,20 +129,39 @@ local function Observe(frame)
   local function ClearAura()
     if not frame.RefreshSpellCooldownInfo then Clear() else NativeRefresh() end
   end
+  local function RefreshNativeState()
+    CaptureIdentity()
+    NativeRefresh()
+  end
+  local function CooldownDone()
+    CaptureIdentity()
+    if Readable(frame.cooldownUseAuraDisplayTime) and not frame.cooldownUseAuraDisplayTime
+        and record.onGCD == false and TimerExpired(record) == true then
+      record.completedRevision = record.revision
+      record.onCooldown, record.recharging = false, false
+    end
+    NativeRefresh()
+  end
   for _, method in ipairs({"ClearAuraInstanceInfo", "OnAuraInstanceInfoCleared", "OnAuraInstanceInfoSet"}) do
     if type(frame[method]) == "function" then hooksecurefunc(frame, method, ClearAura) end
   end
   for _, method in ipairs({"OnCooldownIDSet", "OnCooldownIDCleared", "ResetCooldownData"}) do
     if type(frame[method]) == "function" then hooksecurefunc(frame, method, Clear) end
   end
-  for _, method in ipairs({"SetAuraInstanceInfo", "OnUnitAuraRemovedEvent", "OnUnitAuraUpdatedEvent", "OnNewTarget", "OnActiveStateChanged", "RefreshData", "RefreshCooldownOnly"}) do
+  for _, method in ipairs({"SetAuraInstanceInfo", "OnUnitAuraRemovedEvent", "OnUnitAuraUpdatedEvent", "OnNewTarget", "OnActiveStateChanged", "RefreshIconColor"}) do
     if type(frame[method]) == "function" then hooksecurefunc(frame, method, NativeRefresh) end
+  end
+  for _, method in ipairs({"RefreshData", "RefreshCooldownOnly"}) do
+    if type(frame[method]) == "function" then hooksecurefunc(frame, method, RefreshNativeState) end
   end
   if frame.HookScript then frame:HookScript("OnShow", NativeRefresh); frame:HookScript("OnHide", NativeRefresh) end
   local cooldown = frame.Cooldown or frame.cooldown
   if cooldown then
+    -- Timer completion need not emit a spell event or clear the viewer's cached flags.
+    if cooldown.HookScript then cooldown:HookScript("OnCooldownDone", CooldownDone) end
     if cooldown.SetCooldownFromDurationObject then
       hooksecurefunc(cooldown, "SetCooldownFromDurationObject", function(_, duration)
+        record.revision = (record.revision or 0) + 1
         record.duration, record.raw, record.converted = duration, nil, nil
         CaptureIdentity()
         NativeRefresh()
@@ -128,6 +169,7 @@ local function Observe(frame)
     end
     if cooldown.SetCooldown then
       hooksecurefunc(cooldown, "SetCooldown", function(_, start, duration, modRate)
+        record.revision = (record.revision or 0) + 1
         record.duration, record.raw, record.converted = nil, {start = start, duration = duration, modRate = modRate}, nil
         CaptureIdentity()
         NativeRefresh()
@@ -168,8 +210,12 @@ function Private.CDMGetNativeCooldown(frame, spellID)
       if ok then duration = candidate; record.converted = candidate end
     end
   end
+  local outOfRange = Boolean(frame.spellOutOfRange)
+  local inRange
+  if outOfRange ~= nil then inRange = not outOfRange end
   return {duration = duration, revision = record.revision, onGCD = record.onGCD, onCooldown = record.onCooldown,
-    recharging = record.recharging, paused = record.paused, gcdReadyAt = record.gcdReadyAt}
+    recharging = record.recharging, charges = record.charges, inRange = inRange,
+    paused = record.paused, gcdReadyAt = record.gcdReadyAt}
 end
 
 function Private.CDMFrames()

@@ -1,6 +1,10 @@
 # Changelog
 
 ## Versions
+## 0.1.210
+- Fix CDM Trigger Combat handler
+- Add Spell in Range condition
+
 ## 0.1.203
 - Substantial performance fix for Blizzard CDM Trigger
 - Fixed fonts not displaying on first click
