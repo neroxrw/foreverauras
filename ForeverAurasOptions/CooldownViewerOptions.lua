@@ -69,6 +69,78 @@ function OptionsPrivate.AddCooldownViewerOptions(options, data, triggernum)
     desc = "Only show this trigger's auras while you have a target you can attack. Applies to all selected entries and all Show modes.",
     get = function() return trigger.cdmRequireTarget or false end,
     set = function(_, value) Save("cdmRequireTarget", value) end})
+  Add("remainingEnabled", {type = "toggle", name = "Remaining Time", width = ForeverAuras.normalWidth,
+    hidden = function() return trigger.event ~= "Blizzard CDM Buff" end,
+    desc = "Filters active, timed auras using readable CDM remaining time. Missing, permanent, or secret timers do not match.",
+    get = function() return trigger.cdmUseRemaining or false end,
+    set = function(_, value) Save("cdmUseRemaining", value) end})
+  Add("remainingOperator", {type = "select", name = "", width = 0.5,
+    values = {['<'] = '<', ['<='] = '<=', ['>'] = '>', ['>='] = '>='},
+    hidden = function() return trigger.event ~= "Blizzard CDM Buff" or not trigger.cdmUseRemaining end,
+    get = function() return trigger.cdmRemainingOperator or "<" end,
+    set = function(_, value) Save("cdmRemainingOperator", value) end})
+  Add("remainingSeconds", {type = "input", name = "Seconds", width = ForeverAuras.normalWidth - 0.5,
+    hidden = function() return trigger.event ~= "Blizzard CDM Buff" or not trigger.cdmUseRemaining end,
+    get = function() return tostring(trigger.cdmRemainingTime or 10) end,
+    validate = function(_, value)
+      local number = tonumber(value)
+      return (number and number >= 0 and number < math.huge) or "Enter a non-negative number of seconds."
+    end,
+    set = function(_, value) Save("cdmRemainingTime", tonumber(value)) end})
+  Add("totalEnabled", {type = "toggle", name = "Total Duration", width = ForeverAuras.normalWidth,
+    hidden = function() return trigger.event ~= "Blizzard CDM Buff" end,
+    desc = "Filters active, timed auras using readable CDM total time. Missing, permanent, or secret timers do not match.",
+    get = function() return trigger.cdmUseTotal or false end,
+    set = function(_, value) Save("cdmUseTotal", value) end})
+  Add("totalOperator", {type = "select", name = "", width = 0.5,
+    values = {['<'] = '<', ['<='] = '<=', ['>'] = '>', ['>='] = '>='},
+    hidden = function() return trigger.event ~= "Blizzard CDM Buff" or not trigger.cdmUseTotal end,
+    get = function() return trigger.cdmTotalOperator or "<" end,
+    set = function(_, value) Save("cdmTotalOperator", value) end})
+  Add("totalSeconds", {type = "input", name = "Seconds", width = ForeverAuras.normalWidth - 0.5,
+    hidden = function() return trigger.event ~= "Blizzard CDM Buff" or not trigger.cdmUseTotal end,
+    get = function() return tostring(trigger.cdmTotalTime or 10) end,
+    validate = function(_, value)
+      local number = tonumber(value)
+      return (number and number >= 0 and number < math.huge) or "Enter a non-negative number of seconds."
+    end,
+    set = function(_, value) Save("cdmTotalTime", tonumber(value)) end})
+  Add("elapsedEnabled", {type = "toggle", name = "Elapsed Time", width = ForeverAuras.normalWidth,
+    hidden = function() return trigger.event ~= "Blizzard CDM Buff" end,
+    desc = "Filters active, timed auras using readable CDM elapsed time. Missing, permanent, or secret timers do not match.",
+    get = function() return trigger.cdmUseElapsed or false end,
+    set = function(_, value) Save("cdmUseElapsed", value) end})
+  Add("elapsedOperator", {type = "select", name = "", width = 0.5,
+    values = {['<'] = '<', ['<='] = '<=', ['>'] = '>', ['>='] = '>='},
+    hidden = function() return trigger.event ~= "Blizzard CDM Buff" or not trigger.cdmUseElapsed end,
+    get = function() return trigger.cdmElapsedOperator or ">=" end,
+    set = function(_, value) Save("cdmElapsedOperator", value) end})
+  Add("elapsedSeconds", {type = "input", name = "Seconds", width = ForeverAuras.normalWidth - 0.5,
+    hidden = function() return trigger.event ~= "Blizzard CDM Buff" or not trigger.cdmUseElapsed end,
+    get = function() return tostring(trigger.cdmElapsedTime or 10) end,
+    validate = function(_, value)
+      local number = tonumber(value)
+      return (number and number >= 0 and number < math.huge) or "Enter a non-negative number of seconds."
+    end,
+    set = function(_, value) Save("cdmElapsedTime", tonumber(value)) end})
+  Add("stacksEnabled", {type = "toggle", name = "Stack Count", width = ForeverAuras.normalWidth,
+    hidden = function() return trigger.event ~= "Blizzard CDM Buff" end,
+    desc = "Filters active auras using readable CDM stack counts. Missing or secret stack counts do not match. All enabled filters must match.",
+    get = function() return trigger.cdmUseStacks or false end,
+    set = function(_, value) Save("cdmUseStacks", value) end})
+  Add("stacksOperator", {type = "select", name = "", width = 0.5,
+    values = {['<'] = '<', ['<='] = '<=', ['>'] = '>', ['>='] = '>=', ['=='] = '=', ['~='] = '!='},
+    hidden = function() return trigger.event ~= "Blizzard CDM Buff" or not trigger.cdmUseStacks end,
+    get = function() return trigger.cdmStackOperator or ">=" end,
+    set = function(_, value) Save("cdmStackOperator", value) end})
+  Add("stacksCount", {type = "input", name = "Stacks", width = ForeverAuras.normalWidth - 0.5,
+    hidden = function() return trigger.event ~= "Blizzard CDM Buff" or not trigger.cdmUseStacks end,
+    get = function() return tostring(trigger.cdmStackCount or 1) end,
+    validate = function(_, value)
+      local number = tonumber(value)
+      return (number and number >= 0 and number < math.huge and number == math.floor(number)) or "Enter a non-negative whole number."
+    end,
+    set = function(_, value) Save("cdmStackCount", tonumber(value)) end})
   Add("extra", {
     type = "execute", control = "ForeverAurasExpandSmall", width = "full", hidden = function() return trigger.cdmSource == "buff" or trigger.event == "Blizzard CDM Item" end,
     name = function()

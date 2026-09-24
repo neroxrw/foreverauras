@@ -451,8 +451,11 @@ local barPrototype = {
             abar:SetStatusBarTexture("Interface\\AddOns\\ForeverAuras\\Media\\Textures\\Square_FullWhite");
             abar:SetColorFill(1, 1, 1, 0);
 
-            abar.texture = abar:CreateTexture(nil, "ARTWORK");
+            -- Keep overlays in the foreground's draw order, not on a child frame above it.
+            abar.texture = self:CreateTexture(nil, "ARTWORK");
             abar.texture:SetDrawLayer("ARTWORK", min(index, 7));
+            abar:HookScript("OnShow", function() abar.texture:Show() end);
+            abar:HookScript("OnHide", function() abar.texture:Hide() end);
             abar.texture:SetTexelSnappingBias(0)
             abar.texture:SetSnapToPixelGrid(false)
             abar.texture:SetAllPoints(self)
@@ -484,6 +487,8 @@ local barPrototype = {
             abar.offsetBarAdditional:Hide();
           end
           abar:Show();
+          abar.texture:Show();
+          abar.texture:SetDrawLayer("ARTWORK", additionalBar.underlay and -1 or min(index, 7));
 
           local mainBarMask = self.activeMask == "secret" and self.fgMaskSecret or self.fgMask;
 
@@ -679,6 +684,7 @@ local barPrototype = {
         end
 
         local extraTexture = self.extraTextures[index];
+        extraTexture:SetDrawLayer("ARTWORK", additionalBar.underlay and -1 or min(index, 7));
 
         local valueStart = self.additionalBarsMin
         local valueWidth = self.additionalBarsMax - valueStart;
