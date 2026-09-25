@@ -1,6 +1,12 @@
 # Changelog
 
 ## Versions
+## 0.2.1
+- Fix previews of Blizzard CDM / Blizzard Aura Trigger
+- Using the Blizzard Aura trigger, you can now add spell IDs using just one spell ID to match all names, similar to Aura (Legacy) logic
+- Blizzard Aura Triggers "Force Perfect Pixel Border" is now usable
+- Remove warning about being unable to save auras
+
 ## 0.1.217
 - Added remaining time to CDM Buff/Debuff
 

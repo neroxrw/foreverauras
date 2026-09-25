@@ -138,8 +138,9 @@ function OptionsPrivate.PrepareSecretDisplayOptions(data, groups)
       for key, option in pairs(group) do
         if type(option) == "table" and option.type then
           if groupKey:match("%.subborder$") and key == "border_ppscale" then
-            option.disabled = true
-            option.desc = "Secret aura borders use the size set in Display; pixel-perfect scaling is unavailable."
+            -- Native borders now use physical-pixel sizing without inspecting aura geometry.
+            option.disabled = false
+            option.desc = "Keep border thickness and offset in screen pixels, regardless of UI or parent scale. Use a size of 1 for a one-pixel border."
           elseif unsupported[key] then
             option.disabled = true
             option.desc = "Not supported by Blizzard's native aura display."

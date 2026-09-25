@@ -494,5 +494,9 @@ function Private.CopyCDMCountdownText(destination, state, kind)
     local shown = source:IsShown()
     if Readable(shown) and not shown then destination:SetText(""); return end
   end
-  if source then destination:SetText(source:GetText()) elseif state and state.show and state.cdmTextPreview then destination:SetText(kind == "bs" and "3" or "29m") else destination:SetText("") end
+  -- Editor text uses the same six-second sample as the preview's progress state.
+  if source then destination:SetText(source:GetText()) elseif state and state.show and state.cdmTextPreview then
+    local remaining = state.expirationTime and math.max(0, state.expirationTime - GetTime()) or 6
+    destination:SetText(kind == "bs" and "3" or tostring(math.ceil(remaining)))
+  else destination:SetText("") end
 end

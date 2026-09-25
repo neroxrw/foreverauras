@@ -185,20 +185,38 @@ local function StyleBorder(entry, parent, target, width, height, element)
     entry.borderPieces = {}
     for _, name in ipairs({"TOPLEFT", "TOPRIGHT", "BOTTOMLEFT", "BOTTOMRIGHT", "LEFT", "RIGHT", "TOP", "BOTTOM"}) do
       entry.borderPieces[name] = entry.border:CreateTexture(nil, "ARTWORK")
+      entry.borderPieces[name].originalSnappingBias = entry.borderPieces[name]:GetTexelSnappingBias()
     end
   end
   local frame, pieces = entry.border, entry.borderPieces
   local offset = element.border_offset or 0
   width, height = math.max(1, width + offset * 2), math.max(1, height + offset * 2)
   local size = math.min(math.max(0.1, element.border_size or 2), width / 2, height / 2)
+  -- Anchor to native geometry without reading it. Ignoring inherited scale makes
+  -- each border unit a physical pixel, including on scaled groups/unit frames.
+  local pixelPerfect = element.border_ppscale == true
+  frame:SetIgnoreParentScale(pixelPerfect)
+  frame:SetScale(pixelPerfect and PixelUtil.GetPixelToUIUnitFactor() or 1)
+  if frame.SetRoundLayoutToNearestPixel then frame:SetRoundLayoutToNearestPixel(pixelPerfect) end
   frame:ClearAllPoints()
-  frame:SetPoint("CENTER", target, "CENTER")
-  frame:SetSize(width, height)
+  if pixelPerfect then
+    size = math.max(1, math.floor((element.border_size or 2) + 0.5))
+    offset = math.floor(offset + 0.5)
+    frame:SetPoint("TOPLEFT", target, "TOPLEFT", -offset, offset)
+    frame:SetPoint("BOTTOMRIGHT", target, "BOTTOMRIGHT", offset, -offset)
+  else
+    frame:SetPoint("CENTER", target, "CENTER")
+    frame:SetSize(width, height)
+  end
   local file = Media:Fetch("border", element.border_edge or "Square Full White")
   for _, texture in pairs(pieces) do
     texture:ClearAllPoints()
     texture:SetTexture(file, "REPEAT", "REPEAT")
     texture:SetVertexColor(unpack(element.border_color or {1, 1, 1, 1}))
+    -- Engine-side rounding follows protected anchor movement without Lua geometry reads.
+    texture:SetSnapToPixelGrid(not pixelPerfect)
+    texture:SetTexelSnappingBias(pixelPerfect and 0 or texture.originalSnappingBias or 0)
+    if texture.SetRoundLayoutToNearestPixel then texture:SetRoundLayoutToNearestPixel(pixelPerfect) end
   end
   for index, point in ipairs({"TOPLEFT", "TOPRIGHT", "BOTTOMLEFT", "BOTTOMRIGHT"}) do
     local texture = pieces[point]
@@ -383,5 +401,6 @@ function Display.StyleAppearance(native, data, ElementFrame, StyleText, StyleGlo
       end
     end
   end
-  Display.StyleNativeConditionIndicators(native, data)
+  -- Sample frames have no native aura state to evaluate for condition indicators.
+  if not native.preview then Display.StyleNativeConditionIndicators(native, data) end
 end

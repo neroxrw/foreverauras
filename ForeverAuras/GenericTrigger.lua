@@ -681,6 +681,10 @@ end
 
 local function RunTriggerFunc(allStates, data, id, triggernum, event, arg1, arg2, ...)
   local optionsEvent = event == "OPTIONS";
+  -- Native CDM callbacks and filter timers dispatch internally even while the
+  -- editor pauses normal game events. Only OPTIONS may replace its sample states.
+  if not optionsEvent and data.prototype and data.prototype.cooldownViewerProgress
+      and ForeverAuras.IsOptionsOpen() then return false end
   local errorHandler = (optionsEvent and data.ignoreOptionsEventErrors) and ignoreErrorHandler or Private.GetErrorHandlerId(id, L["Trigger %s"]:format(triggernum))
   local updateTriggerState = false;
 

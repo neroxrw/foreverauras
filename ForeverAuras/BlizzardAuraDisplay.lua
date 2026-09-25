@@ -113,6 +113,44 @@ function Display.UsesSpellIDs(trigger)
   return trigger.secretUseSpellIDs ~= false and (#(trigger.auraspellids or {}) > 0 or trigger.secretUseSpellIDs == true)
 end
 
+-- Keep the original exact-ID flag and storage unchanged for existing auras.
+function Display.UsesRankSpellIDs(trigger)
+  return trigger.secretUseRankSpellIDs == true
+end
+
+function Display.GetSpellIDs(trigger, expandRanks)
+  local ids, seen = {}, {}
+  local function Add(value)
+    local id = tonumber(value)
+    if id and id > 0 and id < 2147483647 and id == math.floor(id) and not seen[id] then
+      seen[id] = true; ids[#ids + 1] = id
+    end
+  end
+  if Display.UsesRankSpellIDs(trigger) then
+    for _, value in ipairs(trigger.auraRankSpellIDs or {}) do
+      local id = tonumber(value)
+      if id and id > 0 and id < 2147483647 and id == math.floor(id) then
+        Add(id)
+        if expandRanks then
+          for _, rankID in ipairs(Private.GetAuraSpellRanks(id) or {}) do Add(rankID) end
+        end
+      end
+    end
+  end
+  if Display.UsesSpellIDs(trigger) then
+    for _, value in ipairs(trigger.auraspellids or {}) do Add(value) end
+  end
+  return ids
+end
+
+-- Completed public metadata scans update filters, sounds, and deferred displays.
+function Display.RefreshSpellRanks()
+  for region in pairs(activeRegions) do
+    local data = region.blizzardAuraDisplay.data
+    if Display.UsesRankSpellIDs(Display.GetTrigger(data)) then Display.Apply(region, data) end
+  end
+end
+
 function Display.UsesExcludedSpellIDs(trigger)
   return trigger.secretUseExcludedSpellIDs ~= false and (#(trigger.excludedAuraSpellIDs or {}) > 0 or trigger.secretUseExcludedSpellIDs == true)
 end
@@ -256,6 +294,7 @@ function Display.Validate(data)
   if appearanceProblem then return appearanceProblem end
   local trigger = Display.GetTrigger(data, true)
   if Display.UsesSpellIDs(trigger) and #(trigger.auraspellids or {}) == 0 then return "Enter an exact spell ID, or untick Exact Spell IDs to show all matching auras." end
+  if Display.UsesRankSpellIDs(trigger) and #(trigger.auraRankSpellIDs or {}) == 0 then return "Enter a spell ID, or untick Spell ID(s) (All Ranks)." end
   if Display.UsesExcludedSpellIDs(trigger) and #(trigger.excludedAuraSpellIDs or {}) == 0 then return "Enter an ignored spell ID, or untick Ignored Exact Spell IDs." end
   if not Display.units[trigger.unit] or (trigger.debuffType ~= "HELPFUL" and trigger.debuffType ~= "HARMFUL") then
     return "Choose a supported unit and Buff or Debuff."
@@ -263,7 +302,7 @@ function Display.Validate(data)
   if trigger.unit == "nameplate" and (not C_NamePlate or not C_NamePlate.GetNamePlateForUnit) then
     return "This client does not expose nameplate frames."
   end
-  for _, list in ipairs({trigger.auraspellids or {}, trigger.excludedAuraSpellIDs or {}}) do
+  for _, list in ipairs({trigger.auraspellids or {}, trigger.auraRankSpellIDs or {}, trigger.excludedAuraSpellIDs or {}}) do
     for _, value in ipairs(list) do
       local id = tonumber(value)
       if not id or id <= 0 or id == math.huge or id ~= math.floor(id) then
@@ -410,7 +449,7 @@ local function SyncSounds(region)
   end
   local trigger = Display.GetTrigger(data)
   local spellIDs = {}
-  for _, value in ipairs(Display.UsesSpellIDs(trigger) and trigger.auraspellids or {}) do
+  for _, value in ipairs(Display.GetSpellIDs(trigger, true)) do
     local id = tonumber(value)
     if id and id > 0 and id < math.huge and id == math.floor(id) then spellIDs[id] = true end
   end
@@ -421,7 +460,7 @@ local function SyncSounds(region)
     end
   end
   if not next(spellIDs) then
-    SoundWarning(data, "Enable Exact Spell IDs in Trigger and enter an ID that is not ignored to use aura sounds.")
+    SoundWarning(data, "Enable Spell ID(s) or Exact Spell ID(s) in Trigger and enter an ID that is not ignored to use aura sounds.")
     return
   end
   local failure
@@ -469,11 +508,11 @@ local function UpdatePreviewNotice(region)
   local data = region.blizzardAuraDisplay and region.blizzardAuraDisplay.data
   local trigger = Display.GetTrigger(data)
   local warning
-  if trigger and Display.UsesSpellIDs(trigger) then
+  if trigger and (Display.UsesSpellIDs(trigger) or Display.UsesRankSpellIDs(trigger)) then
     local unit = trigger.unit
     local friendly = unit == "player" or unit == "pet" or unit == "group" or unit == "party" or unit == "raid"
     if friendly and trigger.debuffType == "HARMFUL" then
-      warning = "Preview only: secret debuffs will not display with Exact Spell IDs.\nConfigured sounds in Actions can still play."
+      warning = "Preview only: secret debuffs will not display with spell ID filters.\nConfigured sounds in Actions can still play."
     end
   end
   if warning then
@@ -494,7 +533,7 @@ end
 
 local function Suppress(region)
   local native = region.blizzardAuraDisplay
-  if IsPreview() and not (native and native.previewHasAuras) then
+  if IsPreview() and not region.secretAuraSamplesActive and not (native and native.previewHasAuras) then
     for frame, alpha in pairs(region.blizzardSuppressed or {}) do frame:SetAlpha(alpha) end
     region.blizzardSuppressed = nil
     UpdatePreviewNotice(region)
@@ -525,6 +564,8 @@ local function Suppress(region)
 end
 
 function Display.Restore(region)
+  -- Pooled samples must never survive release or a trigger switch.
+  if Display.HidePreview then Display.HidePreview(region) end
   if region.secretAuraPreviewNotice then region.secretAuraPreviewNotice:Hide() end
   region.secretAuraConditionValues = nil
   for frame, alpha in pairs(region.blizzardSuppressed or {}) do frame:SetAlpha(alpha) end
@@ -697,7 +738,10 @@ end
 local function CandidateFilters(data)
   local trigger = Display.GetTrigger(data)
   local filters = {maxDuration = trigger.maxDuration}
-  if Display.UsesSpellIDs(trigger) then filters.includeSpellIDs = SpellIDMap(trigger.auraspellids) end
+  -- Rank and exact selections form one union; ignored exact IDs still win.
+  if Display.UsesSpellIDs(trigger) or Display.UsesRankSpellIDs(trigger) then
+    filters.includeSpellIDs = SpellIDMap(Display.GetSpellIDs(trigger, true)) or {}
+  end
   if Display.UsesExcludedSpellIDs(trigger) then filters.excludeSpellIDs = SpellIDMap(trigger.excludedAuraSpellIDs) end
   for _, field in ipairs(Display.booleanFilters) do
     if Display.FilterApplies(field[1], trigger) and (not IsNameplateFilter(field[1]) or trigger.unit == "nameplate") then filters[field[1]] = trigger[field[1]] end
@@ -711,91 +755,19 @@ local function CandidateFilters(data)
   return filters
 end
 
--- Only the options fallback needs to know whether there is a readable match.
--- Native widgets own the actual preview, including secret visibility and layout.
-local function MatchesPreviewAura(unit, aura, filters)
-  -- Mirror the native candidate rules; AuraContainerUtil is in Blizzard's secure environment.
-  if filters.includeSpellIDs or filters.excludeSpellIDs then
-    local canMatch = aura.spellId and C_Secrets.GetSpellAuraSecrecy(aura.spellId) == Enum.SecrecyLevel.NeverSecret
-    if not canMatch then
-      if aura.isHelpful and UnitIsPlayerControlledOrGroupMember(unit) then
-        canMatch = true
-      else
-        local friendly = UnitCanAssist("player", unit, true, true)
-        canMatch = not ((aura.isHarmful and friendly) or (aura.isHelpful and not friendly))
-      end
-    end
-    if canMatch then
-      if filters.includeSpellIDs and not filters.includeSpellIDs[aura.spellId] then return false end
-      if filters.excludeSpellIDs and filters.excludeSpellIDs[aura.spellId] then return false end
-    elseif filters.includeSpellIDs then
-      return false
-    end
-  end
-  if filters.processedAuraType and aura.processedAuraType ~= filters.processedAuraType then return false end
-  if filters.includeDispelTypes and not filters.includeDispelTypes[aura.dispelName] then return false end
-  if filters.excludeDispelTypes and filters.excludeDispelTypes[aura.dispelName] then return false end
-  if filters.maxDuration and (aura.duration == 0 or aura.duration > filters.maxDuration) then return false end
-  for _, field in ipairs(Display.booleanFilters) do
-    local key = field[1]
-    if filters[key] ~= nil then
-      local value = aura[key]
-      if key == "isRoleAura" then value = AuraUtil.IsRoleAura(aura)
-      elseif key == "isBossOrRoleAura" then value = aura.isBossAura or AuraUtil.IsRoleAura(aura)
-      elseif key == "isPriorityAura" then value = AuraUtil.IsPriorityDebuff(aura.spellId) end
-      if value ~= filters[key] then return false end
-    end
-  end
-  return true
-end
-
-local function HasPreviewAuras(unit, trigger, filters)
-  local ids = C_UnitAuras.GetUnitAuraInstanceIDs(unit, FilterString(trigger))
-  if issecretvalue(ids) then return true end
-  for _, id in ipairs(ids) do
-    if issecretvalue(id) then return true end
-    local aura = C_UnitAuras.GetAuraDataByAuraInstanceID(unit, id)
-    if issecretvalue(aura) then return true end
-    if aura then
-      for _, value in pairs(aura) do
-        if issecretvalue(value) then return true end
-      end
-      if trigger.processedAuraType and trigger.processedAuraType ~= "any" then
-        aura.processedAuraType = AuraUtil.ProcessAura(aura, trigger.displayOnlyDispellableDebuffs or false,
-          trigger.ignoreBuffs or false, trigger.ignoreDebuffs or false, trigger.ignoreDispelDebuffs or false)
-      end
-      if aura.processedAuraType ~= AuraUtil.AuraUpdateChangedType.None
-        and MatchesPreviewAura(unit, aura, filters) then return true end
-    end
-  end
-  return false
-end
-
+-- The editor always renders public samples; live containers remain disabled.
 local function RefreshPreview(region)
   local native = region.blizzardAuraDisplay
-  native.previewHasAuras = false
-  if IsPreview() then
-    if Restricted() then
-      native.previewHasAuras = true
-    else
-      local trigger = Display.GetTrigger(native.data)
-      local filters = CandidateFilters(native.data)
-      if (native.data.blizzardAuraDisplay.maxIcons or 10) > 0 then
-        for _, instance in ipairs(native.instances) do
-          if instance.visible and instance.boundUnit then
-            -- Blizzard's classification helpers can themselves return secret values.
-            -- An unreadable result must not be treated as an absent aura.
-            local ok, found = pcall(HasPreviewAuras, instance.boundUnit, trigger, filters)
-            if not ok or issecretvalue(found) or found then
-              native.previewHasAuras = true
-              break
-            end
-          end
-        end
-      end
-    end
+  native.previewHasAuras = IsPreview()
+  if native.previewHasAuras then
+    Display.ShowPreview(region, native.data, function(sample, data)
+      Display.StyleAppearance(sample, Display.PrepareConditionAppearance(data), ElementFrame, StyleText, StyleGlow)
+    end)
+  else
+    Display.HidePreview(region)
   end
   Suppress(region)
+  if IsPreview() then UpdatePreviewNotice(region) end
 end
 
 local function ConfigureProcessing(container, trigger)
@@ -966,7 +938,8 @@ local function RefreshUnits(region, removedUnit, changedUnit)
         end
       end
       if anchorFrame and anchorFrame:IsForbidden() then anchorFrame = nil end
-      local shown = unit ~= nil and region:IsShown() and (not (unitFrames or nameplates) or anchorFrame ~= nil)
+      -- Live aura visibility must not affect the editor samples.
+      local shown = not IsPreview() and unit ~= nil and region:IsShown() and (not (unitFrames or nameplates) or anchorFrame ~= nil)
       local parent = unitFrames and data.anchorFrameParent ~= false and anchorFrame or region
       -- Disabling clears native aura assignments and restarts their animations.
       if instance.boundUnit ~= unit or container:GetParent() ~= parent then
@@ -1011,7 +984,7 @@ local function RefreshUnits(region, removedUnit, changedUnit)
         local glowContainer = instance.unitGlow.container
         local frame = unitFrames and unit and settings.unitGlow and anchorFrame
         if frame and frame:IsForbidden() then frame = nil end
-        local glowShown = frame ~= nil and frame ~= false and region:IsShown() and not native.unitGlowsHidden and settings.unitGlow == true
+        local glowShown = not IsPreview() and frame ~= nil and frame ~= false and region:IsShown() and not native.unitGlowsHidden and settings.unitGlow == true
         local glowParent = frame or region
         if instance.unitGlow.boundUnit ~= unit or glowContainer:GetParent() ~= glowParent then
           glowContainer:SetEnabled(false)
@@ -1058,6 +1031,16 @@ function Display.Apply(region, data)
   Suppress(region)
   local problem = Display.Validate(data)
   if problem then Display.Release(region); Warn(data, problem); return end
+  -- Public editor frames can update while native container changes are deferred.
+  -- They never bind units or consume live aura state.
+  if IsPreview() then
+    Display.ShowPreview(region, data, function(sample, appearance)
+      Display.StyleAppearance(sample, Display.PrepareConditionAppearance(appearance), ElementFrame, StyleText, StyleGlow)
+    end)
+    Suppress(region)
+  else
+    Display.HidePreview(region)
+  end
   if Restricted() then
     pending[region] = data
     Warn(data, "Display > Secret Aura Settings changes will apply when aura restrictions end.")
@@ -1190,10 +1173,17 @@ local events = CreateFrame("Frame")
 events:RegisterEvent("UNIT_AURA")
 events:RegisterEvent("PLAYER_REGEN_ENABLED")
 events:RegisterEvent("ADDON_RESTRICTION_STATE_CHANGED")
+-- Reconfigure physical-pixel borders when the screen's pixel-to-UI ratio changes.
+events:RegisterEvent("UI_SCALE_CHANGED")
+events:RegisterEvent("DISPLAY_SIZE_CHANGED")
 for _, event in ipairs({"PLAYER_ENTERING_WORLD", "GROUP_ROSTER_UPDATE", "PLAYER_TARGET_CHANGED", "PLAYER_FOCUS_CHANGED",
   "UPDATE_MOUSEOVER_UNIT", "UNIT_TARGET", "UNIT_PET", "INSTANCE_ENCOUNTER_ENGAGE_UNIT", "ARENA_OPPONENT_UPDATE",
   "NAME_PLATE_UNIT_ADDED", "NAME_PLATE_UNIT_REMOVED", "UNIT_NAME_UPDATE", "PLAYER_ROLES_ASSIGNED"}) do events:RegisterEvent(event) end
 events:SetScript("OnEvent", function(_, event, unit)
+  if event == "UI_SCALE_CHANGED" or event == "DISPLAY_SIZE_CHANGED" then
+    for region in pairs(activeRegions) do Display.Apply(region, region.blizzardAuraDisplay.data) end
+    return
+  end
   if event == "UNIT_AURA" then
     if IsPreview() then
       for region in pairs(activeRegions) do

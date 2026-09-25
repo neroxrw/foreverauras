@@ -23,7 +23,8 @@ function Trigger.CreateFallbackState(data, triggernum, state)
   state.unit = ForeverAuras.IsOptionsOpen() and Display.GetPreviewUnit(data) or nil
   if ForeverAuras.IsOptionsOpen() then
     state.progressType = "timed"
-    state.duration, state.expirationTime = 30, GetTime() + 30
+    -- Standard sample duration, independent of active aura timers.
+    state.duration, state.expirationTime = 6, GetTime() + 6
     state.stacks = 3
   end
 end
@@ -83,7 +84,8 @@ function Trigger.GetTriggerConditions() return {} end
 
 function Trigger.GetNameAndIcon(data, triggernum)
   local trigger = data.triggers[triggernum].trigger
-  local id = tonumber(trigger.auraspellids and trigger.auraspellids[1])
+  -- Preview metadata follows the configured selections, without expanding ranks.
+  local id = Display.GetSpellIDs(trigger, false)[1]
   local info = id and C_Spell.GetSpellInfo(id)
   return info and info.name or "Secret Auras", info and info.iconID or 134400
 end
@@ -91,7 +93,9 @@ end
 function Trigger.GetTriggerDescription(data, triggernum, lines)
   local trigger = data.triggers[triggernum].trigger
   lines[#lines + 1] = {"Secret Auras", Display.units[trigger.unit] or trigger.unit}
-  lines[#lines + 1] = {"Spell IDs", Display.UsesSpellIDs(trigger) and table.concat(trigger.auraspellids or {}, ", ") or "Any"}
+  -- Describe both modes without relabelling existing exact selections.
+  lines[#lines + 1] = {"Spell IDs (All Ranks)", Display.UsesRankSpellIDs(trigger) and table.concat(trigger.auraRankSpellIDs or {}, ", ") or "None"}
+  lines[#lines + 1] = {"Exact Spell IDs", Display.UsesSpellIDs(trigger) and table.concat(trigger.auraspellids or {}, ", ") or "None"}
 end
 
 ForeverAuras.RegisterTriggerSystem({"secretAura"}, Trigger)

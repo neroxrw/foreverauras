@@ -384,10 +384,12 @@ ForeverAuras.normalWidth = 1.3
 ForeverAuras.halfWidth = ForeverAuras.normalWidth / 2
 ForeverAuras.doubleWidth = ForeverAuras.normalWidth * 2
 local versionStringFromToc = C_AddOns.GetAddOnMetadata("ForeverAuras", "Version")
-local versionString = "0.1.217"
-local buildTime = "2026-09-23"
+local versionString = "0.2.1-BETA"
+-- Release date for the rank-aware Blizzard aura and sample preview update.
+local buildTime = "2026-09-25"
 
-if not versionString:find("beta", 1, true) then
+-- Prerelease labels are case-insensitive; packages use the requested BETA spelling.
+if not versionString:lower():find("beta", 1, true) then
   ForeverAuras.buildType = "release"
 else
   ForeverAuras.buildType = "beta"
