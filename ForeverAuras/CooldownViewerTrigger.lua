@@ -92,7 +92,7 @@ function Private.ResolveCDMSpell(trigger, event)
     local frames = Private.CDMFrames()
     for entryID, entry in pairs(entries) do
       local info = C_CooldownViewer.GetCooldownViewerCooldownInfo(entryID)
-      if info and Private.CDMEntryMatches(trigger, entry, info) then
+      if info and Private.CDMEntryMatches(trigger, entry, info, event == "OPTIONS") then
         local identity = Private.CDMIdentity(entryID, entry, info, frames[entryID])
         local useSpell
         if identity.itemID and C_Item and C_Item.GetItemSpell then
@@ -114,7 +114,7 @@ function Private.ResolveCDMSpell(trigger, event)
     table.sort(selected)
     return selected
   end
-  local key = tostring(trigger.cdmSelection) .. ":" .. tostring(trigger.event) .. ":" .. query .. ":" .. tostring(trigger.cdmExact) .. ":" .. (trigger.cdmSource or "cooldown") .. ":" .. tostring(trigger.use_ignoreSpellKnown)
+  local key = tostring(trigger.cdmSelection) .. ":" .. tostring(trigger.event) .. ":" .. query .. ":" .. tostring(trigger.cdmExact) .. ":" .. (trigger.cdmSource or "cooldown") .. ":" .. tostring(trigger.use_ignoreSpellKnown) .. ":" .. tostring(event == "OPTIONS")
   if resolved.entries ~= entries then resolved = {entries = entries} end
   if resolved[key] then return resolved[key] end
   local id = tonumber(query)
@@ -122,13 +122,13 @@ function Private.ResolveCDMSpell(trigger, event)
   local spell = id and C_Spell.GetSpellInfo(id)
   local name = (spell and spell.name or query):lower()
   local exact = trigger.cdmExact == true
-  if trigger.event == "Blizzard CDM Buff" and not exact then
+  if event ~= "OPTIONS" and trigger.event == "Blizzard CDM Buff" and not exact then
     local frames = Private.CDMFrames()
     local bestEntry, bestSpell, bestRank, bestDirect
     for entryID, entry in pairs(entries) do
       local info = C_CooldownViewer.GetCooldownViewerCooldownInfo(entryID)
       if info and Private.CDMIsBuff(entry.category) then
-        local displayed = Private.CDMEntryMatches(trigger, entry, info)
+        local displayed = Private.CDMEntryMatches(trigger, entry, info, event == "OPTIONS")
         local ids = Private.CDMAuraSpellIDs(info)
         local frame = frames[entryID]
         local frameSpell = frame and frame.GetSpellID and frame:GetSpellID()
@@ -162,9 +162,9 @@ function Private.ResolveCDMSpell(trigger, event)
   end
   local best, bestRank, bestScore
   for entryID, entry in pairs(entries) do
-    if (entry.known or exact or anyBuffRank or trigger.use_ignoreSpellKnown) and Private.CDMIsBuff(entry.category) == (trigger.cdmSource == "buff") then
+    if (event == "OPTIONS" or entry.known or exact or anyBuffRank or trigger.use_ignoreSpellKnown) and Private.CDMIsBuff(entry.category) == (trigger.cdmSource == "buff") then
       local info = C_CooldownViewer.GetCooldownViewerCooldownInfo(entryID)
-      if info and (trigger.cdmSelection ~= "spell" or Private.CDMEntryMatches(trigger, entry, info)) then
+      if info and (trigger.cdmSelection ~= "spell" or Private.CDMEntryMatches(trigger, entry, info, event == "OPTIONS")) then
         local identity = Private.CDMIdentity(entryID, entry, info)
         local score = exact and ExactMatch(info, id) or 1
         local matches = exact and score > 0 or not exact and identity.name:lower() == name
@@ -190,6 +190,10 @@ function Private.ResolveCDMSpell(trigger, event)
       end
     end
   end
+  -- Keep configured spell samples visible even without a usable CDM entry.
+  if event == "OPTIONS" and not best then
+    return {previewSpell = spell or {name = query, iconID = 134400, spellID = id}, singleClone = true}
+  end
   resolved[key] = best and {best} or {}
   if anyBuffRank then
     table.sort(buffSpellIDs)
@@ -201,8 +205,9 @@ function Private.ResolveCDMSpell(trigger, event)
   return resolved[key]
 end
 
-function Private.CDMEntryMatches(trigger, entry, info)
-  if entry.displayed ~= true then return false end
+function Private.CDMEntryMatches(trigger, entry, info, preview)
+  -- Editor samples remain available when an entry is not currently displayed.
+  if not preview and entry.displayed ~= true then return false end
   local c = Enum.CooldownViewerCategory
   local item = info.equipSlot ~= nil or info.spellCategoryID ~= nil
     or entry.sourceCategory == c.EquipSlotEssential or entry.sourceCategory == c.EquipSlotTracked
@@ -233,7 +238,7 @@ function Private.GetCDMPickerSelections(trigger, event)
     local id = tonumber(key)
     local entry = id and entries[id]
     local info = entry and C_CooldownViewer.GetCooldownViewerCooldownInfo(id)
-    if enabled and info and Private.CDMEntryMatches(trigger, entry, info) then
+    if enabled and info and Private.CDMEntryMatches(trigger, entry, info, event == "OPTIONS") then
       selected[#selected + 1] = id
       selected.buffSpellIDsByEntry[id] = Private.CDMAuraSpellIDs(info)
     end
@@ -346,6 +351,14 @@ local function BuildCooldownViewerStates(allstates, selected, event, showGCD, tr
   if event ~= "FA_CDM_REFRESH" and event ~= "OPTIONS"
       and event ~= "GET_ITEM_INFO_RECEIVED" and event ~= "ITEM_DATA_LOAD_RESULT"
       and #selected > 0 then QueueRefresh() end
+  -- A missing catalog entry is not a reason to hide an editor selection.
+  if event == "OPTIONS" and selected.previewSpell then
+    local spell = selected.previewSpell
+    allstates.spell = {show = true, changed = true, progressType = "timed", duration = 6,
+      expirationTime = GetTime() + 6, autoHide = false, name = spell.name, icon = spell.iconID,
+      spellId = spell.spellID, cdmTextPreview = true, index = 1}
+    return true
+  end
   if not IsAvailable() then return true end
   if requireTarget and event ~= "OPTIONS" then
     local exists = UnitExists("target")
@@ -356,7 +369,7 @@ local function BuildCooldownViewerStates(allstates, selected, event, showGCD, tr
 
   for index, cooldownID in ipairs(selected) do
     local entry = available[cooldownID]
-    if entry and (entry.known or exactID or selected.buffSpellIDs or selected.buffSpellIDsByEntry or ignoreSpellKnown) then
+    if entry and (event == "OPTIONS" or entry.known or exactID or selected.buffSpellIDs or selected.buffSpellIDsByEntry or ignoreSpellKnown) then
       local info = C_CooldownViewer.GetCooldownViewerCooldownInfo(cooldownID)
       if info then
         local identity = Private.CDMIdentity(cooldownID, entry, info, frames[cooldownID])
@@ -390,7 +403,13 @@ local function BuildCooldownViewerStates(allstates, selected, event, showGCD, tr
         state.onCooldown, state.isReady, state.recharging, state.stacks, state.auraActive = nil, nil, nil, nil, nil
         state.cdmGCDOnly, state.cdmHideGCDText = false, hideGCDText == true
 
-        if Private.CDMIsBuff(entry.category) then
+        -- OPTIONS always uses a six-second sample, never live timers or checks.
+        if event == "OPTIONS" then
+          state.progressType, state.duration, state.expirationTime = "timed", 6, GetTime() + 6
+          state.value, state.total = nil, nil
+          state.stacks, state.auraActive, state.onCooldown = 3, true, true
+          state.cdmHideGCDText = false
+        elseif Private.CDMIsBuff(entry.category) then
           if selected.buffEntryIDs then
             local bestAura, bestScore
             for _, auraID in ipairs(selected.buffEntryIDs) do
@@ -586,9 +605,9 @@ function Private.ExecEnv.UpdateCDMSelectionList(allstates, queries, event)
       query.showMode, query.event ~= "Blizzard CDM Item" and query.cdmExact and tonumber(query.cdmSpell) or nil, query.requireTarget, query.use_ignoreSpellKnown)
     for _, state in pairs(temporary) do
       -- Cooldown and item aliases share a clone; buff filters each own their clone.
-      local key = tostring(state.cooldownID) .. ":" .. tostring(state.spellId)
+      local key = tostring(state.cooldownID) .. ":" .. tostring(state.spellId or query.cdmSpell)
       if query.event == "Blizzard CDM Buff" then
-        key = query.cdmExact and ("id:" .. tostring(tonumber(query.cdmSpell))) or ("name:" .. selected.buffName)
+        key = query.cdmExact and ("id:" .. tostring(tonumber(query.cdmSpell))) or ("name:" .. (selected.buffName or query.cdmSpell))
         local clone = {}
         for field, value in pairs(state) do clone[field] = value end
         clone.index = queryIndex

@@ -137,7 +137,7 @@ local function GetOptions(data, triggernum)
     name = "|cffff0000Filtering Debuffs by spell ID will cause the Aura not display. Sounds can still be added in Actions.|r",
     hidden = function()
       return trigger.debuffType ~= "HARMFUL"
-        or not (display.UsesSpellIDs(trigger) or display.UsesExcludedSpellIDs(trigger))
+        or not (display.UsesSpellIDs(trigger) or display.UsesRankSpellIDs(trigger) or display.UsesExcludedSpellIDs(trigger))
     end,
   }
   local function SpellIDs(toggleKey, prefix, storageKey, title, inputName, order, Enabled, flag)
@@ -167,7 +167,11 @@ local function GetOptions(data, triggernum)
       end
     end
   end
-  SpellIDs("useSpellIDs", "spellid", "auraspellids", "Exact Spell ID(s)", "Spell ID", 5,
+  -- Rank matching has independent storage, so old exact selections keep their meaning.
+  SpellIDs("useRankSpellIDs", "rankspellid", "auraRankSpellIDs", "Spell ID(s) (All Ranks)", "Spell ID", 4.95,
+    display.UsesRankSpellIDs, "secretUseRankSpellIDs")
+  options.useRankSpellIDs.desc = "Enter any rank to match all spell IDs with the same spell name, including ranks you have not learned. Other spells sharing that name also match; use Exact Spell ID(s) to restrict the match. IDs are discovered from the client's spell data in the background. Exact selections below are also included; ignored IDs still apply."
+  SpellIDs("useSpellIDs", "spellid", "auraspellids", "Exact Spell ID(s)", "Exact Spell ID", 6,
     display.UsesSpellIDs, "secretUseSpellIDs")
   SpellIDs("useExcludedSpellIDs", "ignorespellid", "excludedAuraSpellIDs", "Ignored Exact Spell ID(s)", "Ignored Spell ID", 7,
     display.UsesExcludedSpellIDs, "secretUseExcludedSpellIDs")

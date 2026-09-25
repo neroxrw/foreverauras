@@ -2,7 +2,7 @@
 ## Interface: 16001
 ## Title: ForeverAuras Templates
 ## Author: m33shoq, WeakAuras contributors
-## Version: 0.1.217
+## Version: 0.2.1-BETA
 ## IconTexture: Interface\AddOns\ForeverAuras\Media\Textures\foreverauras_logo.tga
 ## Notes: Templates for ForeverAuras
 ## Notes-esES: Plantillas para ForeverAuras
