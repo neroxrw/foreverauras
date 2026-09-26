@@ -1457,6 +1457,19 @@ Private.load_prototype = {
       sorted = true,
       sortOrder = Private.specs_sorted,
     },
+    -- A separate opt-in load filter preserves existing Player Class imports.
+    -- The normal load event system reevaluates it when talents/spells change.
+    {
+      name = "forever_spec",
+      display = L["Specialization"],
+      type = "multiselect",
+      values = "forever_spec_types",
+      test = "Private.ExecEnv.IsForeverSpecialization(%s)",
+      events = {"SPELLS_CHANGED", "PLAYER_TALENT_UPDATE", "PLAYER_ENTERING_WORLD"},
+      sorted = true,
+      sortOrder = Private.forever_specs_sorted,
+      desc = "Matches a specialization when you have learned its final talent, such as Combustion for Fire Mage. Any rank counts. No match before learning that talent or after unlearning it. Select multiple specializations to match any of them. Feral Combat includes both cat and bear builds. Your assigned Role is checked separately.",
+    },
     {
       name = "talent",
       display = L["Talent"],
@@ -9447,12 +9460,14 @@ if free == nil then return false end
   ["Queued Action"] = {
     type = "spell",
     events = {
-      ["events"] = {"ACTIONBAR_UPDATE_STATE"}
+      -- Refresh on login and spellbook changes as well as queue transitions.
+      ["events"] = {"ACTIONBAR_UPDATE_STATE", "PLAYER_ENTERING_WORLD", "SPELLS_CHANGED"}
     },
     internal_events = {
       "ACTIONBAR_SLOT_CHANGED",
       "ACTIONBAR_PAGE_CHANGED"
     },
+    force_events = "PLAYER_ENTERING_WORLD",
     name = L["Queued Action"],
     init = function(trigger)
       trigger.spellName = trigger.spellName or 0
@@ -9465,20 +9480,22 @@ if free == nil then return false end
       local ret = [=[
         local spellname = %q
       ]=]
-      return ret:format(spellName)
+      return ret:format(spellName or "")
     end,
     args = {
       {
         name = "spellName",
         required = true,
         display = L["Spell"],
+        desc = "Tracks whether Blizzard reports this spell as current or queued, including next-swing attacks such as Heroic Strike.",
         type = "spell",
         test = "true",
         showExactOption = true,
       },
       {
         hidden = true,
-        test = "spellname and IsCurrentSpell(spellname)";
+        -- Keep the legacy trigger semantics, with a readable boolean from the modern API.
+        test = "Private.ExecEnv.IsQueuedSpell(spellname)";
       },
     },
     iconFunc = function(trigger)
@@ -10123,9 +10140,7 @@ if free == nil then return false end
 
 
 
-do
-  Private.event_prototypes["Queued Action"] = nil
-end
+-- Queued Action remains registered under Spell, preserving its saved event name.
 
 Private.category_event_prototype = {}
 for name, prototype in pairs(Private.event_prototypes) do

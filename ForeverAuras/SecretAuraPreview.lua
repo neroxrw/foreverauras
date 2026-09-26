@@ -18,9 +18,14 @@ local function CreateSample(region)
   end
   function button:AddAuraShownAnimation(animation) animation:Play() end
   function button:RemoveAuraShownAnimation(animation) animation:Stop() end
-  -- Dispel artwork is a sample only; native secrecy and classification never run here.
-  function button:AddDispelTypeTexture(texture)
-    texture:SetTexture("Interface\\Icons\\Spell_Holy_DispelMagic")
+  -- Preview the same Blizzard assets as the native bindings, using a public sample type.
+  function button:AddDispelTypeTexture(texture, options)
+    if options.style == Enum.CustomAuraButtonDispelTypeTextureStyle.Border then
+      AuraUtil.SetAuraBorderAtlas(texture, "Magic", false)
+    else
+      AuraUtil.SetAuraDispelTypeIcon(texture, "Magic")
+    end
+    texture:SetVertexColor(1, 1, 1, 1)
     texture:Show()
   end
   local native = {button = button, preview = true}

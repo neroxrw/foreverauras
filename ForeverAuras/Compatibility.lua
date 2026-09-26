@@ -35,6 +35,17 @@ else
   Private.ExecEnv.IsUsableSpell = C_Spell.IsSpellUsable
 end
 
+-- Queued Action uses the supported spell API; unreadable results never enter trigger logic.
+function Private.ExecEnv.IsQueuedSpell(spell)
+  local query = tonumber(spell) or spell
+  if query == nil or query == "" or query == 0 then return false end
+  local current = C_Spell and C_Spell.IsCurrentSpell or IsCurrentSpell
+  if not current then return false end
+  local value = current(query)
+  if issecretvalue and issecretvalue(value) then return false end
+  return type(value) == "boolean" and value or false
+end
+
 if C_SpecializationInfo and C_SpecializationInfo.GetSpecialization then
   Private.ExecEnv.GetSpecialization = C_SpecializationInfo.GetSpecialization
 else

@@ -90,12 +90,27 @@ function Trigger.GetNameAndIcon(data, triggernum)
   return info and info.name or "Secret Auras", info and info.iconID or 134400
 end
 
+-- The hover summary uses unwrapped double-column rows. Bound each ID list here
+-- so large selections cannot stretch it off-screen; the editor retains the full list.
+local function SpellIDSummary(ids, enabled)
+  if not enabled or not ids or #ids == 0 then return "None" end
+  local shown = {}
+  for index = 1, math.min(#ids, 3) do
+    shown[#shown + 1] = tostring(ids[index])
+  end
+  local summary = table.concat(shown, ", ")
+  if #ids > #shown then
+    summary = summary .. " (+" .. (#ids - #shown) .. " more)"
+  end
+  return summary
+end
+
 function Trigger.GetTriggerDescription(data, triggernum, lines)
   local trigger = data.triggers[triggernum].trigger
   lines[#lines + 1] = {"Secret Auras", Display.units[trigger.unit] or trigger.unit}
   -- Describe both modes without relabelling existing exact selections.
-  lines[#lines + 1] = {"Spell IDs (All Ranks)", Display.UsesRankSpellIDs(trigger) and table.concat(trigger.auraRankSpellIDs or {}, ", ") or "None"}
-  lines[#lines + 1] = {"Exact Spell IDs", Display.UsesSpellIDs(trigger) and table.concat(trigger.auraspellids or {}, ", ") or "None"}
+  lines[#lines + 1] = {"Spell IDs (All Ranks)", SpellIDSummary(trigger.auraRankSpellIDs, Display.UsesRankSpellIDs(trigger))}
+  lines[#lines + 1] = {"Exact Spell IDs", SpellIDSummary(trigger.auraspellids, Display.UsesSpellIDs(trigger))}
 end
 
 ForeverAuras.RegisterTriggerSystem({"secretAura"}, Trigger)
