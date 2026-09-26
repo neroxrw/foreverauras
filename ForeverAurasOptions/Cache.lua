@@ -35,16 +35,13 @@ function spellCache.Build()
   wipe(cache)
   local co = coroutine.create(function()
     metaData.rebuilding = true
-    local id = 0
-    local misses = 0
-    while misses < 80000 do
-      id = id + 1
+    -- Query only published class spell IDs, never increment across arbitrary client records.
+    -- Explicitly entered spells can still join the cache through AddIcon.
+    for _, id in ipairs(OptionsPrivate.Private.AuraSpellCatalogIDs) do
       local name = OptionsPrivate.Private.ExecEnv.GetSpellName(id)
       local icon = OptionsPrivate.Private.ExecEnv.GetSpellIcon(id)
 
-      if(icon == 136243) then -- 136243 is the a gear icon, we can ignore those spells
-        misses = 0;
-      elseif name and name ~= "" and icon then
+      if name and name ~= "" and icon and icon ~= 136243 then
         cache[name] = cache[name] or {}
 
         if not cache[name].spells or cache[name].spells == "" then
@@ -52,9 +49,6 @@ function spellCache.Build()
         else
           cache[name].spells = cache[name].spells .. "," .. id .. "=" .. icon
         end
-        misses = 0
-      else
-        misses = misses + 1
       end
       coroutine.yield(0.01, "spells")
     end

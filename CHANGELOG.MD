@@ -1,6 +1,9 @@
 # Changelog
 
 ## Versions
+## 0.3.3
+- Fix Spell ID Integration from iterating and causing crashes
+
 ## 0.2.1
 - Fix previews of Blizzard CDM / Blizzard Aura Trigger
 - Using the Blizzard Aura trigger, you can now add spell IDs using just one spell ID to match all names, similar to Aura (Legacy) logic

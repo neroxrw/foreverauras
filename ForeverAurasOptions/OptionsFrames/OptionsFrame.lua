@@ -108,7 +108,8 @@ function OptionsPrivate.CreateFrame()
   frame.Bg.colorTexture = {r, g, b, 0.94}
 
   function OptionsPrivate.SetTitle(title)
-    local text = "ForeverAuras-BETA " .. ForeverAuras.versionString
+    -- The semantic version already includes the BETA prerelease label.
+    local text = "ForeverAuras " .. ForeverAuras.versionString
     if title and title ~= "" then
       text = ("%s - %s"):format(text, title)
     end
@@ -493,6 +494,13 @@ function OptionsPrivate.CreateFrame()
             L["Browse Wago, the largest collection of auras."], nil, nil, true)
   wagoButton:SetParent(tipFrame)
   wagoButton:SetPoint("RIGHT", tipFrame, "RIGHT")
+
+  -- Restore the community footer link using the existing selectable-URL popup.
+  -- This keeps link copying consistent with Find Auras and the original editor.
+  local discordButton = addFooter("Discord", [[Interface\AddOns\ForeverAuras\Media\Textures\discord.tga]],
+    "https://discord.gg/UUMfEWD4Cy", "Join the ForeverAuras Discord community.", nil, nil, true)
+  discordButton:SetParent(tipFrame)
+  discordButton:SetPoint("RIGHT", wagoButton, "LEFT", -12, 0)
 
   frame.ShowTip = function(self)
     self.tipFrame:Show()

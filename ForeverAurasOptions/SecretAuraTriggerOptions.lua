@@ -170,7 +170,26 @@ local function GetOptions(data, triggernum)
   -- Rank matching has independent storage, so old exact selections keep their meaning.
   SpellIDs("useRankSpellIDs", "rankspellid", "auraRankSpellIDs", "Spell ID(s) (All Ranks)", "Spell ID", 4.95,
     display.UsesRankSpellIDs, "secretUseRankSpellIDs")
-  options.useRankSpellIDs.desc = "Enter any rank to match all spell IDs with the same spell name, including ranks you have not learned. Other spells sharing that name also match; use Exact Spell ID(s) to restrict the match. IDs are discovered from the client's spell data in the background. Exact selections below are also included; ignored IDs still apply."
+  options.useRankSpellIDs.desc = "Enter any rank to match every rank listed in the bundled Forever spell data, including ranks you have not learned. Spells absent from that data match only the entered ID. Exact selections below are also included; ignored IDs still apply."
+  -- Explain incomplete coverage without changing existing saved selections.
+  local function UnsupportedRankIDs()
+    local missing = {}
+    for _, value in ipairs(trigger.auraRankSpellIDs or {}) do
+      local id = tonumber(value)
+      if id and not OptionsPrivate.Private.AuraSpellRankSupported(id) then
+        missing[#missing + 1] = tostring(value)
+      end
+    end
+    return missing
+  end
+  options.rankCoverage = {
+    type = "description", order = 5.9, width = "full", fontSize = "small",
+    hidden = function() return not display.UsesRankSpellIDs(trigger) or #UnsupportedRankIDs() == 0 end,
+    name = function()
+      return "Rank data unavailable for: " .. table.concat(UnsupportedRankIDs(), ", ")
+        .. ". Only these entered IDs will match. Add other ranks under Exact Spell ID(s)."
+    end,
+  }
   SpellIDs("useSpellIDs", "spellid", "auraspellids", "Exact Spell ID(s)", "Exact Spell ID", 6,
     display.UsesSpellIDs, "secretUseSpellIDs")
   SpellIDs("useExcludedSpellIDs", "ignorespellid", "excludedAuraSpellIDs", "Ignored Exact Spell ID(s)", "Ignored Spell ID", 7,
