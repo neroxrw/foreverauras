@@ -1,12 +1,16 @@
 if not ForeverAuras.IsLibsOK() then return end
 local _, Private = ...
 local function defaults()
-  return {dispelVisible = true, dispelStyle = "Icon", anchor_mode = "point", anchor_point = "CENTER",
-    self_point = "CENTER", width = 24, height = 24, xOffset = 0, yOffset = 0, anchor_area = "ALL"}
+  -- New indicators use a small Blizzard type symbol at the aura's top-left corner.
+  return {dispelVisible = true, dispelStyle = "Icon", anchor_mode = "point", anchor_point = "TOPLEFT",
+    self_point = "TOPLEFT", width = 16, height = 16, xOffset = -3, yOffset = 3, anchor_area = "ALL"}
 end
 local function create()
   local region = CreateFrame("Frame", nil, UIParent)
-  region.preview = region:CreateTexture(nil, "OVERLAY")
+  -- Border and icon have separate geometry, matching native aura display bindings.
+  region.dispelBorder = region:CreateTexture(nil, "OVERLAY", nil, 0)
+  region.dispelBorder:Hide()
+  region.preview = region:CreateTexture(nil, "OVERLAY", nil, 1)
   region.preview:SetAllPoints(region)
   region.preview:Hide()
   function region:SetVisible(value)
@@ -25,6 +29,11 @@ local function modify(parent, region, parentData, data)
     parent:AnchorSubRegion(region, data.anchor_mode or "point", data.anchor_mode == "area" and data.anchor_area or data.anchor_point,
       data.anchor_mode == "point" and data.self_point or nil, data.xOffset or 0, data.yOffset or 0)
   end
+  -- The border encloses the parent aura even when the icon is offset or resized.
+  region.dispelBorder:ClearAllPoints()
+  local extraX = data.anchor_mode == "area" and (data.xOffset or 0) / 2 or 0
+  local extraY = data.anchor_mode == "area" and (data.yOffset or 0) / 2 or 0
+  parent:AnchorSubRegion(region.dispelBorder, "area", data.anchor_area or "ALL", nil, extraX, extraY)
   region:Anchor()
   region.Update = function() Private.CDMAuraProgress.UpdateIndicator(parent, region, data) end
   region.UpdateProgress = region.Update

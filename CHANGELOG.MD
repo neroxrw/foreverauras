@@ -1,6 +1,13 @@
 # Changelog
 
 ## Versions
+## 0.6.0
+- Fix Shadow Text Offsets
+- Fix Dispel Indicator display for Blizzard Aura Trigger
+- Add Spell -> Queued Action Trigger
+- Add Condition for Spell Usable (when readable) to CDM Trigger
+- Add Specialization Load condition for Forever - Note this is only activated when the last talent for each Specialization is known.
+
 ## 0.3.3
 - Fix Spell ID Integration from iterating and causing crashes
 

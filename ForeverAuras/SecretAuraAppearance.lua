@@ -259,6 +259,9 @@ function Display.StyleAppearance(native, data, ElementFrame, StyleText, StyleGlo
   button:ClearDurationBar()
   button:ClearDurationCooldown()
   button:ClearIcon()
+  -- Rebuild native dispel bindings with the other appearance bindings. Re-registering
+  -- an existing texture otherwise aborts Apply and can interrupt region initialization.
+  if not native.preview then button:ClearDispelTypeTextures() end
   for _, frame in pairs(native.elementFrames or {}) do frame:Hide() end
   native.border:Hide()
   native.icon:Hide(); native.cooldown:Hide()
@@ -333,6 +336,7 @@ function Display.StyleAppearance(native, data, ElementFrame, StyleText, StyleGlo
       if entry.text then entry.text:Hide() end
       if entry.border then entry.border:Hide() end
       if entry.texture then entry.texture:Hide() end
+      if entry.dispelBorder then entry.dispelBorder:Hide() end
       if element.type == "subbackground" then
         base:SetFrameLevel(frame:GetFrameLevel())
         if native.bar then native.bar:SetFrameLevel(base:GetFrameLevel() + 1) end
@@ -358,22 +362,40 @@ function Display.StyleAppearance(native, data, ElementFrame, StyleText, StyleGlo
           useGlowColor = element.useGlowColor, glowColor = element.glowColor, glowScale = element.glowScale, glowDuration = element.glowDuration,
           glowX = element.glowXOffset, glowY = element.glowYOffset}})
       elseif element.type == "subcdmdispel" and element.dispelVisible ~= false then
-        entry.texture = entry.texture or frame:CreateTexture(nil, "OVERLAY")
-        local texture = entry.texture
-        texture:ClearAllPoints()
-        if element.anchor_mode == "area" then
+        -- Separate native bindings keep the coloured border on the aura while the
+        -- dispel symbol follows its own point/area settings. Blizzard owns live type selection.
+        local style = element.dispelStyle or "Icon"
+        if style == "Border" or style == "BorderWithIcon" then
+          entry.dispelBorder = entry.dispelBorder or frame:CreateTexture(nil, "OVERLAY", nil, 0)
+          local border = entry.dispelBorder
+          border:ClearAllPoints()
           local target = Area(native, data, element.anchor_area)
-          texture:SetAllPoints(target)
-        else
-          local point = element.anchor_point or "CENTER"
-          local target = button
-          if point:sub(1, 6) == "INNER_" then target = native.inner; point = point:sub(7)
-          elseif point:sub(1, 6) == "OUTER_" then target = native.outer; point = point:sub(7) end
-          texture:SetSize(element.width or 24, element.height or 24)
-          texture:SetPoint(element.self_point or "CENTER", target, point, element.xOffset or 0, element.yOffset or 0)
+          local extraX = element.anchor_mode == "area" and (element.xOffset or 0) / 2 or 0
+          local extraY = element.anchor_mode == "area" and (element.yOffset or 0) / 2 or 0
+          border:SetPoint("TOPLEFT", target, "TOPLEFT", -extraX, extraY)
+          border:SetPoint("BOTTOMRIGHT", target, "BOTTOMRIGHT", extraX, -extraY)
+          button:AddDispelTypeTexture(border, {showWhenHelpful = true, showWhenHarmful = true,
+            style = Enum.CustomAuraButtonDispelTypeTextureStyle.Border})
         end
-        button:AddDispelTypeTexture(texture, {showWhenHelpful = true, showWhenHarmful = true,
-          style = Enum.CustomAuraButtonDispelTypeTextureStyle[element.dispelStyle or "Icon"]})
+        if style ~= "Border" then
+          entry.texture = entry.texture or frame:CreateTexture(nil, "OVERLAY", nil, 1)
+          local texture = entry.texture
+          texture:ClearAllPoints()
+          if element.anchor_mode == "area" then
+            local target = Area(native, data, element.anchor_area)
+            texture:SetPoint("TOPLEFT", target, "TOPLEFT", -(element.xOffset or 0) / 2, (element.yOffset or 0) / 2)
+            texture:SetPoint("BOTTOMRIGHT", target, "BOTTOMRIGHT", (element.xOffset or 0) / 2, -(element.yOffset or 0) / 2)
+          else
+            local point = element.anchor_point or "TOPLEFT"
+            local target = button
+            if point:sub(1, 6) == "INNER_" then target = native.inner; point = point:sub(7)
+            elseif point:sub(1, 6) == "OUTER_" then target = native.outer; point = point:sub(7) end
+            texture:SetSize(element.width or 16, element.height or 16)
+            texture:SetPoint(element.self_point or "TOPLEFT", target, point, element.xOffset or 0, element.yOffset or 0)
+          end
+          button:AddDispelTypeTexture(texture, {showWhenHelpful = true, showWhenHarmful = true,
+            style = Enum.CustomAuraButtonDispelTypeTextureStyle.Icon})
+        end
       elseif element.type == "subtexture" and element.textureVisible ~= false then
         entry.texture = entry.texture or frame:CreateTexture(nil, "ARTWORK")
         local texture = entry.texture

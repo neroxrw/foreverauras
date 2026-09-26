@@ -198,7 +198,7 @@ local function create()
 
   local fontObject = CreateFont("ForeverAuras-SubText-Font" .. fontObjectCounter)
   fontObjectCounter =  fontObjectCounter + 1
-  region.text:SetFontObject(fontObject)
+  -- Defer attachment until modify has configured the font and its shadow.
   region.fontObject = fontObject
 
   return region;
@@ -226,29 +226,16 @@ local function modify(parent, region, parentData, data, first)
   if text.SetSmoothScaling then
     text:SetSmoothScaling(data.text_smoothScaling or false) -- doesn't accept nil
   end
-  text:SetFont(fontPath, data.text_fontSize, fontType);
-  if not text:GetFont() and fontPath then -- workaround font not loading correctly
-    fontObject:SetFont(fontPath, data.text_fontSize, fontType)
-    text:SetFontObject(fontObject)
-  end
-  if not text:GetFont() then -- Font invalid, set the font but keep the setting
-    text:SetFont(STANDARD_TEXT_FONT, data.text_fontSize, fontType);
-  end
+  -- Normal and CDM subtext share the same inherited shadow setup.
+  fontObject:SetJustifyH(data.text_justify or "CENTER")
+  Private.ApplyTextFont(text, fontObject, fontPath, data.text_fontSize, fontType,
+    data.text_shadowColor, data.text_shadowXOffset, data.text_shadowYOffset)
   if text:GetFont() then
     text:SetText("") -- SetJustifyH is broken unless the text changes
     text:SetText(ForeverAuras.ReplaceRaidMarkerSymbols(data.text_text));
   end
 
   text:SetTextHeight(data.text_fontSize);
-
-  text:SetShadowColor(unpack(data.text_shadowColor))
-  fontObject:SetShadowColor(unpack(data.text_shadowColor))
-  if data.text_fontType == "OUTLINE|SLUG" or data.text_fontType == "THICKOUTLINE|SLUG" then
-    fontObject:SetShadowOffset(0, 0)
-  else
-    fontObject:SetShadowOffset(data.text_shadowXOffset, data.text_shadowYOffset)
-  end
-  fontObject:SetJustifyH(data.text_justify or "CENTER")
 
   if (data.text_automaticWidth == "Fixed") then
     if (data.text_wordWrap == "WordWrap") then

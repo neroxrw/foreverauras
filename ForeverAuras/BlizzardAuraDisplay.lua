@@ -603,12 +603,12 @@ end
 local function StyleText(text, native, settings, key, size, anchor, x, y)
   local button = native.button
   local font = settings[key .. "Font"]
-  text:SetFont(font and SharedMedia:Fetch("font", font) or "Fonts\\ARIALN.TTF", settings[key .. "Size"] or size, (settings[key .. "Outline"] == "None" and "" or settings[key .. "Outline"]) or "OUTLINE")
-  text:SetTextColor(unpack(settings[key .. "Color"] or {1, 1, 1, 1}))
   local outline = settings[key .. "Outline"]
-  local slug = outline == "OUTLINE|SLUG" or outline == "THICKOUTLINE|SLUG"
-  text:SetShadowColor(unpack(slug and {0, 0, 0, 0} or settings[key .. "ShadowColor"] or {0, 0, 0, 0}))
-  text:SetShadowOffset(settings[key .. "ShadowX"] or 1, settings[key .. "ShadowY"] or -1)
+  -- Native aura bindings and their previews must inherit shadows just like subtext.
+  Private.ApplyTextFont(text, nil, font and SharedMedia:Fetch("font", font) or "Fonts\\ARIALN.TTF",
+    settings[key .. "Size"] or size, (outline == "None" and "" or outline) or "OUTLINE",
+    settings[key .. "ShadowColor"] or {0, 0, 0, 0}, settings[key .. "ShadowX"] or 1, settings[key .. "ShadowY"] or -1)
+  text:SetTextColor(unpack(settings[key .. "Color"] or {1, 1, 1, 1}))
   local point = settings[key .. "Anchor"] or anchor
   -- Preserve the original same-point anchors until a self point is chosen.
   local selfPoint = settings[key .. "SelfPoint"]

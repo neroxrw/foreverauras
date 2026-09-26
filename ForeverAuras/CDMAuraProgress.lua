@@ -49,19 +49,30 @@ function Display.ModifyIndicator(parent, sub, parentData, config)
 end
 function Display.ReleaseIndicator(sub, forget)
   if sub.preview then sub.preview:Hide() end
+  if sub.dispelBorder then sub.dispelBorder:Hide() end
 end
 function Display.UpdateIndicator(parent, sub, config)
   local state = SourceState(parent)
   local dispel
   if sub.visible and state and state.show and state.cdmBuff then
-    dispel = state.cdmDispelName
-    if state.cdmTextPreview and state.auraActive ~= true then dispel = "Magic" end
+    -- OPTIONS always supplies a sample type, even when its sample aura is active.
+    dispel = state.cdmTextPreview and "Magic" or state.cdmDispelName
   end
-  if type(dispel) ~= "string" or dispel == "" then sub.preview:Hide(); return end
-  if config.dispelStyle == "Border" or config.dispelStyle == "BorderWithIcon" then
-    AuraUtil.SetAuraBorderAtlas(sub.preview, dispel, config.dispelStyle == "BorderWithIcon")
-  else
+  if (issecretvalue and issecretvalue(dispel)) or type(dispel) ~= "string" or dispel == "" then
+    Display.ReleaseIndicator(sub); return
+  end
+  -- Use Blizzard's coloured border atlas and type-specific symbol independently.
+  local style = config.dispelStyle or "Icon"
+  sub.preview:Hide()
+  sub.dispelBorder:Hide()
+  if style == "Border" or style == "BorderWithIcon" then
+    AuraUtil.SetAuraBorderAtlas(sub.dispelBorder, dispel, false)
+    sub.dispelBorder:SetVertexColor(1, 1, 1, 1)
+    sub.dispelBorder:Show()
+  end
+  if style ~= "Border" then
     AuraUtil.SetAuraDispelTypeIcon(sub.preview, dispel)
+    sub.preview:SetVertexColor(1, 1, 1, 1)
+    sub.preview:Show()
   end
-  sub.preview:Show()
 end

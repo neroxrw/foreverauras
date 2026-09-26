@@ -400,6 +400,7 @@ local function BuildCooldownViewerStates(allstates, selected, event, showGCD, tr
         state.cdmAuraSpellIDs = state.cdmBuff and (bindingIDs or (exactID and {exactID}) or selected.buffSpellIDs or {identity.spellID}) or nil
         state.cdmTextPreview = event == "OPTIONS"
         state.cdmCountdownSource, state.cdmStackSource, state.cdmTextRecord, state.cdmDispelName = nil, nil, nil, nil
+        state.isUsable = nil
         state.onCooldown, state.isReady, state.recharging, state.stacks, state.auraActive = nil, nil, nil, nil, nil
         state.cdmGCDOnly, state.cdmHideGCDText = false, hideGCDText == true
 
@@ -434,6 +435,12 @@ local function BuildCooldownViewerStates(allstates, selected, event, showGCD, tr
           if C_SpellBook and C_SpellBook.FindSpellOverrideByID then
             local override = C_SpellBook.FindSpellOverrideByID(spellID)
             if IsReadable(override) and type(override) == "number" and override > 0 then spellID = override end
+          end
+          -- Usability includes reactive/resource requirements, independently of cooldown readiness.
+          -- Never compare or expose a secret result as a condition value.
+          if C_Spell.IsSpellUsable then
+            local usable = C_Spell.IsSpellUsable(spellID)
+            if IsReadable(usable) and type(usable) == "boolean" then state.isUsable = usable end
           end
           local realDuration = C_Spell.GetSpellCooldownDuration(spellID, true)
           local onCooldown, hasCooldownFlags, onGCD, gcdReadyAt = GetSpellCooldownState(spellID, event)
@@ -507,6 +514,9 @@ local function BuildCooldownViewerStates(allstates, selected, event, showGCD, tr
           end
         end
         if event ~= "OPTIONS" then
+          -- These opt-in modes leave existing show modes and preview behavior unchanged.
+          if showMode == "usable" then state.show = state.isUsable == true
+          elseif showMode == "unusable" then state.show = state.isUsable == false end
           if not ignoreSpellKnown and not state.cdmBuff and not Private.CDMEntryMatches({event = "Blizzard CDM Item"}, entry, info) then
             local known = false
             for _, id in pairs({identity.spellID, info.spellID, info.overrideSpellID, info.linkedSpellID}) do
@@ -925,11 +935,25 @@ local spellArgs = {}
 for i, arg in ipairs(Private.CooldownViewerPrototype.args) do spellArgs[i] = arg end
 spellArgs[#spellArgs + 1] = {name = "inRange", display = "Spell In Range", hidden = true,
   conditionType = "bool", conditionTest = BooleanCondition("inRange")}
+-- Only spell cooldown triggers expose usability; item and aura triggers retain their conditions.
+spellArgs[#spellArgs + 1] = {name = "isUsable", display = "Spell Usable (when readable)", hidden = true,
+  conditionType = "bool", conditionTest = BooleanCondition("isUsable")}
 Private.CooldownViewerPrototype.args = spellArgs
 Private.CooldownViewerUtilityPrototype.args = spellArgs
+-- Resource, stance and reactive-action changes can occur without a cooldown change.
+local cooldownEvents = Private.CooldownViewerPrototype.events
+local function SpellCooldownEvents()
+  local result = cooldownEvents()
+  for _, event in ipairs({"ACTIONBAR_UPDATE_USABLE", "ACTION_USABLE_CHANGED", "UPDATE_SHAPESHIFT_FORM"}) do
+    result.events[#result.events + 1] = event
+  end
+  return result
+end
+Private.CooldownViewerPrototype.events = SpellCooldownEvents
+Private.CooldownViewerUtilityPrototype.events = SpellCooldownEvents
 -- Item metadata events only update item triggers; they do not change the catalog.
 Private.CooldownViewerItemPrototype.events = function()
-  local result = Private.CooldownViewerPrototype.events()
+  local result = cooldownEvents()
   result.events[#result.events + 1] = "GET_ITEM_INFO_RECEIVED"
   result.events[#result.events + 1] = "ITEM_DATA_LOAD_RESULT"
   return result

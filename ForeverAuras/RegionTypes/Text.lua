@@ -123,7 +123,7 @@ local function create(parent)
 
   local fontObject = CreateFont("ForeverAuras-Text-Font" .. fontObjectCounter)
   fontObjectCounter =  fontObjectCounter + 1
-  region.text:SetFontObject(fontObject)
+  -- Defer attachment until modify has configured the font and its shadow.
   region.fontObject = fontObject
 
   text._SetText = text.SetText;
@@ -147,16 +147,10 @@ local function modify(parent, region, data)
   if text.SetScaleAnimationMode and FontStringScaleAnimationMode then
     text:SetScaleAnimationMode(slugFont and FontStringScaleAnimationMode.Vertex or FontStringScaleAnimationMode.FontSize)
   end
-  text:SetFont(fontPath, data.fontSize, outline);
-  if not text:GetFont() and fontPath then -- workaround font not loading correctly
-    fontObject:SetFont(fontPath, data.fontSize, outline)
-    text:SetFontObject(fontObject)
-  end
-  if not text:GetFont() then -- Font invalid, set the font but keep the setting
-    text:SetFont(STANDARD_TEXT_FONT, data.fontSize, outline);
-  end
-
+  -- Attach the configured shadow before applying the string's selected font.
   fontObject:SetJustifyH(data.justify);
+  Private.ApplyTextFont(text, fontObject, fontPath, data.fontSize, outline,
+    data.shadowColor, data.shadowXOffset, data.shadowYOffset)
   text:SetText("")
 
   text:ClearAllPoints();
@@ -192,12 +186,6 @@ local function modify(parent, region, data)
   end
 
   text:SetTextHeight(data.fontSize);
-  fontObject:SetShadowColor(unpack(data.shadowColor))
-  if data.outline == "OUTLINE|SLUG" or data.outline == "THICKOUTLINE|SLUG" then
-    fontObject:SetShadowOffset(0, 0)
-  else
-    fontObject:SetShadowOffset(data.shadowXOffset, data.shadowYOffset)
-  end
 
   text:ClearAllPoints();
   text:SetPoint(data.justify, region, data.justify);
@@ -458,6 +446,8 @@ local function fallbackmodify(parent, region, data)
   local fontObject = region.fontObject
 
   fontObject:SetFont(STANDARD_TEXT_FONT, data.fontSize, data.outline and "OUTLINE" or "");
+  -- The fallback also attaches only after its font is ready.
+  text:SetFontObject(fontObject)
   if text:GetFont() then
     text:SetText(ForeverAuras.L["Region type %s not supported"]:format(data.regionType));
   end

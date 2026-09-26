@@ -384,9 +384,8 @@ ForeverAuras.normalWidth = 1.3
 ForeverAuras.halfWidth = ForeverAuras.normalWidth / 2
 ForeverAuras.doubleWidth = ForeverAuras.normalWidth * 2
 local versionStringFromToc = C_AddOns.GetAddOnMetadata("ForeverAuras", "Version")
-local versionString = "0.3.3-BETA"
--- Release date for the rank-aware Blizzard aura and sample preview update.
--- Release date for the bounded spell-rank lookup correction.
+local versionString = "0.6.0-BETA"
+-- Release date for spell-based specialization load conditions.
 local buildTime = "2026-09-26"
 
 -- Prerelease labels are case-insensitive; packages use the requested BETA spelling.
