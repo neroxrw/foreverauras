@@ -143,14 +143,6 @@ function Display.GetSpellIDs(trigger, expandRanks)
   return ids
 end
 
--- Completed public metadata scans update filters, sounds, and deferred displays.
-function Display.RefreshSpellRanks()
-  for region in pairs(activeRegions) do
-    local data = region.blizzardAuraDisplay.data
-    if Display.UsesRankSpellIDs(Display.GetTrigger(data)) then Display.Apply(region, data) end
-  end
-end
-
 function Display.UsesExcludedSpellIDs(trigger)
   return trigger.secretUseExcludedSpellIDs ~= false and (#(trigger.excludedAuraSpellIDs or {}) > 0 or trigger.secretUseExcludedSpellIDs == true)
 end

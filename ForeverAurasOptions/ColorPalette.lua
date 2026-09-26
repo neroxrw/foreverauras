@@ -2,6 +2,21 @@
 if not ForeverAuras.IsLibsOK() then return end
 local _, OptionsPrivate = ...
 local panel, session
+-- Alpha is opacity: expose percentages without changing the stored 0..1 value.
+local function RefreshAlpha(force)
+  if not panel or not session or not session.hasOpacity then return end
+  if force or not panel.alpha:HasFocus() then
+    local percent = (ColorPickerFrame:GetColorAlpha() or 1) * 100
+    panel.alpha:SetText((string.format("%.4f", percent):gsub("0+$", ""):gsub("%.$", "")))
+    panel.alpha:SetTextColor(1, 1, 1)
+  end
+end
+
+local function ReadAlpha(text)
+  local value = text:match("^%s*(.-)%s*%%?%s*$")
+  local percent = value and value:match("^%d*%.?%d+$") and tonumber(value)
+  if percent and percent >= 0 and percent <= 100 then return percent / 100 end
+end
 local function Database()
   ForeverAurasOptionsSaved.colorPalette = ForeverAurasOptionsSaved.colorPalette or {favorites = {}, recent = {}}
   return ForeverAurasOptionsSaved.colorPalette
@@ -24,12 +39,19 @@ function OptionsPrivate.UseColorPalette(options)
 end
 
 function OptionsPrivate.PrepareColorPalette(info)
-  session = {cancelled = false}
+  session = {cancelled = false, hasOpacity = info.hasOpacity == true}
   local current = session
   local cancel = info.cancelFunc
   info.cancelFunc = function(...)
     current.cancelled = true
     if cancel then cancel(...) end
+  end
+  -- Keep the numeric field synchronized with native slider/color changes while
+  -- retaining the widget's normal preview and cancellation callbacks.
+  local opacity = info.opacityFunc
+  info.opacityFunc = function(...)
+    if opacity then opacity(...) end
+    if session == current then RefreshAlpha() end
   end
 end
 
@@ -46,6 +68,7 @@ local function Refresh()
     end
   end
   panel.hex:SetText(Hex({ColorPickerFrame:GetColorRGB()}))
+  RefreshAlpha()
 end
 
 local function CreatePalette()
@@ -109,9 +132,35 @@ local function CreatePalette()
     self:ClearFocus(); Refresh()
   end)
   panel.hex:SetScript("OnEscapePressed", function(self) self:ClearFocus(); Refresh() end)
+  -- Keep opacity beside the native colour controls, directly above their hex box.
+  -- Parent to the picker content so placement is independent of the palette panel.
+  local content = ColorPickerFrame.Content
+  panel.alpha = CreateFrame("EditBox", nil, content, "InputBoxTemplate")
+  panel.alpha:SetHeight(20)
+  panel.alpha:SetPoint("BOTTOMLEFT", content.HexBox, "TOPLEFT", 0, 8)
+  panel.alpha:SetPoint("BOTTOMRIGHT", content.HexBox, "TOPRIGHT", 0, 8)
+  panel.alphaLabel = content:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+  panel.alphaLabel:SetPoint("BOTTOMLEFT", panel.alpha, "TOPLEFT", 0, 2)
+  panel.alphaLabel:SetText("Alpha (%)")
+  panel.alpha:SetAutoFocus(false); panel.alpha:SetMaxLetters(12)
+  panel.alpha:SetScript("OnTextChanged", function(self, userInput)
+    if not userInput or not session or session.cancelled or not session.hasOpacity then return end
+    local alpha = ReadAlpha(self:GetText())
+    self:SetTextColor(1, alpha and 1 or 0.3, alpha and 1 or 0.3)
+    if alpha then
+      -- The native setter updates the slider and invokes its ordinary callbacks;
+      -- never write saved settings directly or replace the original cancel value.
+      ColorPickerFrame.Content.ColorPicker:SetColorAlpha(alpha)
+    end
+  end)
+  panel.alpha:SetScript("OnEnterPressed", function(self) self:ClearFocus(); RefreshAlpha(true) end)
+  panel.alpha:SetScript("OnEscapePressed", function(self) self:ClearFocus(); RefreshAlpha(true) end)
+  panel.alpha:SetScript("OnEditFocusLost", function() RefreshAlpha(true) end)
   ColorPickerFrame:HookScript("OnHide", function()
     local current = session
     session = nil; panel:Hide()
+    -- The shared native picker may next be opened by another addon.
+    panel.alpha:Hide(); panel.alphaLabel:Hide()
     if current then
       local color = {ColorPickerFrame:GetColorRGB()}
       -- Cancellation may run after OnHide; capture this session before another picker opens.
@@ -122,5 +171,9 @@ end
 
 function OptionsPrivate.ShowColorPalette()
   if not panel then CreatePalette() end
+  -- RGB-only settings must not gain an opacity value through the shared picker.
+  local hasOpacity = session and session.hasOpacity or false
+  panel.alpha:SetShown(hasOpacity); panel.alphaLabel:SetShown(hasOpacity)
+  panel.alpha:ClearFocus()
   Refresh(); panel:Show()
 end
