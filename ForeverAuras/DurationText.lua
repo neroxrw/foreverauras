@@ -4,10 +4,29 @@ local _, Private = ...
 
 local formatters = {}
 
+-- The public GCD-only state is a text policy, not a duration to format. In
+-- particular, a temporarily missing filtered timer must never expose the swipe
+-- through GetTextDuration's fallback. Charge selection clears cdmGCDOnly.
+function Private.ShouldHideDurationText(state)
+  return state and state.cdmHideGCDText == true and not state.cdmTextPreview
+    and (state.cdmGCDOnly == true
+      or (state.cdmTextDurationRequired and not state.cdmTextDurationObject))
+end
+
 -- CDM can show a GCD swipe while its text uses only the spell/recharge timer.
 -- Keep this choice independent of whether IsZero() is readable in combat.
 function Private.GetTextDuration(state)
   return state.cdmTextDurationObject or state.durationObject
+end
+
+-- A regular spell can retain readable timed progress while rendering text from
+-- a separate GCD-free duration. Preview text continues to use its sample state.
+function Private.UsesDurationText(state)
+  if not state then return false end
+  if state.cdmHideGCDText and not state.cdmTextPreview then
+    return ForeverAuras.IsDurationObject(state.cdmTextDurationObject)
+  end
+  return state.progressType == "durationObject" and ForeverAuras.IsDurationObject(state.durationObject)
 end
 
 function Private.GetDurationTextFormatter(format, threshold, precision, secondsOnly)

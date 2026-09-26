@@ -85,7 +85,6 @@ local function Observe(frame)
   local record = {}
   observed[frame] = record
   local function CaptureIdentity()
-    local previousGCD, previousSpell, previousID = record.onGCD, record.spellID, record.cooldownID
     record.cooldownID = Number(frame.cooldownID)
     record.spellID = frame.GetSpellID and Number(frame:GetSpellID())
     record.onCooldown = Boolean(frame.isOnActualCooldown)
@@ -101,28 +100,13 @@ local function Observe(frame)
         or Boolean(frame.cooldownUseAuraDisplayTime) == true then
       record.onGCD = false
     end
-    -- Hold a new GCD for 200 ms so a following real cooldown can replace it
-    -- before it is drawn. Repeated writes of the same GCD must not restart this.
-    local start = record.raw and Number(record.raw.start)
-    if record.onGCD == true then
-      if not record.gcdReadyAt or previousGCD ~= true or previousSpell ~= record.spellID
-          or previousID ~= record.cooldownID or (start and record.gcdStart and start ~= record.gcdStart) then
-        local readyAt = GetTime() + 0.20
-        record.gcdReadyAt = readyAt
-        C_Timer.After(0.20, function()
-          if record.gcdReadyAt == readyAt then NativeRefresh() end
-        end)
-      end
-      record.gcdStart = start or record.gcdStart
-    else
-      record.gcdReadyAt, record.gcdStart = nil, nil
-    end
+    -- Capture GCD state immediately. Viewer refreshes already queue a next-frame
+    -- update; a separate hold would hide the beginning of every new GCD.
   end
   local function Clear()
     record.revision = (record.revision or 0) + 1
     record.duration, record.raw, record.converted = nil, nil, nil
     CaptureIdentity()
-    record.gcdReadyAt, record.gcdStart = nil, nil
     NativeRefresh()
   end
   -- Spell timers are cleared by cooldown callbacks, not aura callbacks.
@@ -215,7 +199,7 @@ function Private.CDMGetNativeCooldown(frame, spellID)
   if outOfRange ~= nil then inRange = not outOfRange end
   return {duration = duration, revision = record.revision, onGCD = record.onGCD, onCooldown = record.onCooldown,
     recharging = record.recharging, charges = record.charges, inRange = inRange,
-    paused = record.paused, gcdReadyAt = record.gcdReadyAt}
+    paused = record.paused}
 end
 
 function Private.CDMFrames()
@@ -382,23 +366,36 @@ local function ApplyCachedAura(state, identity, info, frame, exactID, buffSpellI
 
   local nativeAbsent = frame and Readable(frame.auraInstanceID) and frame.auraInstanceID == nil
     and not frame.auraDataCached
-  if not aura then
-    if nativeAbsent then state.auraActive = false end
-    local totem = frame and frame.totemData
-    if totem then
-      state.cdmAuraTotem = true
-      local duration, expiration = Number(totem.duration), Number(totem.expirationTime)
-      if duration and expiration then
-        SetTimes(state, expiration - duration, duration, totem.modRate)
-        state.auraActive = expiration > GetTime()
-      end
+  -- Supply only public viewer identity to the native rendering fallback. In
+  -- particular, Frostbolt's aura ID can differ from its cast/rank spell ID.
+  -- The container does its own permitted filtering; no aura times are read.
+  state.cdmAuraRenderUnit, state.cdmAuraRenderSpellIDs = nil, nil
+  if nativeMatches and not nativeAbsent and Readable(unit) and (unit == "player" or unit == "target") then
+    local spellID = Number(frame.auraSpellID) or (aura and Number(aura.spellId))
+    state.cdmAuraRenderUnit = unit
+    state.cdmAuraRenderSpellIDs = spellID and {spellID} or buffSpellIDs
+  end
+  -- An active viewer can provide an instance/timer before (or without) its
+  -- cached AuraData. Bind that timer independently of the optional cache;
+  -- only a confirmed absent aura must discard the previous viewer timer.
+  if nativeAbsent then state.auraActive = false end
+  if aura then
+    state.auraActive = true
+    if Readable(aura.dispelName) and type(aura.dispelName) == "string" then state.cdmDispelName = aura.dispelName end
+  end
+  -- Totems retain their existing timing path and must not borrow an aura's
+  -- instance or a previous timer from a reused native viewer item.
+  local totem = not aura and frame and frame.totemData
+  if totem then
+    state.cdmAuraTotem = true
+    local duration, expiration = Number(totem.duration), Number(totem.expirationTime)
+    if duration and expiration then
+      SetTimes(state, expiration - duration, duration, totem.modRate)
+      state.auraActive = expiration > GetTime()
     end
     return
   end
-  state.auraActive = true
-  if Readable(aura.dispelName) and type(aura.dispelName) == "string" then state.cdmDispelName = aura.dispelName end
-  ApplyAuraSource(state, unit, aura)
-  if nativeMatches then
+  if nativeMatches and not nativeAbsent then
     local cooldown = frame.Cooldown or frame.cooldown
     if cooldown and cooldown.GetCountdownFontString then state.cdmCountdownSource = cooldown:GetCountdownFontString() end
     if not state.cdmCountdownSource and frame.Bar then state.cdmCountdownSource = frame.Bar.Duration end
@@ -407,23 +404,71 @@ local function ApplyCachedAura(state, identity, info, frame, exactID, buffSpellI
     if not stacks or not stacks.GetText then stacks = frame.Icon and frame.Icon.Applications end
     if stacks and stacks.GetText then state.cdmStackSource = stacks end
     state.cdmTextRecord = observed[frame]
+    -- Query the exact instance already identified by CDM. The duration API
+    -- owns restricted timing values and does not require cached numeric times
+    -- or a cooldown update hook to have fired. Never guess an instance/unit.
+    -- The API accepts a restricted instance ID as an opaque argument too;
+    -- forward it unchanged rather than testing or converting its value.
+    local instance = frame.auraInstanceID
+    local hasInstance = not Readable(instance) or type(instance) == "number"
+    if hasInstance and Readable(unit) and (unit == "player" or unit == "target")
+        and C_UnitAuras and C_UnitAuras.GetAuraDuration then
+      local ok, duration = pcall(C_UnitAuras.GetAuraDuration, unit, instance)
+      if ok and ForeverAuras.IsDurationObject(duration) then
+        state.progressType, state.durationObject = "durationObject", duration
+        state.value, state.total = nil, nil
+      end
+    end
   end
-  if nativeMatches and observed[frame] then
+  if nativeMatches and not nativeAbsent and observed[frame] then
     local record = observed[frame]
-    if record.duration then
+    if not state.durationObject and record.duration then
       state.progressType, state.durationObject = "durationObject", record.duration
       state.value, state.total = nil, nil
-    elseif record.raw then
-      SetTimes(state, record.raw.start, record.raw.duration, record.raw.modRate)
+    elseif not state.durationObject and record.raw then
+      -- Buff/debuff viewers also supply restricted raw cooldown times. Keep
+      -- them inside a native duration object, as the spell-viewer path does,
+      -- instead of dropping them through SetTimes' public-number checks.
+      local duration = record.converted
+      if not duration and C_DurationUtil and C_DurationUtil.CreateDuration then
+        local candidate = C_DurationUtil.CreateDuration()
+        if candidate.SetTimeFromStart and pcall(candidate.SetTimeFromStart, candidate,
+            record.raw.start, record.raw.duration, record.raw.modRate) then
+          duration = candidate
+          record.converted = candidate
+        end
+      end
+      if duration then
+        state.progressType, state.durationObject = "durationObject", duration
+        state.value, state.total = nil, nil
+      else
+        SetTimes(state, record.raw.start, record.raw.duration, record.raw.modRate)
+      end
+    end
+    state.cdmNativePaused = record.paused == true
+  end
+  -- Only optional cached metadata remains; the timer above is already usable.
+  if not aura then return end
+  state.stacks = Number(aura.applications)
+  -- A buff may already be active when we first observe its viewer (including
+  -- tracked bars, which have no Cooldown widget to hook). Seed its timer from
+  -- the cached aura without subtracting or testing restricted timing values.
+  if not state.durationObject and C_DurationUtil and C_DurationUtil.CreateDuration then
+    local duration = C_DurationUtil.CreateDuration()
+    if duration.SetTimeFromEnd and pcall(duration.SetTimeFromEnd, duration,
+        aura.expirationTime, aura.duration, aura.timeMod) then
+      state.progressType, state.durationObject = "durationObject", duration
+      state.value, state.total = nil, nil
     end
   end
-  state.stacks = Number(aura.applications)
-  if not state.durationObject then
-    local duration, expiration = Number(aura.duration), Number(aura.expirationTime)
-    if duration and expiration then
+  -- Preserve the existing public active/expired test even when rendering uses
+  -- a duration object. Restricted values never participate in this decision.
+  local duration, expiration = Number(aura.duration), Number(aura.expirationTime)
+  if duration and expiration then
+    if not state.durationObject then
       SetTimes(state, expiration - duration, duration, aura.timeMod)
-      state.auraActive = duration == 0 or expiration > GetTime()
     end
+    state.auraActive = duration == 0 or expiration > GetTime()
   end
 end
 
@@ -488,14 +533,31 @@ function Private.CopyCDMCountdownText(destination, state, kind)
   if kind == "caster" then destination:SetText(""); return end
   if kind == "dispel" then destination:SetText(state and state.show and state.cdmDispelName or ""); return end
   if kind == "s" then kind = "bs" end
+  -- Buff countdowns previously copied the viewer's last label, including "0"
+  -- after its timer finished. Let Blizzard format the duration directly: the
+  -- native rules blank zero without inspecting restricted times or strings.
+  -- Keep stack counts and the editor's sample on their existing paths.
+  if kind ~= "bs" and state and state.cdmBuff and state.show and not state.cdmTextPreview
+      and ForeverAuras.IsDurationObject(state.durationObject) then
+    destination:SetText(Private.FormatDurationText(state.durationObject, false, 99, 0, 0))
+    return
+  end
   local source = state and state.show and (kind == "bs" and state.cdmStackSource or kind ~= "bs" and state.cdmCountdownSource)
   if source and source.IsForbidden and source:IsForbidden() then source = nil end
-  if source and kind == "bs" and source.IsShown then
+  -- Older/native bar sources may have no duration object. Respect the label's
+  -- own visibility (not its hidden parent viewer) instead of reviving stale text.
+  if source and (kind == "bs" or (state and state.cdmBuff)) and source.IsShown then
     local shown = source:IsShown()
     if Readable(shown) and not shown then destination:SetText(""); return end
   end
   -- Editor text uses the same six-second sample as the preview's progress state.
-  if source then destination:SetText(source:GetText()) elseif state and state.show and state.cdmTextPreview then
+  if source then
+    local value = source:GetText()
+    -- Only inspect public fallback text; secret text must pass straight to the
+    -- font string. A zero stack count is separate from a finished countdown.
+    if kind ~= "bs" and state and state.cdmBuff and Readable(value) and tonumber(value) == 0 then value = "" end
+    destination:SetText(value)
+  elseif state and state.show and state.cdmTextPreview then
     local remaining = state.expirationTime and math.max(0, state.expirationTime - GetTime()) or 6
     destination:SetText(kind == "bs" and "3" or tostring(math.ceil(remaining)))
   else destination:SetText("") end

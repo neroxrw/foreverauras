@@ -209,6 +209,8 @@ local function onAcquire(subRegion)
 end
 
 local function onRelease(subRegion)
+  -- A pooled subtext must not resume the previous aura's native timer slot.
+  Private.CDMAuraProgress.HideText(subRegion)
   subRegion:Hide()
 end
 
@@ -451,6 +453,8 @@ local function modify(parent, region, parentData, data, first)
     end
     region.text:SetTextHeight(size)
     region:UpdateAnchorOnTextChange();
+    -- Keep the native CDM fallback in sync with font-size conditions.
+    Private.CDMAuraProgress.StyleText(region)
   end
 
   function region:SetVisible(visible)
@@ -472,6 +476,8 @@ local function modify(parent, region, parentData, data, first)
     end
     text:SetTextColor(region.color_anim_r or r, region.color_anim_g or g,
                       region.color_anim_b or b, region.color_anim_a or a)
+    -- The bound countdown has its own font, but shares this subtext's colour.
+    Private.CDMAuraProgress.StyleText(region)
   end
 
   local selfPoint = data.text_selfPoint
@@ -514,6 +520,8 @@ local function modify(parent, region, parentData, data, first)
     local xo, yo = getRotateOffset(text, Private.IsCDMBuffText(region.text_text, parentData) and 0 or textDegrees, selfPoint)
     parent:AnchorSubRegion(text, "point", data.anchor_point, selfPoint,
                            (self.text_anchorXOffset or 0) + xo, (self.text_anchorYOffset or 0) + yo)
+    -- Native countdowns use the same public anchor/offset configuration.
+    Private.CDMAuraProgress.StyleText(region)
   end
 
   if textDegrees == 0 then

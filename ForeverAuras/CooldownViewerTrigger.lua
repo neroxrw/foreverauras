@@ -312,27 +312,19 @@ local function GetSpellCooldownState(spellID, event)
   local status = spellCooldowns[spellID]
   if not status then status = {}; spellCooldowns[spellID] = status end
   if not active then
-    status.onCooldown, status.onGCD, status.gcdReadyAt, status.gcdStart = false, false, nil, nil
+    status.onCooldown, status.onGCD = false, false
   end
   -- Blizzard only guarantees isOnGCD during SPELL_UPDATE_COOLDOWN.
-  if active and event == "SPELL_UPDATE_COOLDOWN" and IsReadable(info.isOnGCD) then
+  -- Missing flags must not turn an unknown/GCD timer into a real cooldown.
+  if active and event == "SPELL_UPDATE_COOLDOWN" and ReadBoolean(info.isOnGCD) == nil then
+    status.onCooldown, status.onGCD = nil, nil
+  end
+  if active and event == "SPELL_UPDATE_COOLDOWN" and ReadBoolean(info.isOnGCD) ~= nil then
     local onGCD = info.isOnGCD == true
-    local start = IsReadable(info.startTime) and type(info.startTime) == "number" and info.startTime or nil
-    if onGCD then
-      if status.onGCD ~= true or (start and status.gcdStart and start ~= status.gcdStart) then
-        local readyAt = GetTime() + 0.20
-        status.gcdReadyAt = readyAt
-        C_Timer.After(0.20, function()
-          if status.gcdReadyAt == readyAt then Private.QueueCDMRefresh() end
-        end)
-      end
-      status.gcdStart = start
-    else
-      status.gcdReadyAt, status.gcdStart = nil, nil
-    end
+    -- The public event-scoped flag is sufficient; do not delay a visible GCD.
     status.onCooldown, status.onGCD = not onGCD, onGCD
   end
-  return status.onCooldown, true, status.onGCD, status.gcdReadyAt
+  return status.onCooldown, true, status.onGCD
 end
 
 local function QueueRefresh()
@@ -392,13 +384,17 @@ local function BuildCooldownViewerStates(allstates, selected, event, showGCD, tr
         state.cdmDisplayed, state.cdmCategory = entry.displayed, Private.CDMCategoryName(entry.category)
         state.progressType, state.value, state.total = "static", 1, 1
         state.durationObject, state.duration, state.expirationTime, state.modRate = nil, nil, nil, nil
-        state.cdmTextDurationObject = nil
+        -- Reused states must not retain a spell-only text requirement for buffs/items/previews.
+        state.cdmTextDurationObject, state.cdmTextDurationRequired = nil, nil
         state.cdmSuppressGCD = false
         state.cdmNativePaused = false
         state.cdmBuff = Private.CDMIsBuff(entry.category)
         local bindingIDs = selected.buffSpellIDsByEntry and selected.buffSpellIDsByEntry[cooldownID]
         state.cdmAuraSpellIDs = state.cdmBuff and (bindingIDs or (exactID and {exactID}) or selected.buffSpellIDs or {identity.spellID}) or nil
         state.cdmTextPreview = event == "OPTIONS"
+        -- Clear native fallback identity before selecting a fresh buff clone;
+        -- an absent/changed viewer must not retain the previous aura's slot.
+        state.cdmAuraRenderUnit, state.cdmAuraRenderSpellIDs = nil, nil
         state.cdmCountdownSource, state.cdmStackSource, state.cdmTextRecord, state.cdmDispelName = nil, nil, nil, nil
         state.isUsable = nil
         state.onCooldown, state.isReady, state.recharging, state.stacks, state.auraActive = nil, nil, nil, nil, nil
@@ -442,11 +438,15 @@ local function BuildCooldownViewerStates(allstates, selected, event, showGCD, tr
             local usable = C_Spell.IsSpellUsable(spellID)
             if IsReadable(usable) and type(usable) == "boolean" then state.isUsable = usable end
           end
-          local realDuration = C_Spell.GetSpellCooldownDuration(spellID, true)
-          local onCooldown, hasCooldownFlags, onGCD, gcdReadyAt = GetSpellCooldownState(spellID, event)
+          local onCooldown, hasCooldownFlags, onGCD = GetSpellCooldownState(spellID, event)
+          -- Keep the GCD-free text source independent of native frame flags, which
+          -- can be unavailable in combat or refer to the previous viewer refresh.
+          local realDuration = Private.GetSpellCooldownDurationWithoutGCD(spellID, onGCD)
+          local textDuration = realDuration
           local native = Private.CDMGetNativeCooldown(frames[cooldownID], identity.spellID)
           state.cdmNativeRevision = native and native.revision
-          local duration = native and native.duration or nil
+          -- A hidden GCD must not re-enter through the viewer's unfiltered swipe.
+          local duration = showGCD and native and native.duration or realDuration
           state.cdmNativePaused = native and native.paused == true or false
           if native then
             state.inRange = native.inRange
@@ -473,7 +473,9 @@ local function BuildCooldownViewerStates(allstates, selected, event, showGCD, tr
               state.cdmGCDOnly, state.cdmNativePaused = false, false
             end
           elseif hasCooldownFlags and not state.cdmGCDOnly then
-            duration = realDuration
+            -- Unknown GCD status still honors the explicit swipe choice. Text uses
+            -- the separately filtered duration and needs no readable timing values.
+            duration = showGCD and C_Spell.GetSpellCooldownDuration(spellID) or realDuration
             state.cdmNativePaused = false
           end
           local charges = C_Spell.GetSpellCharges and C_Spell.GetSpellCharges(spellID)
@@ -491,12 +493,14 @@ local function BuildCooldownViewerStates(allstates, selected, event, showGCD, tr
           if C_Spell.GetSpellChargeDuration and (track == "charges" or (track == "auto" and state.recharging == true)) then
             local chargeDuration = C_Spell.GetSpellChargeDuration(spellID)
             if chargeDuration then
-              duration = chargeDuration
+              -- Recharge numbers remain visible even when the spell timer is a GCD.
+              duration, textDuration = chargeDuration, chargeDuration
               state.cdmGCDOnly, state.cdmNativePaused = false, false
             end
           end
-          local holdUntil = onGCD and gcdReadyAt or (native and native.gcdReadyAt)
-          if state.cdmGCDOnly and (not showGCD or (holdUntil and GetTime() < holdUntil)) then
+          -- Show GCD takes effect on the first update, including consecutive casts.
+          -- Text suppression is independent and must not temporarily blank the swipe.
+          if state.cdmGCDOnly and not showGCD then
             duration = nil
           end
           state.cdmSuppressGCD = not duration
@@ -509,8 +513,12 @@ local function BuildCooldownViewerStates(allstates, selected, event, showGCD, tr
             state.value, state.total = nil, nil
           end
           if hideGCDText then
-            -- Hide GCD text without hiding a real cooldown or recharge timer.
-            state.cdmTextDurationObject = state.cdmGCDOnly and realDuration or duration
+            -- Always use the independently filtered source, including when the
+            -- native GCD flag cannot be read. Do not fall back to the swipe timer.
+            state.cdmTextDurationObject = textDuration
+            -- If the filtered API temporarily returns nothing, leave text empty
+            -- until it is available instead of borrowing the unfiltered swipe.
+            state.cdmTextDurationRequired = true
           end
         end
         if event ~= "OPTIONS" then

@@ -488,7 +488,19 @@ local function modify(parent, region, data)
     self.cdmConfiguredHideNumbers = cooldownTextDisabled
     Private.CDMAuraProgress.Style(self)
     local state = self.cdmProgressState or self.state
-    cooldownTextDisabled = cooldownTextDisabled or (state and state.cdmHideGCDText and state.cdmGCDOnly) or false
+    -- Native/third-party countdowns obey the same explicit policy as %p/%t.
+    cooldownTextDisabled = cooldownTextDisabled or Private.ShouldHideDurationText(state) or false
+    -- Native countdown text otherwise follows the swipe, even when %p/%t use a
+    -- GCD-free duration. Let Blizzard evaluate the filtered timer for visibility;
+    -- pass the result straight to rendering without testing secret timer values.
+    -- Reset alpha for pooled regions and when switching to another progress source.
+    local countdown = cooldown:GetCountdownFontString()
+    local textDuration = state and state.cdmHideGCDText and state.cdmTextDurationObject
+    if textDuration then
+      countdown:SetAlpha(textDuration:EvaluateRemainingDuration(cooldownAlphaCurve))
+    else
+      countdown:SetAlpha(1)
+    end
     if OmniCC and OmniCC.Cooldown and OmniCC.Cooldown.SetNoCooldownCount then
       cooldown:SetHideCountdownNumbers(true)
       OmniCC.Cooldown.SetNoCooldownCount(cooldown, cooldownTextDisabled)
@@ -642,6 +654,8 @@ local function modify(parent, region, data)
     function region:UpdateValue()
       if region.cdmNativeProgress then return end
       if self:UpdateCooldownDrawState() then cooldown:Hide(); return end
+      -- Progress-source changes also reach these paths; clear the previous timer's text policy.
+      self:SetHideCountdownNumbers(self.cdmConfiguredHideNumbers)
       if hasanysecretvalues(self.value, self.total) then
         cooldown:Hide()
         return
@@ -672,6 +686,8 @@ local function modify(parent, region, data)
     function region:UpdateTime()
       if region.cdmNativeProgress then return end
       if self:UpdateCooldownDrawState() then cooldown:Hide(); return end
+      -- Progress-source changes also reach these paths; clear the previous timer's text policy.
+      self:SetHideCountdownNumbers(self.cdmConfiguredHideNumbers)
       if self.paused then
         cooldown:Pause()
       else

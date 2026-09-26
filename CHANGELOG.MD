@@ -1,6 +1,11 @@
 # Changelog
 
 ## Versions
+## 0.6.12
+- Fix GCD text issues once and for all, including in combat
+- Fix Spell Cooldown "On Cooldown" conditioning
+- Fix Debuffs via CDM on Target Swipe / Text showing "0"
+
 ## 0.6.0
 - Fix Shadow Text Offsets
 - Fix Dispel Indicator display for Blizzard Aura Trigger

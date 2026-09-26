@@ -3946,6 +3946,8 @@ Private.event_prototypes = {
         tinsert(events, "GCD_START");
         tinsert(events, "GCD_CHANGE");
         tinsert(events, "GCD_END");
+        -- Restricted shared GCD timing emits this public refresh instead of start/end.
+        tinsert(events, "GCD_UPDATE");
       end
       return events;
     end,
@@ -4044,11 +4046,16 @@ Private.event_prototypes = {
 
       table.insert(ret, [=[
         state.onCooldown = nil
+        -- Retain a GCD-free appearance source without exposing its restricted status
+        -- to the ordinary condition engine. Clear it when readable tracking resumes.
+        state.spellCooldownConditionDuration, state.spellCooldownConditionOnCooldown = nil, nil
         if isSecret then
           state.changed = true
           state.progressType = "durationObject"
           state.durationObject = durationObject
           state.onCooldown = cooldownData and cooldownData.onCooldown
+          state.spellCooldownConditionDuration = cooldownData and cooldownData.conditionDuration
+          state.spellCooldownConditionOnCooldown = cooldownData and cooldownData.conditionOnCooldown
           state.expirationTime, state.duration, state.modRate = nil, nil, nil
           state.paused, state.remaining = nil, nil
           state.value, state.total = nil, nil
@@ -4130,6 +4137,16 @@ Private.event_prototypes = {
         ]=]):format(trackedCharge - 1))
       end
       table.insert(ret, "end\n")
+      -- Share the CDM text policy without sharing its timing/classification cache.
+      -- Swipe, countdown text and appearance each keep the appropriate timer.
+      table.insert(ret, ([=[
+        state.cdmTextPreview = event == "OPTIONS"
+        state.cdmHideGCDText = %s and not state.cdmTextPreview
+        state.cdmGCDOnly = cooldownData and cooldownData.gcdOnly or false
+        state.cdmTextDurationRequired = state.cdmHideGCDText
+        state.cdmTextDurationObject = state.cdmHideGCDText and cooldownData and cooldownData.conditionDuration or nil
+        state.cdmNativePaused = not state.cdmTextPreview and cooldownData and cooldownData.paused or false
+      ]=]):format(tostring(trigger.use_showgcd == true and trigger.use_showgcdtext ~= true)))
       if trackSpecificCharge then
         table.insert(ret, "if isSecret then genericShowOn = false end\n")
       end
@@ -4235,6 +4252,15 @@ Private.event_prototypes = {
         display = L["Show Global Cooldown"],
         type = "toggle",
         test = "true",
+        collapse = "extra Cooldown Progress (Spell)"
+      },
+      {
+        name = "showgcdtext",
+        display = "Show Global Cooldown Text",
+        desc = "Show countdown numbers for the global cooldown. Leave this off to show only spell cooldown and charge recharge text while keeping the GCD swipe.",
+        type = "toggle",
+        test = "true",
+        enable = function(trigger) return trigger.use_showgcd == true end,
         collapse = "extra Cooldown Progress (Spell)"
       },
       {
@@ -10153,7 +10179,11 @@ Private.category_event_prototype.addons = Private.category_event_prototype.addon
 Private.dynamic_texts = {
   ["p"] = {
     get = function(state)
-      if not state then return nil end
+      -- Apply GCD text policy before reading any timer, including unformatted %p.
+      if not state or Private.ShouldHideDurationText(state) then return nil end
+      if Private.UsesDurationText(state) then
+        return Private.GetTextDuration(state):GetRemainingDuration()
+      end
       if state.progressType == "static" then
         return state.value or nil
       end
@@ -10168,12 +10198,11 @@ Private.dynamic_texts = {
         local remaining = state.expirationTime - GetTime();
         return remaining >= 0 and remaining or nil
       end
-      if state.progressType == "durationObject" and ForeverAuras.IsDurationObject(state.durationObject) then
-        return Private.GetTextDuration(state):GetRemainingDuration()
-      end
     end,
     func = function(remaining, state, progressPrecision)
       progressPrecision = progressPrecision or 1
+      -- Custom-text callers also use this formatter directly with a state.
+      if Private.ShouldHideDurationText(state) then return "" end
 
       if not state or (state.progressType ~= "timed" and state.progressType ~= "durationObject") then
         return remaining
@@ -10181,7 +10210,7 @@ Private.dynamic_texts = {
       if type(remaining) ~= "number" then
         return ""
       end
-      if state.progressType == "durationObject" and ForeverAuras.IsDurationObject(state.durationObject) then
+      if Private.UsesDurationText(state) then
         local precision = progressPrecision or 1
         local threshold = precision >= 4 and 3 or 60
         if precision >= 4 then precision = precision - 3 end
@@ -10218,7 +10247,11 @@ Private.dynamic_texts = {
   },
   ["t"] = {
     get = function(state)
-      if not state then return "" end
+      -- Total duration text follows the same GCD policy as remaining duration.
+      if not state or Private.ShouldHideDurationText(state) then return "" end
+      if Private.UsesDurationText(state) then
+        return Private.GetTextDuration(state):GetTotalDuration(), true
+      end
       if state.progressType == "static" then
         return state.total, false
       end
@@ -10228,18 +10261,17 @@ Private.dynamic_texts = {
         end
         return state.duration, true
       end
-      if state.progressType == "durationObject" and ForeverAuras.IsDurationObject(state.durationObject) then
-        return Private.GetTextDuration(state):GetTotalDuration(), true
-      end
     end,
     func = function(duration, state, totalPrecision)
+      -- Keep direct/default formatting consistent with the configured formatter.
+      if Private.ShouldHideDurationText(state) then return "" end
       if not state or (state.progressType ~= "timed" and state.progressType ~= "durationObject") then
         return duration
       end
       if type(duration) ~= "number" then
         return ""
       end
-      if state.progressType == "durationObject" and ForeverAuras.IsDurationObject(state.durationObject) then
+      if Private.UsesDurationText(state) then
         local precision = totalPrecision or 1
         local threshold = precision >= 4 and 3 or 60
         if precision >= 4 then precision = precision - 3 end

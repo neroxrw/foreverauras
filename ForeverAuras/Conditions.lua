@@ -984,6 +984,71 @@ function Private.GetGlobalConditions(data)
   return Private.BlizzardAuraDisplay.FilterGlobalConditions(data, globalConditions);
 end
 
+-- Compile a display-only selection for ordinary icon desaturation conditions.
+-- Nested AND/OR checks select color components instead of branching on restricted
+-- cooldown values. Other condition effects still use the normal public tests.
+local function SpellCooldownDesaturationExpression(data, templates)
+  if data.regionType ~= "icon" or Private.BlizzardAuraDisplay.Enabled(data)
+      or not C_CurveUtil or not C_CurveUtil.EvaluateColorValueFromBoolean then return end
+  local hasCooldownCheck = false
+  local function Supported(check)
+    if not check then return false end
+    if check.variable == "AND" or check.variable == "OR" then
+      if not check.checks or #check.checks == 0 then return false end
+      for _, child in ipairs(check.checks) do
+        if not Supported(child) then return false end
+      end
+      return true
+    end
+    local entry = data.triggers[check.trigger]
+    local trigger = entry and entry.trigger
+    return trigger and trigger.type == "spell" and trigger.event == "Cooldown Progress (Spell)"
+      and check.variable == "onCooldown" and (check.value == 0 or check.value == 1)
+  end
+  local function Select(check, yes, no)
+    if not check then return no end
+    if check.variable == "AND" or check.variable == "OR" then
+      local checks = check.checks or {}
+      if #checks == 0 then return no end
+      local result = check.variable == "AND" and yes or no
+      for index = #checks, 1, -1 do
+        if check.variable == "AND" then
+          result = Select(checks[index], result, no)
+        else
+          result = Select(checks[index], yes, result)
+        end
+      end
+      return result
+    end
+    hasCooldownCheck = true
+    -- Supported has validated every leaf; readable states retain the existing
+    -- timed/paused test, while restricted states use only the appearance helper.
+    local test = CreateTestForCondition(data, check, templates, {}) or "false"
+    return "Private.ExecEnv.SelectSpellCooldownDesaturation(state[" .. check.trigger .. "], "
+      .. check.value .. ", " .. yes .. ", " .. no .. ", not not (" .. test .. "))"
+  end
+
+  local expression = data.desaturate and "1" or "0"
+  for index, condition in ipairs(data.conditions) do
+    for _, change in ipairs(condition.changes or {}) do
+      -- Preserve the separate boolean binding, linked chains and unrelated/custom
+      -- checks. Only complete cooldown-only trees use the display fallback.
+      if change.property == "desaturationFromBoolean" then return end
+      if change.property == "desaturate" then
+        if type(change.value) ~= "boolean" then return end
+        local value = change.value and "1" or "0"
+        local nextLinked = data.conditions[index + 1] and data.conditions[index + 1].linked
+        if condition.linked or nextLinked or not Supported(condition.check) then
+          expression = "C_CurveUtil.EvaluateColorValueFromBoolean(not not newActiveConditions[" .. index .. "], " .. value .. ", " .. expression .. ")"
+        else
+          expression = Select(condition.check, value, expression)
+        end
+      end
+    end
+  end
+  if hasCooldownCheck then return expression end
+end
+
 local function ConstructConditionFunction(data)
   local debug = false
   if (not data.conditions or #data.conditions == 0) then
@@ -1055,11 +1120,27 @@ local function ConstructConditionFunction(data)
     end
   end
 
+  -- Recompute only the icon's desaturation, preserving condition order and the
+  -- configured base value. Never put a restricted result in active-condition flags.
+  local desaturation = SpellCooldownDesaturationExpression(data, allConditionsTemplate)
+  if desaturation then
+    table.insert(ret, "  if not hideRegion then\n")
+    table.insert(ret, "    propertyChanges['desaturate'] = " .. desaturation .. "\n")
+    table.insert(ret, "  else\n")
+    table.insert(ret, "    propertyChanges['desaturate'] = " .. (data.desaturate and "1" or "0") .. "\n")
+    table.insert(ret, "  end\n")
+  end
+
   -- Last apply changes to region
   for property, _  in pairs(usedProperties) do
     local propertyData = properties and properties[property]
     local baseProperty = ResolveBaseProperty(property, propertyData and propertyData.baseProperty or property)
-    table.insert(ret, "  if(propertyChanges['" .. baseProperty .. "'] ~= nil) then\n")
+    -- The appearance expression always assigns a component. Do not compare that
+    -- possibly restricted number with nil before passing it to the texture setter.
+    local directDesaturation = desaturation and baseProperty == "desaturate"
+    if not directDesaturation then
+      table.insert(ret, "  if(propertyChanges['" .. baseProperty .. "'] ~= nil) then\n")
+    end
     local arg1 = ""
     if (properties[baseProperty].arg1) then
       if (type(properties[baseProperty].arg1) == "number") then
@@ -1081,7 +1162,9 @@ local function ConstructConditionFunction(data)
       table.insert(ret, "    " .. base .. properties[baseProperty].setter .. "(" .. arg1 .. formatValueForCall(properties[baseProperty].type, baseProperty)  .. ")\n")
     end
     if (debug) then table.insert(ret, "    print('Calling "  .. properties[baseProperty].setter ..  " with', " .. arg1 ..  formatValueForCall(properties[baseProperty].type, baseProperty) .. ")\n") end
+    if not directDesaturation then
       table.insert(ret, "  end\n")
+    end
   end
   table.insert(ret, "end\n")
 

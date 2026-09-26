@@ -563,11 +563,13 @@ Private.format_types = {
         -- work previously, the time formatter only formats %p and %t
         -- if the progress type is timed!
         return function(value, state, trigger)
+          -- Hide the token itself for a known GCD, regardless of time format or
+          -- whether the filtered duration is available during this refresh.
+          if Private.ShouldHideDurationText(state) then return "" end
           if not state or (state.progressType ~= "timed" and state.progressType ~= "durationObject") then
             return value
           end
-          if state.progressType == "durationObject" and ForeverAuras.IsDurationObject(state.durationObject)
-             and (format == 0 or format == 99) then
+          if Private.UsesDurationText(state) and (format == 0 or format == 99) then
             return Private.FormatDurationText(Private.GetTextDuration(state), sym == "t", format, threshold, precision, modRate)
           end
           return formatter(value, state, trigger)

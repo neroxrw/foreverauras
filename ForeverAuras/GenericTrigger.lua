@@ -2049,8 +2049,9 @@ do
     return runeDuration
   end
 
-  local function CheckGCD()
+  local function CheckGCD(deferEvent)
     if C_Secrets.ShouldSpellCooldownBeSecret(61304) then
+      if deferEvent then return "GCD_UPDATE" end
       if not ForeverAuras.IsPaused() then Private.ScanEvents("GCD_UPDATE") end
       return
     end
@@ -2086,6 +2087,8 @@ do
       gcdSpellName, gcdSpellIcon = nil, nil;
       gcdEndCheck = 0;
     end
+    -- Cooldown batches publish GCD changes after their per-spell caches are fresh.
+    if deferEvent then return event end
     if(event and not ForeverAuras.IsPaused()) then
       Private.ScanEvents(event);
     end
@@ -2601,6 +2604,16 @@ do
       end
 
       if (showgcd) then
+        -- An explicitly requested GCD can use this spell's public timer when the
+        -- shared GCD clock is unavailable. Do not replace a longer charge recharge.
+        if Private.IsSpellCooldownGCD(effectiveSpellId) == true then
+          local info = C_Spell.GetSpellCooldown(effectiveSpellId)
+          if info and not hasanysecretvalues(info.startTime, info.duration, info.modRate)
+             and info.startTime + info.duration > startTime + duration then
+            gcdCooldown = startTime == 0
+            startTime, duration, modRate = info.startTime, info.duration, info.modRate
+          end
+        end
         if ((gcdStart or 0) + (gcdDuration or 0) > startTime + duration) then
           if startTime == 0 then
             gcdCooldown = true
@@ -3083,6 +3096,14 @@ do
     local startTime, duration, unifiedModRate = startTimeCooldown, durationCooldown, modRate
 
     if not C_Secrets.ShouldSpellCooldownBeSecret(id) then
+      -- The shared GCD timer can be restricted even when this spell's times are
+      -- readable. Use Blizzard's public flag before caching the spell cooldown;
+      -- otherwise Show GCD is effectively forced on when timer equality cannot work.
+      -- Charge recharge times stay intact and continue through the normal selection.
+      if enabled and Private.IsSpellCooldownGCD(id) == true then
+        startTimeCooldown, durationCooldown = 0, 0
+        startTime, duration = 0, 0
+      end
       -- WORKAROUND: Sometimes the API returns very high bogus numbers causing client freezes, discard them here. CurseForge issue #1008
       if (durationCooldown > 604800) then
         durationCooldown = 0;
@@ -3312,7 +3333,9 @@ do
 
   ---@type fun(spell: number|string?)
   function Private.CheckCooldownReady(spell)
-    CheckGCD();
+    -- Refresh the shared clock first, but do not let GCD listeners read the old
+    -- per-spell cache and momentarily blank the swipe before this batch completes.
+    local gcdEvent = CheckGCD(true);
     local runeDuration = Private.CheckRuneCooldown();
     if spell then
       if SpellDetails.data[spell] then
@@ -3323,6 +3346,7 @@ do
       Private.CheckItemCooldowns();
       Private.CheckItemSlotCooldowns();
     end
+    if gcdEvent and not ForeverAuras.IsPaused() then Private.ScanEvents(gcdEvent) end
   end
 
   ---@private
