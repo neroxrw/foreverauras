@@ -775,3 +775,29 @@ end
 function Private.GetSanitizedGlobal(key)
   return exec_env_custom[key]
 end
+
+
+-- Resolve selected anchors through the existing sandbox. Missing targets can be
+-- retried; blocked globals and unusable objects must not reach SetPoint/SetParent.
+-- Position-only anchors can target textures/font strings; parents must be frames.
+function Private.GetSanitizedFrame(key, requireFrame)
+  if issecretvalue(key) or type(key) ~= "string" or key == "" then return end
+  local root = key:match("^[^.]+")
+  if root == "_G" or root == "getglobal" or blockedTables[root] or blockedFunctions[root] then
+    return
+  end
+
+  local frame = Private.GetSanitizedGlobal(key)
+  if issecretvalue(frame) then return end
+  if frame == nil then return nil, true end
+  if type(frame) ~= "table"
+    or type(frame.IsForbidden) ~= "function"
+    or type(frame.IsObjectType) ~= "function"
+    or frame:IsForbidden() then
+    return
+  end
+  if frame:IsObjectType("Frame") then return frame end
+  if requireFrame == false and (frame:IsObjectType("Texture") or frame:IsObjectType("FontString")) then
+    return frame
+  end
+end

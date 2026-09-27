@@ -6174,10 +6174,13 @@ local function GetAnchorFrame(data, region, parent)
       end
       postponeAnchor(id);
     else
-      if (Private.GetSanitizedGlobal(anchorFrameFrame)) then
-        return Private.GetSanitizedGlobal(anchorFrameFrame);
+      -- Validate for the actual operation: SetParent needs a frame, while
+      -- position-only anchoring may use a texture or font string as its target.
+      local frame, missing = Private.GetSanitizedFrame(anchorFrameFrame, data.anchorFrameParent ~= false)
+      if frame then
+        return frame;
       end
-      postponeAnchor(id);
+      if missing then postponeAnchor(id); end
       return parent;
     end
   end

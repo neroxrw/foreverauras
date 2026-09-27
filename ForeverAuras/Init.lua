@@ -384,8 +384,8 @@ ForeverAuras.normalWidth = 1.3
 ForeverAuras.halfWidth = ForeverAuras.normalWidth / 2
 ForeverAuras.doubleWidth = ForeverAuras.normalWidth * 2
 local versionStringFromToc = C_AddOns.GetAddOnMetadata("ForeverAuras", "Version")
-local versionString = "0.7.0-BETA"
--- Release date for separate dispel icon and adjustable border sub-elements.
+local versionString = "0.7.1-BETA"
+-- Release date for selected-anchor validation and frame-picker fixes.
 local buildTime = "2026-09-27"
 
 -- Prerelease labels are case-insensitive; packages use the requested BETA spelling.

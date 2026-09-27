@@ -2,6 +2,13 @@
 
 ## Versions
 ## 0.7.0
+Thanks [Anouhschka](https://github.com/Anouhschka)!
+- Fixed errors when selecting invalid or forbidden frames as anchors.
+- Fixed the frame picker confirming a previously hovered frame.
+- Prevented the frame picker from selecting the ForeverAuras options window.
+- Preserved texture and font-string anchoring when “Set Parent” is disabled.
+
+## 0.7.0
 - Dispel Type Indicator sub-element is now "Dispel Type Icon" and "Dispel Type Border", and the visuals on the border have been corrected.
 
 ## 0.6.21
