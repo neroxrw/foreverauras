@@ -53,14 +53,13 @@ function OptionsPrivate.StartFrameChooser(data, path)
     frameChooserBox:Hide();
   end
   local givenValue = OptionsPrivate.Private.ValueFromPath(data, path);
+  oldFocus, oldFocusName = nil, nil;
 
   frameChooserFrame:SetScript("OnUpdate", function()
     if(IsMouseButtonDown("RightButton")) then
       OptionsPrivate.Private.ValueToPath(data, path, givenValue);
       OptionsPrivate.StopFrameChooser(data);
       ForeverAuras.FillOptions()
-    elseif(IsMouseButtonDown("LeftButton") and oldFocusName) then
-      OptionsPrivate.StopFrameChooser(data);
     else
       SetCursor("CAST_CURSOR");
 
@@ -70,6 +69,15 @@ function OptionsPrivate.StartFrameChooser(data, path)
         focus = foci[1] or nil
       end
       local focusName;
+
+      local ancestor = focus
+      while ancestor do
+        if ancestor == frame or (ancestor.IsForbidden and ancestor:IsForbidden()) then
+          focus = nil
+          break
+        end
+        ancestor = ancestor.GetParent and ancestor:GetParent()
+      end
 
       if(focus) then
         focusName = recurseGetName(focus)
@@ -88,7 +96,12 @@ function OptionsPrivate.StartFrameChooser(data, path)
           end
         end
 
-        if(focus ~= oldFocus) then
+        if focusName and focusName:sub(1, 10) ~= "WeakAuras:"
+          and OptionsPrivate.Private.GetSanitizedFrame(focusName) ~= focus then
+          focusName = nil
+        end
+
+        if(focusName and (focus ~= oldFocus or focusName ~= oldFocusName)) then
           if(focusName) then
             frameChooserBox:ClearAllPoints();
             frameChooserBox:SetPoint("bottomleft", focus, "bottomleft", -4, -4);
@@ -106,7 +119,10 @@ function OptionsPrivate.StartFrameChooser(data, path)
       end
 
       if not(focusName) then
+        oldFocus, oldFocusName = nil, nil;
         frameChooserBox:Hide();
+      elseif IsMouseButtonDown("LeftButton") then
+        OptionsPrivate.StopFrameChooser(data);
       end
     end
   end);

@@ -775,3 +775,23 @@ end
 function Private.GetSanitizedGlobal(key)
   return exec_env_custom[key]
 end
+
+function Private.GetSanitizedFrame(key)
+  if issecretvalue(key) or type(key) ~= "string" or key == "" then return end
+  local root = key:match("^[^.]+")
+  if root == "_G" or root == "getglobal" or blockedTables[root] or blockedFunctions[root] then
+    return
+  end
+
+  local frame = Private.GetSanitizedGlobal(key)
+  if issecretvalue(frame) then return end
+  if frame == nil then return nil, true end
+  if type(frame) ~= "table"
+    or type(frame.IsForbidden) ~= "function"
+    or type(frame.IsObjectType) ~= "function"
+    or frame:IsForbidden()
+    or not frame:IsObjectType("Frame") then
+    return
+  end
+  return frame
+end

@@ -6174,10 +6174,11 @@ local function GetAnchorFrame(data, region, parent)
       end
       postponeAnchor(id);
     else
-      if (Private.GetSanitizedGlobal(anchorFrameFrame)) then
-        return Private.GetSanitizedGlobal(anchorFrameFrame);
+      local frame, missing = Private.GetSanitizedFrame(anchorFrameFrame)
+      if frame then
+        return frame;
       end
-      postponeAnchor(id);
+      if missing then postponeAnchor(id); end
       return parent;
     end
   end
