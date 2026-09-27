@@ -1,7 +1,7 @@
 # Changelog
 
 ## Versions
-## 0.7.0
+## 0.7.1
 Thanks [Anouhschka](https://github.com/Anouhschka)!
 - Fixed errors when selecting invalid or forbidden frames as anchors.
 - Fixed the frame picker confirming a previously hovered frame.
