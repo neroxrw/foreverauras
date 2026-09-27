@@ -167,8 +167,55 @@ ForeverAuras.HideOverlayGlow = LCG.ButtonGlow_Stop
 
 local LGF = LibStub("LibGetFrame-1.0")
 ForeverAuras.GetUnitFrame = LGF.GetUnitFrame
-ForeverAuras.GetUnitNameplate =  function(unit)
+-- Name-only player plates have no visible health bar. Keep one frame per
+-- native name region so Set Parent to Anchor also works, without reading its
+-- potentially secret bounds or changing Blizzard's nameplate layout.
+local nameplateNameAnchors = {}
+local function CanAccessNameplateRegion(region)
+  if not region then return false end
+  local forbidden = region:IsForbidden()
+  if issecretvalue(forbidden) or forbidden then return false end
+  if region.CanBeAccessedInContext then
+    local accessible = region:CanBeAccessedInContext()
+    if issecretvalue(accessible) or not accessible then return false end
+  end
+  return true
+end
+
+local function GetNameOnlyAnchor(nameplate)
+  if not CanAccessNameplateRegion(nameplate) then return end
+  local unitFrame = nameplate.UnitFrame
+  if not CanAccessNameplateRegion(unitFrame) then return end
+  local name = unitFrame.name
+  if not CanAccessNameplateRegion(name) then return end
+  local anchor = nameplateNameAnchors[name]
+  if not anchor then
+    anchor = CreateFrame("Frame", nil, nameplate)
+    anchor:SetAllPoints(name)
+    nameplateNameAnchors[name] = anchor
+  end
+  return anchor
+end
+
+ForeverAuras.GetUnitNameplate = function(unit)
   if Private.multiUnitUnits.nameplate[unit] then
+    -- Match Ellesmere's current plate before using a pooled health bar.
+    local ns = EllesmereNameplates_NS
+    local nameplate = ns and C_NamePlate.GetNamePlateForUnit(unit)
+    local plate = ns and ((ns.plates and ns.plates[unit]) or (ns.friendlyPlates and ns.friendlyPlates[unit]))
+    if plate and plate.health and plate.nameplate and plate.nameplate == nameplate then
+      return plate.health
+    end
+    -- Ellesmere renders name-only players through the native name region;
+    -- friendly NPCs use a separate overlay and retain their existing lookup.
+    local profile = ns and ns.db and ns.db.profile
+    if nameplate and profile and profile.friendlyNameOnly ~= false and ns.pendingUnits and ns.pendingUnits[unit] == nameplate then
+      local player = UnitIsPlayer(unit)
+      if not issecretvalue(player) and player then
+        local anchor = GetNameOnlyAnchor(nameplate)
+        if anchor then return anchor end
+      end
+    end
     return LGF.GetUnitNameplate(unit)
   end
 end

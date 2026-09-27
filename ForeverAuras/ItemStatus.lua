@@ -39,7 +39,35 @@ function Private.ExecEnv.GetBagSpace(includeSpecialty)
   return free, total, total-free, free / total * 100
 end
 
+-- Ignore permanent enchants. If both are supplied, prefer an imbue over an oil
+-- for the legacy one-enchant-per-hand trigger. Secret fields remain unavailable.
+local function ReadModernWeaponEnchant(slot)
+  local list = C_Item.GetWeaponEnchantInfo(slot)
+  if issecretvalue(list) then return nil, false end
+  local chosen
+  local types = Enum and Enum.ItemEnchantType
+  if not types then return nil, false end
+  for _, entry in ipairs(list or {}) do
+    if issecretvalue(entry) or hasanysecretvalues(entry.hasEnchant, entry.enchantType, entry.timeLeft, entry.charges, entry.enchantID, entry.enchantIconID) then return nil, false end
+    if entry.hasEnchant and (entry.enchantType == types.Temporary or entry.enchantType == types.Imbue) then
+      if not chosen or entry.enchantType == types.Imbue then chosen = entry end
+    end
+  end
+  return chosen, true
+end
+
+-- Extra return values are internal metadata; the first twelve retain the old API.
 function Private.ExecEnv.GetTemporaryWeaponEnchants()
+  if C_Item and C_Item.GetWeaponEnchantInfo and Enum and Enum.ItemEnchantType and Enum.WeaponSlot then
+    local main, mainReadable = ReadModernWeaponEnchant(Enum.WeaponSlot.MainHand)
+    local off, offReadable = ReadModernWeaponEnchant(Enum.WeaponSlot.OffHand)
+    if not mainReadable or not offReadable then
+      return nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, false
+    end
+    return main ~= nil, main and main.timeLeft, main and main.charges, main and main.enchantID,
+      off ~= nil, off and off.timeLeft, off and off.charges, off and off.enchantID,
+      nil, nil, nil, nil, true, main and main.enchantIconID, off and off.enchantIconID
+  end
   if C_PaperDollInfo and C_PaperDollInfo.GetTemporaryEnchantmentInfo then
     local main = C_PaperDollInfo.GetTemporaryEnchantmentInfo(INVSLOT_MAINHAND)
     local off = C_PaperDollInfo.GetTemporaryEnchantmentInfo(INVSLOT_OFFHAND)

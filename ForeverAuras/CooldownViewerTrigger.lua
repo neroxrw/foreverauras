@@ -432,6 +432,7 @@ local function BuildCooldownViewerStates(allstates, selected, event, showGCD, tr
         state.cdmCountdownSource, state.cdmStackSource, state.cdmTextRecord, state.cdmDispelName = nil, nil, nil, nil
         state.isUsable = nil
         state.onCooldown, state.isReady, state.recharging, state.stacks, state.auraActive = nil, nil, nil, nil, nil
+        state.wandAppearanceDuration = nil -- No snapshot may survive source/clone reuse.
         state.cdmGCDOnly, state.cdmHideGCDText = false, hideGCDText == true
 
         -- OPTIONS always uses a six-second sample, never live timers or checks.
@@ -478,10 +479,16 @@ local function BuildCooldownViewerStates(allstates, selected, event, showGCD, tr
           local realDuration = Private.GetSpellCooldownDurationWithoutGCD(spellID, onGCD)
           local textDuration = realDuration
           local native = Private.CDMGetNativeCooldown(frames[cooldownID], identity.spellID)
+          -- Text and desaturation share a copied timer during Shoot; native state
+          -- and swipe keep the current cooldown.
+          local wandHeld
+          textDuration, wandHeld = Private.GetWandCooldownDuration(spellID, textDuration, "cdm")
+          state.wandAppearanceDuration = wandHeld and textDuration or nil
           state.cdmNativeRevision = native and native.revision
           -- A hidden GCD must not re-enter through the viewer's unfiltered swipe.
           local duration = showGCD and native and native.duration or realDuration
           state.cdmNativePaused = native and native.paused == true or false
+          if state.cdmNativePaused then state.wandAppearanceDuration = nil end
           if native then
             state.inRange = native.inRange
             state.stacks = native.charges
@@ -529,6 +536,7 @@ local function BuildCooldownViewerStates(allstates, selected, event, showGCD, tr
             if chargeDuration then
               -- Recharge numbers remain visible even when the spell timer is a GCD.
               duration, textDuration = chargeDuration, chargeDuration
+              state.wandAppearanceDuration = nil -- Never suppress real recharge appearance.
               state.cdmGCDOnly, state.cdmNativePaused = false, false
             end
           end

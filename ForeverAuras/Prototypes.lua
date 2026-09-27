@@ -3939,6 +3939,7 @@ Private.event_prototypes = {
       if spellName == nil then return {} end
       local events = {
         "SPELL_COOLDOWN_CHANGED:" .. spellName,
+        "FA_WAND_TEXT_REFRESH", -- Refresh after Shoot starts or its shared cooldown ends.
         "COOLDOWN_REMAINING_CHECK:" .. spellName,
         "WA_DELAYED_PLAYER_ENTERING_WORLD",
       };
@@ -4141,12 +4142,14 @@ Private.event_prototypes = {
       -- Swipe, countdown text and appearance each keep the appropriate timer.
       table.insert(ret, ([=[
         state.cdmTextPreview = event == "OPTIONS"
+        -- Clear this on every update, including previews and charge/LoC changes.
+        state.wandAppearanceDuration = not state.cdmTextPreview and cooldownData and cooldownData.wandAppearanceDuration or nil
         state.cdmHideGCDText = %s and not state.cdmTextPreview
         state.cdmGCDOnly = cooldownData and cooldownData.gcdOnly or false
         state.cdmTextDurationRequired = state.cdmHideGCDText
-        state.cdmTextDurationObject = state.cdmHideGCDText and cooldownData and cooldownData.conditionDuration or nil
+        state.cdmTextDurationObject = state.cdmHideGCDText and cooldownData and cooldownData.textDuration or nil
         state.cdmNativePaused = not state.cdmTextPreview and cooldownData and cooldownData.paused or false
-      ]=]):format(tostring(trigger.use_showgcd == true and trigger.use_showgcdtext ~= true)))
+      ]=]):format(tostring(trigger.use_showgcdtext ~= true)))
       if trackSpecificCharge then
         table.insert(ret, "if isSecret then genericShowOn = false end\n")
       end
@@ -6523,7 +6526,8 @@ if free == nil then return false end
         local nameCheck = triggerName == "" or name and triggerName == name or shortenedName and triggerName == shortenedName or tonumber(triggerName) and enchantID and tonumber(triggerName) == enchantID
         local stackCheck = not triggerStack or stacks and stacks %s triggerStack
         local remainingCheck = not triggerRemaining or remaining and remaining %s triggerRemaining
-        local found = expirationTime and nameCheck and stackCheck and remainingCheck
+        -- A zero-length entry is expired even if the API has not removed it yet.
+        local found = remaining and remaining > 0 and nameCheck and stackCheck and remainingCheck
 
         if(triggerRemaining and remaining and remaining >= triggerRemaining and remaining > 0) then
           Private.ExecEnv.ScheduleScan(expirationTime - triggerRemaining, "TENCH_UPDATE");

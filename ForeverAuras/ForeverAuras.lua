@@ -6370,6 +6370,13 @@ end
 --- @return boolean?
 function Private.UnitPlayerControlledFixed(unit)
   local guid = UnitGUID(unit)
+  -- A restricted GUID cannot be inspected. Use player classification only when
+  -- that separate API result is readable; nil leaves the name's color unchanged.
+  if issecretvalue(guid) then
+    local isPlayer = UnitIsPlayer(unit)
+    if not issecretvalue(isPlayer) then return isPlayer end
+    return nil
+  end
   return guid and guid:sub(1, 6) == "Player"
 end
 

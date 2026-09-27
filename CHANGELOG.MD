@@ -1,6 +1,15 @@
 # Changelog
 
 ## Versions
+## 0.8.6
+- Fixed wand cooldown text and unwanted icon desaturation for Spell and CDM cooldown triggers. Enabled automatically.
+- Improved temporary weapon-enchant and imbue detection, icons, equipment updates and expiry handling.
+- Preserved observed weapon-enchant swipe duration through zoning.
+- Added pulsing border and glow styles for supported Blizzard Aura highlight conditions.
+- Added anchoring support for Ellesmere nameplate health bars.
+- Fixed automatic text placement when text dimensions are restricted.
+- Fixed restricted GUID handling in unit-name coloring.
+
 ## 0.7.1
 Thanks [Anouhschka](https://github.com/Anouhschka)!
 - Fixed errors when selecting invalid or forbidden frames as anchors.

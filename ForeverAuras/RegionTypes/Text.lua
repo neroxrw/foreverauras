@@ -109,6 +109,15 @@ local function SetCleanText(self, ...)
   self:_SetText(...)
 end
 
+-- Automatic text must share the region's attachment point. Its measured bounds
+-- may be secret, so a fallback region size must not shift the visible text edge.
+local function AnchorText(region, point)
+  if region.textAnchorPoint == point then return end
+  region.textAnchorPoint = point
+  region.text:ClearAllPoints()
+  region.text:SetPoint(point, region, point)
+end
+
 local fontObjectCounter = 0
 
 local function create(parent)
@@ -130,6 +139,14 @@ local function create(parent)
   text.SetText = SetCleanText;
 
   Private.regionPrototype.create(region);
+
+  -- Dynamic groups and live unit anchors can replace the configured self point.
+  -- Follow that point without reading text dimensions or changing group layout.
+  local SetAnchor = region.SetAnchor
+  function region:SetAnchor(point, relativeTo, relativePoint)
+    SetAnchor(self, point, relativeTo, relativePoint)
+    if self.automaticTextWidth then AnchorText(self, point) end
+  end
 
   return region;
 end
@@ -187,8 +204,11 @@ local function modify(parent, region, data)
 
   text:SetTextHeight(data.fontSize);
 
-  text:ClearAllPoints();
-  text:SetPoint(data.justify, region, data.justify);
+  -- Fixed-width text retains its selected alignment inside the configured box.
+  -- In auto mode, justification still controls lines; the block follows its anchor.
+  region.automaticTextWidth = data.automaticWidth ~= "Fixed"
+  region.textAnchorPoint = nil -- The initial size measurement temporarily detached it.
+  AnchorText(region, region.automaticTextWidth and (region.anchorPoint or data.selfPoint) or data.justify)
 
   local SetText;
 

@@ -93,6 +93,10 @@ function Private.GetSpellCooldownData(spellID, track, showGCD, showLossOfControl
     result.chargeDuration = C_Spell.GetSpellChargeDuration(spellID)
   end
 
+  -- Share the copied timer with desaturation without changing logical cooldown state.
+  local held
+  result.textDuration, held = Private.GetWandCooldownDuration(spellID, cooldown)
+  result.wandAppearanceDuration = held and not result.paused and result.textDuration or nil
   local useCharges = track == "charges"
   if track ~= "cooldown" and track ~= "charges" and charges then
     local shortCooldown = info and not issecretvalue(info.duration) and info.duration <= 1.5
@@ -103,6 +107,8 @@ function Private.GetSpellCooldownData(spellID, track, showGCD, showLossOfControl
   if useCharges then
     result.duration = result.chargeDuration
     result.conditionDuration = result.chargeDuration
+    result.textDuration = result.chargeDuration
+    result.wandAppearanceDuration = nil -- Recharge appearance keeps its own timer.
     result.gcdOnly = false
     result.onCooldown = charges and charges.isActive or false
     result.conditionOnCooldown = result.onCooldown
@@ -115,6 +121,8 @@ function Private.GetSpellCooldownData(spellID, track, showGCD, showLossOfControl
     if lossOfControl and lossOfControl.shouldReplaceNormalCooldown then
       result.duration = C_Spell.GetSpellLossOfControlCooldownDuration(spellID)
       result.conditionDuration = result.duration
+      result.textDuration = result.duration
+      result.wandAppearanceDuration = nil -- Loss of control takes precedence.
       result.gcdOnly = false
       result.onCooldown = lossOfControl.isActive
       result.conditionOnCooldown = result.onCooldown
@@ -126,12 +134,34 @@ end
 
 Private.ExecEnv.GetSpellCooldownData = Private.GetSpellCooldownData
 
--- A restricted cooldown can drive an icon's appearance even when its public
--- classification is unavailable. Keep the boolean opaque: only Blizzard's color
--- evaluator consumes it, and the resulting component goes straight to the texture.
--- This does not make the condition available for actions, visibility or Lua tests.
+-- Copied durations keep their total span after expiry. Evaluate remaining time
+-- directly into desaturation; nested condition endpoints may also be secret.
+local wandAppearanceCurve
+local function SelectWandDesaturation(state, needle, valueIfTrue, valueIfFalse)
+  local duration = state.wandAppearanceDuration
+  if not duration then return end
+  if not wandAppearanceCurve then wandAppearanceCurve = C_CurveUtil.CreateCurve() end
+  wandAppearanceCurve:SetToDefaults()
+  local expired, active = valueIfFalse, valueIfTrue
+  if needle ~= 1 then expired, active = valueIfTrue, valueIfFalse end
+  wandAppearanceCurve:AddPoint(0, expired)
+  wandAppearanceCurve:AddPoint(0.001, active)
+  return duration:EvaluateRemainingDuration(wandAppearanceCurve), true
+end
+
+-- Use CDM's public condition result when no copied Shoot timer applies.
+function Private.ExecEnv.SelectCDMCooldownDesaturation(state, needle, valueIfTrue, valueIfFalse, publicResult)
+  if not state or not state.show then return valueIfFalse end
+  local value, applied = SelectWandDesaturation(state, needle, valueIfTrue, valueIfFalse)
+  if applied then return value end
+  if publicResult then return valueIfTrue end
+  return valueIfFalse
+end
+
 function Private.ExecEnv.SelectSpellCooldownDesaturation(state, needle, valueIfTrue, valueIfFalse, publicResult)
   if not state or not state.show then return valueIfFalse end
+  local value, applied = SelectWandDesaturation(state, needle, valueIfTrue, valueIfFalse)
+  if applied then return value end
   if state.progressType ~= "durationObject" then
     if publicResult then return valueIfTrue end
     return valueIfFalse

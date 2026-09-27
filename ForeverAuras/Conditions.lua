@@ -1002,8 +1002,11 @@ local function SpellCooldownDesaturationExpression(data, templates)
     end
     local entry = data.triggers[check.trigger]
     local trigger = entry and entry.trigger
-    return trigger and trigger.type == "spell" and trigger.event == "Cooldown Progress (Spell)"
-      and check.variable == "onCooldown" and (check.value == 0 or check.value == 1)
+    -- CDM spell cooldowns share only the visual selector. Buffs/items retain their
+    -- existing condition path and never consume the wand snapshot.
+    local spell = trigger and trigger.type == "spell" and trigger.event == "Cooldown Progress (Spell)"
+    local cdm = trigger and trigger.type == "cdm" and (trigger.event == "Blizzard Cooldown Manager" or trigger.event == "Blizzard CDM Utility")
+    return (spell or cdm) and check.variable == "onCooldown" and (check.value == 0 or check.value == 1)
   end
   local function Select(check, yes, no)
     if not check then return no end
@@ -1024,7 +1027,9 @@ local function SpellCooldownDesaturationExpression(data, templates)
     -- Supported has validated every leaf; readable states retain the existing
     -- timed/paused test, while restricted states use only the appearance helper.
     local test = CreateTestForCondition(data, check, templates, {}) or "false"
-    return "Private.ExecEnv.SelectSpellCooldownDesaturation(state[" .. check.trigger .. "], "
+    local trigger = data.triggers[check.trigger].trigger
+    local selector = trigger.type == "cdm" and "SelectCDMCooldownDesaturation" or "SelectSpellCooldownDesaturation"
+    return "Private.ExecEnv." .. selector .. "(state[" .. check.trigger .. "], "
       .. check.value .. ", " .. yes .. ", " .. no .. ", not not (" .. test .. "))"
   end
 

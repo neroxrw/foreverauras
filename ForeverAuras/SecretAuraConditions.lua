@@ -26,7 +26,7 @@ local durationVariables = {
 local nativeVariables = {faAuraPandemic = true, faAuraStealable = true, faAuraNotStealable = true,
   faAuraDispel = true, faAuraType = true, faAuraPresent = true, faAuraApplications = true}
 for key in pairs(durationVariables) do nativeVariables[key] = true end
-local indicatorProperties = {faAuraHighlightColor = true, faAuraHighlightStyle = true, faAuraHighlightSize = true, faAuraHighlightTexture = true}
+local indicatorProperties = {faAuraHighlightColor = true, faAuraHighlightStyle = true, faAuraHighlightSize = true, faAuraHighlightTexture = true, faAuraHighlightPulse = true}
 function Display.IsNativeDurationCondition(check) return check and durationVariables[check.variable] ~= nil end
 function Display.NativeConditionKind(data, check)
   local entry = check and data.triggers and data.triggers[check.trigger]
@@ -229,7 +229,9 @@ function Display.FilterConditionProperties(data, properties)
   if Display.Enabled(data) then
     properties.faAuraHighlightColor = {display = "Aura Highlight Color", type = "color", default = {1, 0.82, 0, 1}}
     properties.faAuraHighlightStyle = {display = "Aura Highlight Style", type = "list", default = "border",
-      values = {border = "Border", glow = "Glow (Static)", overlay = "Overlay", texture = "Custom Texture"}}
+      values = {border = "Border", glow = "Glow (Static)", pulseBorder = "Border (Pulsing)", pulseGlow = "Glow (Pulsing)", overlay = "Overlay", texture = "Custom Texture"}}
+    -- A cycle is a complete fade out/in on the highlight's own parent frame.
+    properties.faAuraHighlightPulse = {display = "Aura Highlight Pulse Duration", type = "number", default = 1, min = 0.2, max = 5, step = 0.1}
     properties.faAuraHighlightSize = {display = "Aura Highlight Thickness / Padding", type = "number", default = 2, min = 1, max = 64, step = 1}
     properties.faAuraHighlightTexture = {display = "Aura Highlight Texture", type = "string", default = "Interface\\Buttons\\UI-ActionButton-Border"}
   end
@@ -257,11 +259,12 @@ function Display.HighlightPropertyOptions(data, condition, property, definition)
     if change.property == "faAuraHighlightStyle" then style = change.value end
   end
   local result = CopyTable(definition)
+  if style == "pulseBorder" then style = "border" end
   result.display = style == "border" and "Aura Highlight Border Thickness" or "Aura Highlight Padding"
   result.max = style == "border" and Display.HighlightBorderLimit(data) or 64
   result.description = style == "border"
     and "Border thickness in UI units, limited to one quarter of the aura's smaller dimension so the center stays visible. Set style and color in this same condition."
-    or "Extra space around a static glow or custom texture, in UI units. Overlay always fills the aura and ignores padding. Set style and color in this same condition."
+    or "Extra space around a glow or custom texture, in UI units. Overlay always fills the aura and ignores padding. Set style and color in this same condition."
   return result
 end
 
@@ -462,6 +465,12 @@ function Display.StyleNativeConditionIndicators(native, data)
   if not native.preview and button.ClearPandemicRegions then button:ClearPandemicRegions() end
   for _, textures in pairs(native.conditionIndicators or {}) do for _, texture in ipairs(textures) do texture:Hide() end end
   native.conditionIndicators = native.conditionIndicators or {}
+  -- Stop and reset pooled animation hosts before changing native registrations.
+  native.conditionHosts = native.conditionHosts or {}
+  for _, host in pairs(native.conditionHosts) do
+    if host.pulse then host.pulse:Stop() end
+    host:SetAlpha(1)
+  end
   -- Bindings are removed by texture reference; AddDispelTypeTexture returns no
   -- index. Keep these separate from the display's normal dispel indicator.
   for _, texture in ipairs(native.conditionDispelTextures or {}) do button:RemoveDispelTypeTexture(texture) end
@@ -487,13 +496,38 @@ function Display.StyleNativeConditionIndicators(native, data)
       if kind == "faAuraType" and (check.op ~= "==" or (check.value ~= "HELPFUL" and check.value ~= "HARMFUL")) then configured = false end
       if kind == "faAuraDispel" and (check.op ~= "==" or type(check.value) ~= "string") then configured = false end
       if configured then
+        local host = native.conditionHosts[index]
+        if not host then
+          host = CreateFrame("Frame", nil, native.conditionOverlay)
+          host:SetAllPoints(button)
+          native.conditionHosts[index] = host
+        end
         local textures = native.conditionIndicators[index]
         if not textures then
           textures = {}
-          for i = 1, 4 do textures[i] = native.conditionOverlay:CreateTexture(nil, "OVERLAY", nil, 7) end
+          for i = 1, 4 do textures[i] = host:CreateTexture(nil, "OVERLAY", nil, 7) end
           native.conditionIndicators[index] = textures
         end
         local style = settings.faAuraHighlightStyle or "border"
+        local pulsing = style == "pulseBorder" or style == "pulseGlow"
+        if pulsing then
+          style = style == "pulseBorder" and "border" or "glow"
+          local seconds = tonumber(settings.faAuraHighlightPulse) or 1
+          seconds = seconds == seconds and math.max(0.2, math.min(5, seconds)) or 1
+          if not host.pulse then
+            host.pulse = host:CreateAnimationGroup()
+            host.pulse:SetLooping("REPEAT")
+            host.fadeOut = host.pulse:CreateAnimation("Alpha")
+            host.fadeOut:SetOrder(1)
+            host.fadeOut:SetFromAlpha(1); host.fadeOut:SetToAlpha(0.2)
+            host.fadeIn = host.pulse:CreateAnimation("Alpha")
+            host.fadeIn:SetOrder(2)
+            host.fadeIn:SetFromAlpha(0.2); host.fadeIn:SetToAlpha(1)
+          end
+          host.fadeOut:SetDuration(seconds / 2)
+          host.fadeIn:SetDuration(seconds / 2)
+          host.pulse:Play()
+        end
         local color = Color(settings.faAuraHighlightColor, {1, 0.82, 0, 1})
         local r,g,b,alpha = color:GetRGBA()
         local size = tonumber(settings.faAuraHighlightSize) or 2

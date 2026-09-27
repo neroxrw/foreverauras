@@ -3934,6 +3934,8 @@ do
         tenchFrame:RegisterEvent("WEAPON_ENCHANT_CHANGED")
       end
       tenchFrame:RegisterUnitEvent("UNIT_INVENTORY_CHANGED", "player")
+      -- Swapping a weapon must invalidate enchant art and timing together.
+      tenchFrame:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
       
 
       local getTenchName
@@ -3958,34 +3960,57 @@ do
         end
       end
 
+      -- The API supplies remaining time, not the original full duration.
+      -- Retain the longest readable observation per enchant for this session so
+      -- zoning or a temporary empty read cannot restart the swipe at 100%.
+      -- This changes only its scale: presence and expiration still come from the API.
+      local enchantDurations = {}
+      local function ObserveEnchantDuration(enchantID, remaining)
+        if not remaining or remaining <= 0 then return nil end
+        local duration = remaining / 1000
+        if not enchantID then return duration end
+        duration = math.max(enchantDurations[enchantID] or 0, duration)
+        enchantDurations[enchantID] = duration
+        return duration
+      end
+
+      local expiryTimer
       local function tenchUpdate()
+        if expiryTimer then expiryTimer:Cancel(); expiryTimer = nil end
         Private.StartProfileSystem("generictrigger temporary enchant");
         local _, mh_rem, oh_rem, rw_rem
         local oldMHEnchantID, oldOHEnchantID = mh_EnchantID, oh_EnchantID
-        _, mh_rem, mh_charges, mh_EnchantID, _, oh_rem, oh_charges, oh_EnchantID, _, rw_rem, rw_charges, rw_EnchantID = Private.ExecEnv.GetTemporaryWeaponEnchants();
+        local values = {Private.ExecEnv.GetTemporaryWeaponEnchants()}
+        -- Do not perform arithmetic or overwrite a readable snapshot with secrets.
+        if values[13] == false or hasanysecretvalues(unpack(values, 1, 12)) then
+          Private.StopProfileSystem("generictrigger temporary enchant")
+          return
+        end
+        _, mh_rem, mh_charges, mh_EnchantID, _, oh_rem, oh_charges, oh_EnchantID, _, rw_rem, rw_charges, rw_EnchantID = unpack(values, 1, 12)
+        local mainEnchantIcon, offEnchantIcon = values[14], values[15]
+        mh_icon = mainEnchantIcon and mainEnchantIcon > 0 and mainEnchantIcon or GetInventoryItemTexture("player", mh)
+        oh_icon = offEnchantIcon and offEnchantIcon > 0 and offEnchantIcon or GetInventoryItemTexture("player", oh)
         local time = GetTime();
         local mh_exp_new = mh_rem and (time + (mh_rem / 1000));
         local oh_exp_new = oh_rem and (time + (oh_rem / 1000));
         local rw_exp_new = rw_rem and (time + (rw_rem / 1000));
         if oldMHEnchantID ~= mh_EnchantID or math.abs((mh_exp or 0) - (mh_exp_new or 0)) > 1 then
           mh_exp = mh_exp_new;
-          mh_dur = mh_rem and mh_rem / 1000;
+          mh_dur = ObserveEnchantDuration(mh_EnchantID, mh_rem);
           if mh_exp then
             mh_name, mh_shortenedName = getTenchName(mh)
           else
             mh_name, mh_shortenedName = "None", "None"
           end
-          mh_icon = GetInventoryItemTexture("player", mh)
         end
         if oldOHEnchantID ~= oh_EnchantID or math.abs((oh_exp or 0) - (oh_exp_new or 0)) > 1 then
           oh_exp = oh_exp_new;
-          oh_dur = oh_rem and oh_rem / 1000;
+          oh_dur = ObserveEnchantDuration(oh_EnchantID, oh_rem);
           if oh_exp then
             oh_name, oh_shortenedName = getTenchName(oh)
           else
             oh_name, oh_shortenedName = "None", "None"
           end
-          oh_icon = GetInventoryItemTexture("player", oh)
         end
         if isCata then
           if(math.abs((rw_exp or 0) - (rw_exp_new or 0)) > 1) then
@@ -3999,14 +4024,25 @@ do
             rw_icon = GetInventoryItemTexture("player", rw)
           end
         end
+        -- Re-read once at the earliest expiry, including when no inventory event fires.
+        local nextExpiry
+        for _, remaining in pairs({mh_rem, oh_rem, rw_rem}) do
+          if remaining > 0 then nextExpiry = math.min(nextExpiry or math.huge, remaining / 1000) end
+        end
+        if nextExpiry then expiryTimer = C_Timer.NewTimer(nextExpiry + 0.1, tenchUpdate) end
         Private.ScanEvents("TENCH_UPDATE");
         Private.StopProfileSystem("generictrigger temporary enchant");
       end
 
+      -- Inventory and enchant events can arrive together; retain only one pending read.
+      local updatePending
       tenchFrame:SetScript("OnEvent", function()
-        Private.StartProfileSystem("generictrigger temporary enchant");
-        timer:ScheduleTimer(tenchUpdate, 0.1)
-        Private.StopProfileSystem("generictrigger temporary enchant");
+        if updatePending then return end
+        updatePending = true
+        timer:ScheduleTimer(function()
+          updatePending = nil
+          tenchUpdate()
+        end, 0.1)
       end);
 
       tenchUpdate();

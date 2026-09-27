@@ -838,9 +838,11 @@ Private.format_types = {
       local abbreviateFunc
       if color == "class" then
         colorFunc = function(unit, text)
+          -- Color-code construction and class-table indexing require readable values.
+          if issecretvalue(text) then return text end
           if unit and Private.UnitPlayerControlledFixed(unit) then
             local classFilename = select(2, UnitClass(unit))
-            if classFilename then
+            if not issecretvalue(classFilename) and classFilename then
               return WrapTextInColorCode(text, WA_GetClassColor(classFilename))
             end
           end
