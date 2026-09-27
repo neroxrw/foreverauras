@@ -4,6 +4,27 @@ local _, Private = ...
 local Display = Private.BlizzardAuraDisplay
 local Media = LibStub("LibSharedMedia-3.0")
 
+-- Match ordinary icon zoom/offset/aspect calculations using configured sizes.
+-- No geometry or aura data is read from protected children. The same helper is
+-- used by preview, native initialization and supported zoom condition changes.
+function Display.StyleIconTexCoords(native, data, zoom)
+  zoom = zoom or data.zoom or 0
+  if data.regionType ~= "icon" then
+    -- Aura bar icons retain their existing crop behavior.
+    local crop = math.min(0.45, math.max(0, zoom / 2))
+    native.icon:SetTexCoord(crop, 1 - crop, crop, 1 - crop)
+    return
+  end
+  local width, height = Display.Dimensions(data)
+  local aspect = data.keepAspectRatio and width > 0 and height > 0 and width / height or 1
+  local span = 1 - 0.5 * zoom
+  local xSpan = span * (aspect < 1 and aspect or 1)
+  local ySpan = span * (aspect > 1 and 1 / aspect or 1)
+  local x, y = data.texXOffset or 0, data.texYOffset or 0
+  native.icon:SetTexCoord(0.5 - xSpan / 2 - x, 0.5 + xSpan / 2 - x,
+    0.5 - ySpan / 2 + y, 0.5 + ySpan / 2 + y)
+end
+
 Display.supportedElements = {subbackground = true, subforeground = true, subtext = true, subborder = true, subglow = true, subtexture = true, subcdmdispel = true}
 
 function Display.IsDetachedElement(data, element)
@@ -275,8 +296,7 @@ function Display.StyleAppearance(native, data, ElementFrame, StyleText, StyleGlo
   base:SetFrameLevel(button:GetFrameLevel() + 1); base:Show()
   native.icon:ClearAllPoints(); native.icon:SetAllPoints(button)
   native.icon:SetDesaturated(data.desaturate == true)
-  local crop = math.min(0.45, math.max(0, (data.zoom or 0) / 2))
-  native.icon:SetTexCoord(crop, 1 - crop, crop, 1 - crop)
+  Display.StyleIconTexCoords(native, data)
   native.icon:SetVertexColor(unpack(data.regionType == "aurabar" and data.icon_color or data.color or {1, 1, 1, 1}))
   if data.regionType == "icon" or (data.regionType == "aurabar" and data.icon) then
     if data.iconSource == 0 and data.displayIcon then native.icon:SetTexture(data.displayIcon) else button:SetIcon(native.icon) end
@@ -423,6 +443,6 @@ function Display.StyleAppearance(native, data, ElementFrame, StyleText, StyleGlo
       end
     end
   end
-  -- Sample frames have no native aura state to evaluate for condition indicators.
-  if not native.preview then Display.StyleNativeConditionIndicators(native, data) end
+  -- Preview frames evaluate public samples; live frames register native rules.
+  Display.StyleNativeConditionIndicators(native, data)
 end

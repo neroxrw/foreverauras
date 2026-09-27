@@ -229,8 +229,8 @@ function Display.FilterConditionProperties(data, properties)
   if Display.Enabled(data) then
     properties.faAuraHighlightColor = {display = "Aura Highlight Color", type = "color", default = {1, 0.82, 0, 1}}
     properties.faAuraHighlightStyle = {display = "Aura Highlight Style", type = "list", default = "border",
-      values = {border = "Border", glow = "Glow", overlay = "Overlay", texture = "Custom Texture"}}
-    properties.faAuraHighlightSize = {display = "Aura Highlight Size", type = "number", default = 2, min = 1, max = 64, step = 1}
+      values = {border = "Border", glow = "Glow (Static)", overlay = "Overlay", texture = "Custom Texture"}}
+    properties.faAuraHighlightSize = {display = "Aura Highlight Thickness / Padding", type = "number", default = 2, min = 1, max = 64, step = 1}
     properties.faAuraHighlightTexture = {display = "Aura Highlight Texture", type = "string", default = "Interface\\Buttons\\UI-ActionButton-Border"}
   end
   return properties
@@ -240,6 +240,29 @@ function Display.IsNativeConditionProperty(data, property)
   return not conditionActions[property]
     and not Display.IsDetachedProperty(data, property)
     and PropertyType(data, property) ~= nil
+end
+
+-- Keep borders inside the aura with a visible center, even for oversized imports.
+function Display.HighlightBorderLimit(data)
+  local width, height = Display.Dimensions(data)
+  return math.max(1, math.floor(math.min(width, height) / 4))
+end
+
+-- The size control describes the highlight, not the icon. Its bounds and label
+-- follow the style selected in this same condition without changing saved data.
+function Display.HighlightPropertyOptions(data, condition, property, definition)
+  if property ~= "faAuraHighlightSize" or not definition then return definition end
+  local style = "border"
+  for _, change in ipairs(condition.changes or {}) do
+    if change.property == "faAuraHighlightStyle" then style = change.value end
+  end
+  local result = CopyTable(definition)
+  result.display = style == "border" and "Aura Highlight Border Thickness" or "Aura Highlight Padding"
+  result.max = style == "border" and Display.HighlightBorderLimit(data) or 64
+  result.description = style == "border"
+    and "Border thickness in UI units, limited to one quarter of the aura's smaller dimension so the center stays visible. Set style and color in this same condition."
+    or "Extra space around a static glow or custom texture, in UI units. Overlay always fills the aura and ignores padding. Set style and color in this same condition."
+  return result
 end
 
 function Display.FilterConditionTemplates(data, templates)
@@ -387,8 +410,8 @@ local function ApplyProperty(button, data, property, value, overrides)
   elseif property == 'desaturate' then button.icon:SetDesaturated(value)
   elseif property == 'icon_color' then button.icon:SetVertexColor(unpack(value))
   elseif property == 'zoom' then
-    local crop = math.min(0.45, value / 2)
-    button.icon:SetTexCoord(crop, 1 - crop, crop, 1 - crop)
+    -- Preserve the configured aspect ratio and texture offsets on condition edits.
+    Display.StyleIconTexCoords(button, data, value)
   elseif property == 'inverse' then button.cooldown:SetReverse(value)
   elseif property == 'cooldownSwipe' then button.cooldown:SetDrawSwipe(value)
   elseif property == 'cooldownEdge' then button.cooldown:SetDrawEdge(value)
@@ -436,11 +459,22 @@ end
 
 function Display.StyleNativeConditionIndicators(native, data)
   local button = native.button
-  if button.ClearPandemicRegions then button:ClearPandemicRegions() end
+  if not native.preview and button.ClearPandemicRegions then button:ClearPandemicRegions() end
   for _, textures in pairs(native.conditionIndicators or {}) do for _, texture in ipairs(textures) do texture:Hide() end end
   native.conditionIndicators = native.conditionIndicators or {}
-  for i = #(native.conditionDispelIndices or {}), 1, -1 do button:RemoveDispelTypeTexture(native.conditionDispelIndices[i]) end
-  native.conditionDispelIndices = {}
+  -- Bindings are removed by texture reference; AddDispelTypeTexture returns no
+  -- index. Keep these separate from the display's normal dispel indicator.
+  for _, texture in ipairs(native.conditionDispelTextures or {}) do button:RemoveDispelTypeTexture(texture) end
+  native.conditionDispelTextures = {}
+  native.conditionPreview = {}
+  native.conditionData = native.preview and data or nil
+  -- Highlight textures must be above the icon and swipe. The button itself is
+  -- below both; placing textures there hid thin borders and exposed only overflow.
+  native.conditionOverlay = native.conditionOverlay or CreateFrame("Frame", nil, button)
+  native.conditionOverlay:SetAllPoints(button)
+  local base = native.elementFrames and native.elementFrames.sharedBase
+  native.conditionOverlay:SetFrameLevel(math.max(native.cooldown:GetFrameLevel(), native.bar and native.bar:GetFrameLevel() or 0,
+    base and base:GetFrameLevel() or button:GetFrameLevel()) + 1)
   local dispelKeys = {"None", "Magic", "Curse", "Disease", "Poison", "Bleed", "Enrage", ""}
   for index, condition in ipairs(data.conditions or {}) do
     local kind = Display.NativeConditionKind(data, condition.check)
@@ -456,7 +490,7 @@ function Display.StyleNativeConditionIndicators(native, data)
         local textures = native.conditionIndicators[index]
         if not textures then
           textures = {}
-          for i = 1, 4 do textures[i] = button:CreateTexture(nil, "OVERLAY", nil, 7) end
+          for i = 1, 4 do textures[i] = native.conditionOverlay:CreateTexture(nil, "OVERLAY", nil, 7) end
           native.conditionIndicators[index] = textures
         end
         local style = settings.faAuraHighlightStyle or "border"
@@ -464,6 +498,8 @@ function Display.StyleNativeConditionIndicators(native, data)
         local r,g,b,alpha = color:GetRGBA()
         local size = tonumber(settings.faAuraHighlightSize) or 2
         size = size == size and math.max(1, math.min(64, size)) or 2
+        -- Render old exports safely without overwriting their configured size.
+        if style == "border" then size = math.min(size, Display.HighlightBorderLimit(data)) end
         local asset = "Interface\\Buttons\\WHITE8X8"
         if style == "glow" then asset = "Interface\\Buttons\\UI-ActionButton-Border"
         elseif style == "texture" and type(settings.faAuraHighlightTexture) == "string" and settings.faAuraHighlightTexture ~= "" then
@@ -488,11 +524,14 @@ function Display.StyleNativeConditionIndicators(native, data)
                 texture:SetPoint("BOTTOM" .. point, button, "BOTTOM" .. point); texture:SetWidth(size)
               end
             else
-              local padding = style == "glow" and (size + 8) or 0
+              local padding = style == "glow" and (size + 8) or style == "texture" and size or 0
               texture:SetPoint("TOPLEFT", button, "TOPLEFT", -padding, padding)
               texture:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", padding, -padding)
             end
-            if kind == "faAuraPandemic" and button.AddPandemicRegion then
+            if native.preview then
+              -- Only ordinary preview textures use a public sample predicate.
+              native.conditionPreview[#native.conditionPreview + 1] = {texture = texture, kind = kind, value = check.value}
+            elseif kind == "faAuraPandemic" and button.AddPandemicRegion then
               button:AddPandemicRegion(texture)
             elseif button.AddDispelTypeTexture then
               local options = {showWhenHelpful = true, showWhenHarmful = true, showWithoutDispelType = true,
@@ -504,17 +543,35 @@ function Display.StyleNativeConditionIndicators(native, data)
                 options.stealableFilter = Enum.CustomAuraButtonDispelTypeStealableFilter[kind == "faAuraStealable" and "Stealable" or "NotStealable"]
               end
               for _, key in ipairs(dispelKeys) do
-                if kind ~= "faAuraDispel" or check.value == key then
+                -- Blizzard represents Enrage as an empty dispel name.
+                local dispelKey = check.value == "Enrage" and "" or check.value
+                if kind ~= "faAuraDispel" or dispelKey == key then
                   options.customDispelAssetMap[key] = {asset = asset}
                   options.customDispelColorMap[key] = CreateColor(r,g,b,1)
                 end
               end
-              local dispelIndex = button:AddDispelTypeTexture(texture, options)
-              native.conditionDispelIndices[#native.conditionDispelIndices + 1] = dispelIndex
+              button:AddDispelTypeTexture(texture, options)
+              native.conditionDispelTextures[#native.conditionDispelTextures + 1] = texture
             end
           end
         end
       end
     end
+  end
+  if native.preview then Display.UpdateConditionPreview(native, data, 6) end
+end
+
+-- A six-second Magic sample follows the configured aura type. The final 30%
+-- illustrates pandemic styling; these sample values never come from live auras.
+function Display.UpdateConditionPreview(native, data, remaining)
+  local trigger = Display.GetTrigger(data)
+  local helpful = not trigger or trigger.debuffType ~= "HARMFUL"
+  for _, entry in ipairs(native.conditionPreview or {}) do
+    local show = entry.kind == "faAuraPresent"
+      or entry.kind == "faAuraType" and entry.value == (helpful and "HELPFUL" or "HARMFUL")
+      or entry.kind == "faAuraDispel" and entry.value == "Magic"
+      or entry.kind == "faAuraNotStealable" and helpful
+      or entry.kind == "faAuraPandemic" and remaining <= 1.8 and remaining > 0
+    entry.texture:SetShown(show == true)
   end
 end

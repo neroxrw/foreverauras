@@ -384,8 +384,8 @@ ForeverAuras.normalWidth = 1.3
 ForeverAuras.halfWidth = ForeverAuras.normalWidth / 2
 ForeverAuras.doubleWidth = ForeverAuras.normalWidth * 2
 local versionStringFromToc = C_AddOns.GetAddOnMetadata("ForeverAuras", "Version")
-local versionString = "0.6.12-BETA"
--- Release date for conditional access checks on CDM target-debuff widgets.
+local versionString = "0.6.21-BETA"
+-- Release date for reverting wand workarounds while retaining independent fixes.
 local buildTime = "2026-09-27"
 
 -- Prerelease labels are case-insensitive; packages use the requested BETA spelling.

@@ -116,8 +116,9 @@ function OptionsPrivate.PrepareSecretDisplayOptions(data, groups)
   groups.secretAura = OptionsPrivate.GetSecretAuraSettings(data)
   groups.progressOptions = nil
   local unsupported = {
-    useTooltip = true, toolTipArea = true, useCooldownModRate = true, iconInset = true, keepAspectRatio = true,
-    texXOffset = true, texYOffset = true, useMasque = true, smoothProgress = true, enableGradient = true, gradientOrientation = true, barColor2 = true,
+    -- Native icons now implement the standard aspect ratio and texture offsets.
+    useTooltip = true, toolTipArea = true, useCooldownModRate = true, iconInset = true,
+    useMasque = true, smoothProgress = true, enableGradient = true, gradientOrientation = true, barColor2 = true,
     spark = true, sparkTexture = true, sparkChooseTexture = true, sparkDesaturate = true, sparkColor = true, sparkBlendMode = true,
     sparkWidth = true, sparkHeight = true, sparkOffsetX = true, sparkOffsetY = true, sparkRotationMode = true, sparkRotation = true,
     sparkMirror = true, sparkHidden = true, customTextUpdate = true, text_customTextUpdate = true, text_customTextUpdateThrottle = true,

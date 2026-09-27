@@ -57,6 +57,8 @@ local function CreateSample(region)
       for _, entry in ipairs(self.bindings.DurationCooldown or {}) do entry.widget:SetCooldown(now, 6) end
     end
     local remaining = math.max(0, self.expires - now)
+    -- Highlights follow the same six-second sample cycle as the countdown.
+    if native.conditionData then Display.UpdateConditionPreview(native, native.conditionData, remaining) end
     for _, entry in ipairs(self.bindings.DurationText or {}) do
       entry.widget:SetText(remaining < 3 and string.format("%.1f", remaining) or tostring(math.ceil(remaining)))
     end

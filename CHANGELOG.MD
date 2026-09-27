@@ -1,6 +1,11 @@
 # Changelog
 
 ## Versions
+## 0.6.21
+- Performance Fixes
+- Conditioning Aura Highlight fixes for Blizzard Aura
+- Aspect Ratio / Zoom fixes for Blizzard Aura
+
 ## 0.6.12
 - Fix GCD text issues once and for all, including in combat
 - Fix Spell Cooldown "On Cooldown" conditioning

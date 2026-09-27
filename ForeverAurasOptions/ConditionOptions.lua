@@ -253,6 +253,8 @@ local function addControlsForChange(args, order, data, conditionVariable, totalA
   local thenText = (j == 1) and L["Then "] or L["And "];
   local property = conditions[i].changes[j].property;
   local propertyData = property and allProperties.propertyMap[property] or nil
+  -- Highlight sizes have style-specific meaning; leave other controls unchanged.
+  propertyData = OptionsPrivate.Private.BlizzardAuraDisplay.HighlightPropertyOptions(data, conditions[i], property, propertyData)
   local propertyType = propertyData and propertyData.type or nil
   local display = isSubset(data, conditions[i].changes[j], totalAuraCount) and allProperties.displayWithCopy or allProperties.display;
   local valuesForProperty = filterUsedProperties(allProperties.indexToProperty, display, usedProperties, conditions[i].changes[j].property);
@@ -761,6 +763,10 @@ local function addControlsForChange(args, order, data, conditionVariable, totalA
     if (propertyType == "number") then
       args["condition" .. i .. "value" .. j].name = blueIfNoValue(data, conditions[i].changes[j], "value", L["Differences"])
       local properties = propertyData;
+      if property == "faAuraHighlightSize" and properties then
+        args["condition" .. i .. "value" .. j].name = properties.display
+        args["condition" .. i .. "value" .. j].desc = properties.description
+      end
       if (properties and (properties.min or properties.softMin)) and (properties.max or properties.softMax) then
         args["condition" .. i .. "value" .. j].type = "range";
         args["condition" .. i .. "value" .. j].control = "ForeverAurasSpinBox"

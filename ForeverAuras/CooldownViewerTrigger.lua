@@ -78,6 +78,44 @@ function Private.CDMSpellQueries(trigger)
 end
 
 local resolved = {}
+
+-- Resolve all buff names in one catalog pass. Login can evaluate many names in
+-- several auras; avoid repeating the full entry/rank search for each name.
+-- This uses only CDM-provided IDs, with the same lifetime as the existing query
+-- cache. A catalog refresh drops the index, including spell/rank/known lookups.
+local function BuffNameIndex(entries)
+  if resolved.buffNames then return resolved.buffNames end
+  local names, spells = {}, {}
+  local frames = Private.CDMFrames()
+  for entryID, entry in pairs(entries) do
+    if Private.CDMIsBuff(entry.category) then
+      local info = C_CooldownViewer.GetCooldownViewerCooldownInfo(entryID)
+      if info then
+        local displayed = entry.displayed == true
+        local ids = Private.CDMAuraSpellIDs(info)
+        local frame = frames[entryID]
+        local frameSpell = frame and frame.GetSpellID and frame:GetSpellID()
+        if IsReadable(frameSpell) and type(frameSpell) == "number" then ids[#ids + 1] = frameSpell end
+        for _, spellID in ipairs(ids) do
+          local spell = spells[spellID]
+          if spell == nil then
+            local info = C_Spell.GetSpellInfo(spellID)
+            spell = info and {name = info.name:lower(), id = spellID} or false
+            spells[spellID] = spell
+          end
+          if spell then
+            local candidates = names[spell.name]
+            if not candidates then candidates = {}; names[spell.name] = candidates end
+            candidates[#candidates + 1] = {spell = spell, entryID = entryID, displayed = displayed,
+              direct = IsReadable(info.spellID) and info.spellID == spellID and 1 or 0}
+          end
+        end
+      end
+    end
+  end
+  resolved.buffNames = names
+  return names
+end
 function Private.ResolveCDMSpell(trigger, event)
   if trigger.type == "cdm" then trigger.cdmSource = trigger.event == "Blizzard CDM Buff" and "buff" or "cooldown" end
   if refreshEvents[event] then Private.CDMResetIdentities() end
@@ -123,25 +161,21 @@ function Private.ResolveCDMSpell(trigger, event)
   local name = (spell and spell.name or query):lower()
   local exact = trigger.cdmExact == true
   if event ~= "OPTIONS" and trigger.event == "Blizzard CDM Buff" and not exact then
-    local frames = Private.CDMFrames()
     local bestEntry, bestSpell, bestRank, bestDirect
-    for entryID, entry in pairs(entries) do
-      local info = C_CooldownViewer.GetCooldownViewerCooldownInfo(entryID)
-      if info and Private.CDMIsBuff(entry.category) then
-        local displayed = Private.CDMEntryMatches(trigger, entry, info, event == "OPTIONS")
-        local ids = Private.CDMAuraSpellIDs(info)
-        local frame = frames[entryID]
-        local frameSpell = frame and frame.GetSpellID and frame:GetSpellID()
-        if IsReadable(frameSpell) and type(frameSpell) == "number" then ids[#ids + 1] = frameSpell end
-        for _, spellID in ipairs(ids) do
-          local candidate = C_Spell.GetSpellInfo(spellID)
-          if candidate and candidate.name:lower() == name and ForeverAuras.IsSpellKnownIncludingPet(spellID) then
-            local rank = SpellRank(spellID) or 0
-            local direct = IsReadable(info.spellID) and info.spellID == spellID and 1 or 0
-            if not bestSpell or rank > bestRank or (rank == bestRank and displayed and (not bestEntry or direct > bestDirect or (direct == bestDirect and entryID < bestEntry))) then
-              bestEntry, bestSpell, bestRank, bestDirect = displayed and entryID or nil, spellID, rank, direct
-            end
-          end
+    for _, candidate in ipairs(BuffNameIndex(entries)[name] or {}) do
+      local spell = candidate.spell
+      -- Rank/known checks are lazy: unrelated names never need them. Duplicate
+      -- linked IDs share this record, but each entry keeps its own tie-breakers.
+      if spell.known == nil then
+        spell.known = ForeverAuras.IsSpellKnownIncludingPet(spell.id) == true
+        if spell.known then spell.rank = SpellRank(spell.id) or 0 end
+      end
+      if spell.known then
+        local rank, direct, entryID = spell.rank, candidate.direct, candidate.entryID
+        local displayed = candidate.displayed
+        if not bestSpell or rank > bestRank or (rank == bestRank and displayed
+            and (not bestEntry or direct > bestDirect or (direct == bestDirect and entryID < bestEntry))) then
+          bestEntry, bestSpell, bestRank, bestDirect = displayed and entryID or nil, spell.id, rank, direct
         end
       end
     end
