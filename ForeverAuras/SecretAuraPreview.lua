@@ -20,7 +20,12 @@ local function CreateSample(region)
   function button:RemoveAuraShownAnimation(animation) animation:Stop() end
   -- Preview the same Blizzard assets as the native bindings, using a public sample type.
   function button:AddDispelTypeTexture(texture, options)
-    if options.style == Enum.CustomAuraButtonDispelTypeTextureStyle.Border then
+    if options.style == Enum.CustomAuraButtonDispelTypeTextureStyle.PreserveAsset then
+      -- Match live solid-edge tinting without replacing the rectangular artwork.
+      AuraUtil.SetAuraBorderColor(texture, "Magic")
+      texture:Show()
+      return
+    elseif options.style == Enum.CustomAuraButtonDispelTypeTextureStyle.Border then
       AuraUtil.SetAuraBorderAtlas(texture, "Magic", false)
     else
       AuraUtil.SetAuraDispelTypeIcon(texture, "Magic")

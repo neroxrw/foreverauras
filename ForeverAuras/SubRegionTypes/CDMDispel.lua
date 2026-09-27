@@ -7,9 +7,7 @@ local function defaults()
 end
 local function create()
   local region = CreateFrame("Frame", nil, UIParent)
-  -- Border and icon have separate geometry, matching native aura display bindings.
-  region.dispelBorder = region:CreateTexture(nil, "OVERLAY", nil, 0)
-  region.dispelBorder:Hide()
+  -- A separate border sub-element owns border geometry.
   region.preview = region:CreateTexture(nil, "OVERLAY", nil, 1)
   region.preview:SetAllPoints(region)
   region.preview:Hide()
@@ -29,11 +27,6 @@ local function modify(parent, region, parentData, data)
     parent:AnchorSubRegion(region, data.anchor_mode or "point", data.anchor_mode == "area" and data.anchor_area or data.anchor_point,
       data.anchor_mode == "point" and data.self_point or nil, data.xOffset or 0, data.yOffset or 0)
   end
-  -- The border encloses the parent aura even when the icon is offset or resized.
-  region.dispelBorder:ClearAllPoints()
-  local extraX = data.anchor_mode == "area" and (data.xOffset or 0) / 2 or 0
-  local extraY = data.anchor_mode == "area" and (data.yOffset or 0) / 2 or 0
-  parent:AnchorSubRegion(region.dispelBorder, "area", data.anchor_area or "ALL", nil, extraX, extraY)
   region:Anchor()
   region.Update = function() Private.CDMAuraProgress.UpdateIndicator(parent, region, data) end
   region.UpdateProgress = region.Update
@@ -51,6 +44,6 @@ local function release(region)
   region:Hide()
 end
 local function supports(kind) return kind == "icon" or kind == "aurabar" or kind == "progresstexture" end
-ForeverAuras.RegisterSubRegionType("subcdmdispel", "Dispel Type Indicator", supports, create, modify,
+ForeverAuras.RegisterSubRegionType("subcdmdispel", "Dispel Type Icon", supports, create, modify,
   function(region) region:Show() end, release, defaults, nil,
   {dispelVisible = {display = "Visibility", setter = "SetVisible", type = "bool", defaultProperty = true}})

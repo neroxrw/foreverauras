@@ -1,6 +1,9 @@
 # Changelog
 
 ## Versions
+## 0.7.0
+- Dispel Type Indicator sub-element is now "Dispel Type Icon" and "Dispel Type Border", and the visuals on the border have been corrected.
+
 ## 0.6.21
 - Performance Fixes
 - Conditioning Aura Highlight fixes for Blizzard Aura

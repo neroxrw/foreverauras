@@ -3158,6 +3158,8 @@ function pAdd(data, simpleChange)
     })
     data.cdmDispelIndicator = nil
   end
+  -- Split legacy combined dispel elements before validation, preserving condition indices.
+  Private.DispelTypeDisplay.Migrate(data)
   for _, entry in ipairs(data.triggers or {}) do
     local trigger = entry.trigger
     if trigger and trigger.type == "spell" and trigger.event == "Blizzard Cooldown Manager" then

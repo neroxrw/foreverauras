@@ -2,7 +2,7 @@
 ## Interface: 16001
 ## Title: ForeverAuras
 ## Author: m33shoq, WeakAuras contributors
-## Version: 0.6.21-BETA
+## Version: 0.7.0-BETA
 ## IconTexture: Interface\AddOns\ForeverAuras\Media\Textures\foreverauras_logo.tga
 ## X-Flavor: Forever
 ## Notes: A powerful, comprehensive utility for displaying graphics and information based on buffs, debuffs, and other triggers.
@@ -67,6 +67,7 @@ LibSpecializationWrapper.lua
 SecretAuraRanks.lua
 BlizzardAuraDisplay.lua
 SecretAuraPreview.lua
+DispelTypeDisplay.lua
 CDMAuraProgress.lua
 SecretAuraAppearance.lua
 SecretAuraConditions.lua
@@ -115,6 +116,7 @@ SubRegionTypes\Model.lua
 SubRegionTypes\StopMotion.lua
 SubRegionTypes\Texture.lua
 SubRegionTypes\CDMDispel.lua
+SubRegionTypes\CDMDispelBorder.lua
 SubRegionTypes\CircularProgressTexture.lua
 SubRegionTypes\LinearProgressTexture.lua
 

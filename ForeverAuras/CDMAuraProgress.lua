@@ -242,6 +242,7 @@ end
 function Display.ReleaseIndicator(sub, forget)
   if sub.preview then sub.preview:Hide() end
   if sub.dispelBorder then sub.dispelBorder:Hide() end
+  if sub.dispelEdges then Private.DispelTypeDisplay.Hide(sub.dispelEdges) end
 end
 function Display.UpdateIndicator(parent, sub, config)
   local state = SourceState(parent)
@@ -253,16 +254,14 @@ function Display.UpdateIndicator(parent, sub, config)
   if (issecretvalue and issecretvalue(dispel)) or type(dispel) ~= "string" or dispel == "" then
     Display.ReleaseIndicator(sub); return
   end
-  -- Use Blizzard's coloured border atlas and type-specific symbol independently.
-  local style = config.dispelStyle or "Icon"
-  sub.preview:Hide()
-  sub.dispelBorder:Hide()
-  if style == "Border" or style == "BorderWithIcon" then
-    AuraUtil.SetAuraBorderAtlas(sub.dispelBorder, dispel, false)
-    sub.dispelBorder:SetVertexColor(1, 1, 1, 1)
-    sub.dispelBorder:Show()
-  end
-  if style ~= "Border" then
+  Display.ReleaseIndicator(sub)
+  if sub.dispelEdges then
+    -- Public CDM type data uses the same Blizzard colours as native aura bindings.
+    for _, edge in ipairs(sub.dispelEdges) do
+      AuraUtil.SetAuraBorderColor(edge, dispel)
+      edge:Show()
+    end
+  elseif sub.preview then
     AuraUtil.SetAuraDispelTypeIcon(sub.preview, dispel)
     sub.preview:SetVertexColor(1, 1, 1, 1)
     sub.preview:Show()

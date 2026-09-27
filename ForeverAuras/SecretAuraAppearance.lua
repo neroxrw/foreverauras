@@ -25,7 +25,7 @@ function Display.StyleIconTexCoords(native, data, zoom)
     0.5 - ySpan / 2 + y, 0.5 + ySpan / 2 + y)
 end
 
-Display.supportedElements = {subbackground = true, subforeground = true, subtext = true, subborder = true, subglow = true, subtexture = true, subcdmdispel = true}
+Display.supportedElements = {subbackground = true, subforeground = true, subtext = true, subborder = true, subglow = true, subtexture = true, subcdmdispel = true, subcdmdispelborder = true}
 
 function Display.IsDetachedElement(data, element)
   return Display.Enabled(data) and element and element.secretAuraDetached == true
@@ -38,7 +38,7 @@ function Display.IsDetachedProperty(data, property)
 end
 
 function Display.CanAddElement(data, kind)
-  if kind == "subcdmdispel" then return Display.Enabled(data) or Private.CDMAuraProgress.IsConfigured(data) end
+  if kind == "subcdmdispel" or kind == "subcdmdispelborder" then return Display.Enabled(data) or Private.CDMAuraProgress.IsConfigured(data) end
   if not Display.Enabled(data) then return true end
   if not Display.supportedElements[kind] then return false end
   if kind == "subborder" then
@@ -357,6 +357,7 @@ function Display.StyleAppearance(native, data, ElementFrame, StyleText, StyleGlo
       if entry.border then entry.border:Hide() end
       if entry.texture then entry.texture:Hide() end
       if entry.dispelBorder then entry.dispelBorder:Hide() end
+      if entry.dispelEdges then Private.DispelTypeDisplay.Hide(entry.dispelEdges) end
       if element.type == "subbackground" then
         base:SetFrameLevel(frame:GetFrameLevel())
         if native.bar then native.bar:SetFrameLevel(base:GetFrameLevel() + 1) end
@@ -381,23 +382,28 @@ function Display.StyleAppearance(native, data, ElementFrame, StyleText, StyleGlo
         StyleGlow(entry, {width = width, height = height, blizzardAuraDisplay = {glow = element.glow, glowType = element.glowType == "buttonOverlay" and "pulse" or "proc",
           useGlowColor = element.useGlowColor, glowColor = element.glowColor, glowScale = element.glowScale, glowDuration = element.glowDuration,
           glowX = element.glowXOffset, glowY = element.glowYOffset}})
-      elseif element.type == "subcdmdispel" and element.dispelVisible ~= false then
-        -- Separate native bindings keep the coloured border on the aura while the
-        -- dispel symbol follows its own point/area settings. Blizzard owns live type selection.
-        local style = element.dispelStyle or "Icon"
-        if style == "Border" or style == "BorderWithIcon" then
-          entry.dispelBorder = entry.dispelBorder or frame:CreateTexture(nil, "OVERLAY", nil, 0)
-          local border = entry.dispelBorder
-          border:ClearAllPoints()
+      elseif element.type == "subcdmdispelborder" and element.dispelVisible ~= false then
+        -- Geometry follows a normal frame; Blizzard owns the four textures' type tint.
+        entry.dispelAnchor = entry.dispelAnchor or CreateFrame("Frame", nil, frame)
+        local anchor = entry.dispelAnchor
+        anchor:ClearAllPoints(); anchor:Show()
+        if element.anchor_mode == "point" then
+          local point, target = element.anchor_point or "CENTER", button
+          if point:sub(1, 6) == "INNER_" then target = native.inner; point = point:sub(7)
+          elseif point:sub(1, 6) == "OUTER_" then target = native.outer; point = point:sub(7) end
+          anchor:SetSize(element.width or 32, element.height or 32)
+          anchor:SetPoint(element.self_point or "CENTER", target, point, element.xOffset or 0, element.yOffset or 0)
+        else
           local target = Area(native, data, element.anchor_area)
-          local extraX = element.anchor_mode == "area" and (element.xOffset or 0) / 2 or 0
-          local extraY = element.anchor_mode == "area" and (element.yOffset or 0) / 2 or 0
-          border:SetPoint("TOPLEFT", target, "TOPLEFT", -extraX, extraY)
-          border:SetPoint("BOTTOMRIGHT", target, "BOTTOMRIGHT", extraX, -extraY)
-          button:AddDispelTypeTexture(border, {showWhenHelpful = true, showWhenHarmful = true,
-            style = Enum.CustomAuraButtonDispelTypeTextureStyle.Border})
+          anchor:SetPoint("TOPLEFT", target, "TOPLEFT", -(element.xOffset or 0) / 2, (element.yOffset or 0) / 2)
+          anchor:SetPoint("BOTTOMRIGHT", target, "BOTTOMRIGHT", (element.xOffset or 0) / 2, -(element.yOffset or 0) / 2)
         end
-        if style ~= "Border" then
+        entry.dispelEdges = entry.dispelEdges or Private.DispelTypeDisplay.CreateEdges(frame)
+        Private.DispelTypeDisplay.Layout(entry.dispelEdges, anchor, element)
+        Private.DispelTypeDisplay.Bind(button, entry.dispelEdges)
+      elseif element.type == "subcdmdispel" and element.dispelVisible ~= false then
+        -- The dispel icon has its own point/area geometry and native artwork.
+        do
           entry.texture = entry.texture or frame:CreateTexture(nil, "OVERLAY", nil, 1)
           local texture = entry.texture
           texture:ClearAllPoints()
