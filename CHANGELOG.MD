@@ -1,6 +1,25 @@
 # Changelog
 
 ## Versions
+## 0.13.4
+- Combined Blizzard CDM Essential and Utility into one **Cooldown** trigger. Spells are detected in either category, and existing triggers convert automatically while preserving their settings.
+- Fixed delayed GCD refreshes on **Spell → Cooldown/Charges/Count**.
+- Fixed **Spell → Global Cooldown** trigger
+- Added optional **class-pack CDM setup** function: ForeverAuras.SetupClassPackCDM
+- When called, it enables CDM, populates Tracked Buffs, sets viewer visibility to Always, and enables ForeverAuras’ **Hide Blizzard’s CDM** option.
+- Extended setup to restore hidden spell cooldowns to Essential or Utility while preserving already-displayed spell placements and excluding item entries from this step.
+- Setup waits until out of combat, preserves unrelated settings, backs up the original configuration, and prompts for a reload when required.
+- Added **Item → Ammo** trigger type.
+- Supports count conditions and optional comma-separated item IDs. Leaving the filter blank counts all carried ammo; bank storage is excluded.
+- Added restriction warnings for supported trigger checks and Legacy Aura spell IDs.
+- Standardised the warning to one red line: **“Secret detected. Some features may be restricted in combat.”**
+- Removed the old Health explanation and extra warning headings.
+- Added progress texture support for restricted health, power and Blizzard Aura timers.
+- Simplified spell ID tooltips and missing-rank messages.
+- Fixed stale CDM state keeping removed or expired debuffs visible.
+- Buff observers now attach when triggers are configured, before their first activation.
+- Fixed valid spell cooldowns being skipped in “Not Displayed” because they contained buff-slot metadata.
+
 ## 0.8.6
 - Fixed wand cooldown text and unwanted icon desaturation for Spell and CDM cooldown triggers. Enabled automatically.
 - Improved temporary weapon-enchant and imbue detection, icons, equipment updates and expiry handling.

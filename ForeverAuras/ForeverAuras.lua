@@ -3166,6 +3166,7 @@ function pAdd(data, simpleChange)
       trigger.type = "cdm"
       if trigger.cdmSource == "buff" then trigger.event = "Blizzard CDM Buff" end
     end
+    Private.MigrateCDMCooldownTrigger(trigger)
   end
   local id = data.id;
   if not(id) then

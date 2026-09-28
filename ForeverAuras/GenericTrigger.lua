@@ -3346,7 +3346,8 @@ do
       Private.CheckItemCooldowns();
       Private.CheckItemSlotCooldowns();
     end
-    if gcdEvent and not ForeverAuras.IsPaused() then Private.ScanEvents(gcdEvent) end
+    -- Refresh watched GCD timers even when the shared GCD clock emits no event.
+    if not ForeverAuras.IsPaused() then Private.ScanEvents(gcdEvent or "GCD_UPDATE") end
   end
 
   ---@private

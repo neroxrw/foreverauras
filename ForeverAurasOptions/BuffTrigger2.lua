@@ -7,27 +7,6 @@ local OptionsPrivate = select(2, ...)
 
 local L = ForeverAuras.L
 
-local function HasSecretSpellID(trigger)
-  if trigger.type ~= "aura2" or not trigger.useExactSpellId or not C_Secrets then return false end
-  for _, value in ipairs(trigger.auraspellids or {}) do
-    local spellID = tonumber(value)
-    if spellID and spellID > 0 and spellID < 2147483647 and spellID == math.floor(spellID) then
-      if C_Secrets.GetSpellAuraSecrecy and Enum and Enum.SecrecyLevel then
-        local ok, secrecy = pcall(C_Secrets.GetSpellAuraSecrecy, spellID)
-        if ok and not issecretvalue(secrecy) and
-          (secrecy == Enum.SecrecyLevel.AlwaysSecret or secrecy == Enum.SecrecyLevel.ContextuallySecret) then
-          return true
-        end
-      end
-      if C_Secrets.ShouldSpellAuraBeSecret then
-        local ok, secret = pcall(C_Secrets.ShouldSpellAuraBeSecret, spellID)
-        if ok and not issecretvalue(secret) and secret == true then return true end
-      end
-    end
-  end
-  return false
-end
-
 local function getAuraMatchesLabel(name)
   local ids = ForeverAuras.spellCache.GetSpellsMatching(name)
   if ids then
@@ -474,11 +453,11 @@ local function GetBuffTriggerOptions(data, triggernum)
     },
     secretSpellWarning = {
       type = "description",
-      name = "|cffff4444Secret Spell ID detected|r",
+      name = OptionsPrivate.TriggerSecretWarnings.text,
       fontSize = "small",
       width = "full",
-      order = 21.9,
-      hidden = function() return not HasSecretSpellID(trigger) end,
+      order = 1.4,
+      hidden = function() return not OptionsPrivate.TriggerSecretWarnings.HasSecretAuraSpell(trigger) end,
     },
     useExactSpellId = {
       type = "toggle",

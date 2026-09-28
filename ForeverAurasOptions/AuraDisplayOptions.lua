@@ -124,6 +124,7 @@ function OptionsPrivate.PrepareSecretDisplayOptions(data, groups)
     sparkMirror = true, sparkHidden = true, customTextUpdate = true, text_customTextUpdate = true, text_customTextUpdateThrottle = true,
     text_smoothScaling = true, smoothScaling = true, rotateText = true, glowStartAnim = true, glowLines = true, glowFrequency = true,
     glowLength = true, glowThickness = true, glowBorder = true,
+    slanted = true, slant = true, slantFirst = true, slantMode = true,
   }
   local timeFields = {p_format = true, p_time_format = true, p_time_precision = true, p_time_dynamic_threshold = true, p_time_legacy_floor = true}
   for groupKey, group in pairs(groups) do

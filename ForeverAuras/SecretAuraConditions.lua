@@ -7,6 +7,7 @@ local rootProperties = {
   icon = {color = 'color', desaturate = 'bool', zoom = 'number', inverse = 'bool', cooldownSwipe = 'bool', cooldownEdge = 'bool', cooldownTextDisabled = 'bool'},
   aurabar = {barColor = 'color', backgroundColor = 'color', icon_color = 'color', desaturate = 'bool'},
   text = {color = 'color', fontSize = 'number', displayText = 'string'},
+  progresstexture = {foregroundColor = 'color', backgroundColor = 'color', desaturateForeground = 'bool'},
 }
 local elementProperties = {
   subtext = {text_color = 'color', text_visible = 'bool', text_text = 'string', text_fontSize = 'number', text_anchorXOffset = 'number', text_anchorYOffset = 'number', text_alpha = 'number'},
@@ -408,6 +409,9 @@ local function ApplyProperty(button, data, property, value, overrides)
     if data.regionType == 'text' then
       if button.mainText then button.mainText:SetTextColor(unpack(value)) end
     else button.icon:SetVertexColor(unpack(value)) end
+  elseif property == 'foregroundColor' and button.progressTexture then button.progressTexture.texture:SetVertexColor(unpack(value))
+  elseif property == 'desaturateForeground' and button.progressTexture then button.progressTexture.texture:SetDesaturated(value)
+  elseif property == 'backgroundColor' and button.progressBackground then button.progressBackground:SetColor(unpack(value))
   elseif property == 'barColor' and button.bar then button.bar:SetStatusBarColor(unpack(value))
   elseif property == 'backgroundColor' and button.barBackground then button.barBackground:SetColorTexture(unpack(value))
   elseif property == 'desaturate' then button.icon:SetDesaturated(value)

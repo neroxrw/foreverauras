@@ -460,7 +460,7 @@ local function GetGenericTriggerOptions(data, triggernum)
       order = 7.1,
       width = ForeverAuras.normalWidth,
       values = subtypes,
-      sorting = triggerType == "cdm" and {"Blizzard Cooldown Manager", "Blizzard CDM Utility", "Blizzard CDM Buff", "Blizzard CDM Item"}
+      sorting = triggerType == "cdm" and {"Blizzard Cooldown Manager", "Blizzard CDM Buff", "Blizzard CDM Item"}
         or OptionsPrivate.Private.SortOrderForValues(subtypes),
       get = function(info)
         return trigger.event
@@ -540,6 +540,15 @@ local function GetGenericTriggerOptions(data, triggernum)
     end
   end
 
+
+  options.secretValueWarning = {
+    type = "description",
+    order = 9.5,
+    width = "full",
+    fontSize = "small",
+    name = function() return OptionsPrivate.TriggerSecretWarnings.GetText(data, triggernum) end,
+    hidden = function() return OptionsPrivate.TriggerSecretWarnings.GetScope(data, triggernum) == nil end,
+  }
 
   return {
     ["trigger." .. triggernum .. "." .. (trigger.event or "unknown")] = options

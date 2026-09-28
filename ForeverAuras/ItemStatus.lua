@@ -108,3 +108,101 @@ function Private.ExecEnv.GetTrackingState(selected)
     if info and TrackingKey(info) == selected then return info.active, info.name, info.texture end
   end
 end
+
+-- Share the ammo count across triggers; invalidate it before notifying listeners.
+local ammoSnapshot, ammoFrame
+local requestedAmmoInfo = {}
+
+local function ParseAmmoItemIDs(input)
+  if type(input) ~= "string" then return end
+  local selected = {}
+  if input:match("^%s*$") then return selected end
+  for entry in (input .. ","):gmatch("(.-),") do
+    local digits = entry:match("^%s*(%d+)%s*$")
+    local id = digits and tonumber(digits)
+    if not id or id <= 0 or id >= 2147483647 then return end
+    selected[id] = true
+  end
+  return selected
+end
+
+function Private.ExecEnv.ValidateAmmoItemIDs(input)
+  if not ParseAmmoItemIDs(input) then return "Enter positive item IDs separated by commas, or leave blank." end
+  return true
+end
+
+function Private.ExecEnv.WatchAmmo()
+  if ammoFrame then return end
+  ammoFrame = CreateFrame("Frame")
+  ammoFrame:RegisterEvent("BAG_UPDATE_DELAYED")
+  ammoFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+  ammoFrame:RegisterEvent("GET_ITEM_INFO_RECEIVED")
+  ammoFrame:SetScript("OnEvent", function(_, event, itemID)
+    if event == "GET_ITEM_INFO_RECEIVED" and not requestedAmmoInfo[itemID] then return end
+    if event ~= "GET_ITEM_INFO_RECEIVED" then wipe(requestedAmmoInfo) end
+    ammoSnapshot = nil
+    Private.ScanEvents("FA_AMMO_UPDATE")
+  end)
+end
+
+local function ReadCarriedAmmo()
+  local snapshot = {counts = {}}
+  for bag = 0, NUM_TOTAL_EQUIPPED_BAG_SLOTS or NUM_BAG_SLOTS do
+    local slots = C_Container.GetContainerNumSlots(bag)
+    if issecretvalue(slots) or type(slots) ~= "number" then return end
+    for slot = 1, slots do
+      local itemID = C_Container.GetContainerItemID(bag, slot)
+      if issecretvalue(itemID) then return end
+      if itemID then
+        local _, _, _, _, _, classID = C_Item.GetItemInfoInstant(itemID)
+        if issecretvalue(classID) then return end
+        -- Do not report a partial count while item metadata is unavailable.
+        if classID == nil then
+          if not requestedAmmoInfo[itemID] then
+            requestedAmmoInfo[itemID] = true
+            C_Item.RequestLoadItemDataByID(itemID)
+          end
+          return
+        end
+        if classID == Enum.ItemClass.Projectile then
+          local info = C_Container.GetContainerItemInfo(bag, slot)
+          if issecretvalue(info) or not info then return end
+          if issecretvalue(info.stackCount) or type(info.stackCount) ~= "number" then return end
+          snapshot.counts[itemID] = (snapshot.counts[itemID] or 0) + info.stackCount
+        end
+      end
+    end
+  end
+  return snapshot
+end
+
+function Private.ExecEnv.GetAmmoCount(input)
+  local selected = ParseAmmoItemIDs(input)
+  if not selected then return end
+  if not ammoSnapshot then ammoSnapshot = ReadCarriedAmmo() end
+  if not ammoSnapshot then return end
+  local all = next(selected) == nil
+  local count, itemID, kinds = 0, nil, 0
+  for id, quantity in pairs(ammoSnapshot.counts) do
+    if all or selected[id] then
+      count = count + quantity
+      itemID = id
+      kinds = kinds + 1
+    end
+  end
+  -- A single explicit ID keeps its name/icon at zero; multiple types use Ammo.
+  if not all then
+    itemID = next(selected)
+    if next(selected, itemID) then itemID = nil end
+  elseif kinds ~= 1 then
+    itemID = nil
+  end
+  local name, icon = "Ammo", 132382
+  if itemID then
+    local itemName = C_Item.GetItemNameByID(itemID)
+    local itemIcon = C_Item.GetItemIconByID(itemID)
+    if not issecretvalue(itemName) and itemName then name = itemName end
+    if not issecretvalue(itemIcon) and itemIcon then icon = itemIcon end
+  end
+  return count, name, icon
+end

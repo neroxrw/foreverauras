@@ -3068,14 +3068,6 @@ Private.event_prototypes = {
     statesParameter = "unit",
     args = {
       {
-        name = "note",
-        type = "description",
-        display = "",
-        text = function()
-          return "Displays health on progress bars and text. Health values cannot be used for trigger checks or conditions. Load settings and other triggers still control when the display is shown."
-        end,
-      },
-      {
         name = "unit", required = true, display = L["Unit"], type = "unit",
         init = "arg", values = "actual_unit_types_cast", desc = Private.actual_unit_types_cast_tooltip,
         test = "true", store = true,
@@ -5288,16 +5280,23 @@ Private.event_prototypes = {
     init = function(trigger)
       local ret = [[
         local inverse = %s;
-        local duration, expirationTime, name, icon = ForeverAuras.GetGCDInfo()
-        local info = C_Spell.GetSpellCooldown(61304)
+        local _, _, name, icon = ForeverAuras.GetGCDInfo()
+        -- Forever uses the Classic GCD reference; pass its timer directly to the renderer.
+        local info = C_Spell.GetSpellCooldown(29515)
+        local active
+        if info and not issecretvalue(info.isActive) and type(info.isActive) == "boolean" then
+          active = info.isActive
+        end
+        local duration, expirationTime = 0, math.huge
         local progressType = "timed"
-        local active = info and info.isActive or false
         state.durationObject = nil
-        if C_Secrets.ShouldSpellCooldownBeSecret(61304) then
-          state.durationObject = C_Spell.GetSpellCooldownDuration(61304)
-          state.changed = true
-          progressType = "durationObject"
-          duration, expirationTime = nil, nil
+        state.changed = true
+        if active then
+          state.durationObject = C_Spell.GetSpellCooldownDuration(29515)
+          if state.durationObject then
+            progressType = "durationObject"
+            duration, expirationTime = nil, nil
+          end
         end
       ]];
       return ret:format(trigger.use_inverse and "true" or "false");
@@ -5349,7 +5348,7 @@ Private.event_prototypes = {
       },
       {
         hidden = true,
-        test = "(inverse and not active) or (not inverse and active)"
+        test = "active ~= nil and ((inverse and not active) or (not inverse and active))"
       }
     },
     hasSpellID = true,
@@ -6217,6 +6216,93 @@ if free == nil then return false end
       {name = "icon", init = "133633", hidden = true, store = true, test = "true"},
     },
   },
+  -- Count carried projectiles independently of equipped ammo.
+  ["Ammo"] = {
+    type = "item",
+    name = "Ammo",
+    statesParameter = "one",
+    automaticrequired = true,
+    progressType = "static",
+    events = {events = {}},
+    internal_events = {"FA_AMMO_UPDATE"},
+    force_events = "FA_AMMO_UPDATE",
+    loadFunc = function() Private.ExecEnv.WatchAmmo() end,
+    init = function(trigger)
+      return ([[local count, name, icon = Private.ExecEnv.GetAmmoCount(%q)
+if count == nil then return false end
+]]):format(trigger.ammoItemIDs or "")
+    end,
+    args = {
+      {
+        name = "ammoItemIDs",
+        display = "Item IDs",
+        type = "string",
+        required = true,
+        test = "true",
+        default = "",
+        reloadOptions = true,
+        desc = "Leave blank to count all carried arrows and bullets. Enter comma-separated item IDs to count only those ammo items. Bank storage is excluded.",
+        validate = function(_, value) return Private.ExecEnv.ValidateAmmoItemIDs(value) end,
+      },
+      {
+        name = "count",
+        display = "Ammo Count",
+        type = "number",
+        init = "count",
+        store = true,
+        conditionType = "number",
+        multiEntry = {operator = "and", limit = 2}
+      },
+      {
+        name = "stacks",
+        display = L["Stacks"],
+        init = "count",
+        hidden = true,
+        store = true,
+        test = "true",
+        conditionType = "number"
+      },
+      {
+        name = "value",
+        display = L["Progress Value"],
+        init = "count",
+        hidden = true,
+        store = true,
+        test = "true",
+        conditionType = "number"
+      },
+      {
+        name = "total",
+        init = "0",
+        hidden = true,
+        store = true,
+        test = "true"
+      },
+      {
+        name = "progressType",
+        init = "'static'",
+        hidden = true,
+        store = true,
+        test = "true"
+      },
+      {
+        name = "name",
+        display = L["Name"],
+        init = "name",
+        hidden = true,
+        store = true,
+        test = "true"
+      },
+      {
+        name = "icon",
+        init = "icon",
+        hidden = true,
+        store = true,
+        test = "true"
+      },
+    },
+  },
+
   ["Item Count"] = {
     type = "item",
     events = {
@@ -10177,6 +10263,8 @@ for name, prototype in pairs(Private.event_prototypes) do
   Private.category_event_prototype[prototype.type] = Private.category_event_prototype[prototype.type] or {}
   Private.category_event_prototype[prototype.type][name] = prototype.name
 end
+-- The Utility prototype is an import alias, not a separate selectable trigger.
+Private.category_event_prototype.cdm["Blizzard CDM Utility"] = nil
 Private.category_event_prototype.addons = Private.category_event_prototype.addons or {}
 
 

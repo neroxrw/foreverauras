@@ -1,6 +1,14 @@
 if not ForeverAuras.IsLibsOK() then return end
 local _, Private = ...
 
+-- Reuse the Essential event identifier for both cooldown viewers.
+function Private.MigrateCDMCooldownTrigger(trigger)
+  if trigger and trigger.type == "cdm" and trigger.event == "Blizzard CDM Utility" then
+    trigger.event = "Blizzard Cooldown Manager"
+    trigger.cdmSource = "cooldown"
+  end
+end
+
 local catalog
 local refreshEvents = {
   PLAYER_ENTERING_WORLD = true,
@@ -248,8 +256,7 @@ function Private.CDMEntryMatches(trigger, entry, info, preview)
   if trigger.event == "Blizzard CDM Item" then return item and not Private.CDMIsBuff(entry.category) end
   if trigger.event == "Blizzard CDM Buff" then return Private.CDMIsBuff(entry.category) end
   if item then return false end
-  if trigger.event == "Blizzard CDM Utility" then return entry.category == c.Utility end
-  return entry.category == c.Essential
+  return entry.category == c.Essential or entry.category == c.Utility
 end
 
 function Private.CDMAuraSpellIDs(info)
@@ -687,7 +694,7 @@ end
 
 Private.CooldownViewerPrototype = {
   type = "cdm",
-  name = "Essential Cooldowns",
+  name = "Cooldown",
   statesParameter = "full",
   progressType = "timed",
   cooldownViewerProgress = true,
@@ -715,6 +722,8 @@ Private.CooldownViewerPrototype = {
     return {events = events, unit_events = {player = {"UNIT_AURA"}, target = {"UNIT_AURA", "UNIT_FACTION", "UNIT_FLAGS"}}}
   end,
   triggerFunction = function(trigger)
+    -- Install buff observers when configuring the trigger, before its first activation.
+    if trigger.event == "Blizzard CDM Buff" then Private.CDMFrames() end
     if trigger.event == "Blizzard CDM Buff" and (trigger.cdmUseRemaining or trigger.cdmUseStacks or trigger.cdmUseTotal or trigger.cdmUseElapsed) then
       local base = {}
       for key, value in pairs(trigger) do base[key] = value end
@@ -979,7 +988,8 @@ for key, value in pairs(Private.CooldownViewerPrototype) do
   Private.CooldownViewerUtilityPrototype[key] = value
   Private.CooldownViewerItemPrototype[key] = value
 end
-Private.CooldownViewerUtilityPrototype.name = "Utility Cooldowns"
+-- Support imports that are inspected before migration.
+Private.CooldownViewerUtilityPrototype.name = "Cooldown"
 Private.CooldownViewerItemPrototype.name = "Item"
 local spellArgs = {}
 for i, arg in ipairs(Private.CooldownViewerPrototype.args) do spellArgs[i] = arg end

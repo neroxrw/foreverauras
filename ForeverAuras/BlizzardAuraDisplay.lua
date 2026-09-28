@@ -215,7 +215,7 @@ function Display.Migrate(data)
 end
 
 function Display.Eligible(data)
-  return data and (data.regionType == "icon" or data.regionType == "aurabar" or data.regionType == "text") and Display.GetTrigger(data) ~= nil
+  return data and (data.regionType == "icon" or data.regionType == "aurabar" or data.regionType == "text" or data.regionType == "progresstexture") and Display.GetTrigger(data) ~= nil
 end
 
 function Display.Enabled(data)
@@ -280,7 +280,10 @@ end
 
 function Display.Validate(data)
   if not Display.Eligible(data) then
-    return "Select an Aura (Blizzard) trigger as the progress source of an Icon, Progress Bar or Text."
+    return "Select an Aura (Blizzard) trigger as the progress source of an Icon, Progress Bar, Progress Texture or Text."
+  end
+  if data.regionType == "progresstexture" and Private.ProgressTextureNative.IsCircular(data.orientation) and not Enum.StatusBarRenderMode then
+    return "This client does not support native circular Progress Textures."
   end
   local appearanceProblem = Display.ValidateAppearance(Display.PrepareConditionAppearance(data))
   if appearanceProblem then return appearanceProblem end
@@ -540,6 +543,23 @@ local function Suppress(region)
       if saved[frame] == nil then saved[frame] = frame:GetAlpha() end
       frame:SetAlpha(0)
     end
+  end
+  -- Progress Texture stores drawable textures inside its geometry wrappers.
+  if region.regionType == "progresstexture" then
+    local function SuppressTexture(texture)
+      if saved[texture] == nil then saved[texture] = texture:GetAlpha() end
+      texture:SetAlpha(0)
+    end
+    SuppressTexture(region.foreground.texture)
+    SuppressTexture(region.background.texture)
+    for _, spinner in ipairs({region.foregroundSpinner, region.backgroundSpinner}) do
+      for _, texture in ipairs(spinner.textures) do SuppressTexture(texture) end
+    end
+    for _, texture in ipairs(region.extraTextures) do SuppressTexture(texture.texture) end
+    for _, spinner in ipairs(region.extraSpinners) do
+      for _, texture in ipairs(spinner.textures) do SuppressTexture(texture) end
+    end
+    if region.nativeProgress then SuppressTexture(region.nativeProgress.bar) end
   end
   -- AuraBar stores its background on bar, but parents the texture to the region.
   local background = region.bar and region.bar.bg

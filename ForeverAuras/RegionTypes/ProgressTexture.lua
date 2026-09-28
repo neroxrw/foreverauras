@@ -6,6 +6,7 @@ local AddonName = ...
 local Private = select(2, ...)
 
 local L = ForeverAuras.L;
+local Native = Private.ProgressTextureNative
 
 local defaultFont = ForeverAuras.defaultFont
 local defaultFontSize = ForeverAuras.defaultFontSize
@@ -454,7 +455,7 @@ local function ApplyAdditionalProgressCircular(self, additionalProgress, min, ma
 end
 
 local function FrameTick(self)
-  if self.cdmNativeProgress then return end
+  if self.cdmNativeProgress or self.nativeProgressActive then return end
   local duration = self.duration
   local expirationTime = self.expirationTime
   local inverse = self.inverse
@@ -623,6 +624,7 @@ local funcs = {
   end,
   UpdateTime = function(self)
     if self.cdmNativeProgress then return end
+    Native.Stop(self)
     local progress = 1
     if self.duration ~= 0 then
       local remaining = self.expirationTime - GetTime()
@@ -653,8 +655,10 @@ local funcs = {
   UpdateValue = function(self)
     if self.cdmNativeProgress then return end
     if hasanysecretvalues(self.value, self.total) then
+      Native.UpdateValue(self)
       return
     end
+    Native.Stop(self)
     local progress = 1
     if(self.total > 0) then
       progress = self.value / self.total;
@@ -675,11 +679,16 @@ local funcs = {
       self.subRegionEvents:RemoveSubscriber("FrameTick", self)
     end
   end,
-  SetAdditionalProgress = function(self, additionalProgress, currentMin, currentMax, inverse)
+  UpdateDuration = function(self)
     if self.cdmNativeProgress then return end
+    Native.UpdateDuration(self)
+  end,
+  SetAdditionalProgress = function(self, additionalProgress, currentMin, currentMax, inverse)
+    if self.cdmNativeProgress or self.nativeProgressActive then return end
     self:ApplyAdditionalProgress(additionalProgress, currentMin, currentMax, inverse)
   end,
   ReapplyAdditionalProgress = function(self)
+    if self.nativeProgressActive then return end
     self:ApplyAdditionalProgress(self.additionalProgress, self.additionalProgressMin,
                                  self.additionalProgressMax, self.additionalProgressInverse)
   end,
@@ -709,6 +718,7 @@ local funcs = {
     end
   end,
   SetForegroundDesaturated = function(self, b)
+    self.desaturateForeground = b
     self.foreground:SetDesaturated(b)
     self.foregroundSpinner:SetDesaturated(b)
   end,
@@ -756,6 +766,7 @@ local funcs = {
       return
     end
     self.inverseDirection = inverse
+    if self.nativeProgressActive then Native.Refresh(self); return end
     local progress = 1 - self.progress;
     progress = progress > 0.0001 and progress or 0.0001;
     self:SetValueOnTexture(progress)
@@ -771,6 +782,16 @@ local funcs = {
     end
   end
 }
+
+-- Public appearance changes must also reach the native foreground.
+for _, name in ipairs({"SetOrientation", "Color", "ColorAnim", "SetAuraRotation", "DoPosition", "SetMirror", "UpdateTextures",
+  "SetCropX", "SetCropY", "UpdateEffectiveRotation", "SetTexture", "SetForegroundDesaturated"}) do
+  local original = funcs[name]
+  funcs[name] = function(self, ...)
+    original(self, ...)
+    Native.Refresh(self)
+  end
+end
 
 local function create(parent)
   local region = CreateFrame("Frame", nil, parent);
@@ -797,6 +818,7 @@ local function create(parent)
   region.smoothProgress = {};
   Mixin(region.smoothProgress, Private.SmoothStatusBarMixin);
   region.smoothProgress.SetValue = function(self, progress)
+    if region.nativeProgressActive then return end
     region:SetValueOnTexture(progress);
     region:ReapplyAdditionalProgress()
   end
@@ -820,6 +842,10 @@ end
 
 
 local function modify(parent, region, data)
+  Native.Stop(region)
+  region.nativeProgressUID = data.uid
+  region.blendMode = data.blendMode
+  region.desaturateForeground = data.desaturateForeground
   Private.regionPrototype.modify(parent, region, data);
 
   local background, foreground = region.background, region.foreground;

@@ -14,8 +14,7 @@ function Private.UpdateSpellCooldownGCD(spellID)
   end
 end
 
--- A fresh filtered timer takes precedence over the event-scoped flag, which can
--- describe an earlier update. Only readable results may guide the numeric cache.
+-- Prefer the fresh filtered timer; the event-scoped flag may be stale.
 function Private.IsSpellCooldownGCD(spellID)
   local duration = C_Spell.GetSpellCooldownDuration(spellID, true)
   if duration then
@@ -30,9 +29,7 @@ function Private.ClearSpellCooldownGCD()
   wipe(gcdStates)
 end
 
--- Use Blizzard's filtered duration when status is unknown. A public, event-scoped
--- GCD-only result must also clear the display, not just the trigger's ready flag.
--- Allocate our own zero container; never reset an object returned by Blizzard.
+-- Clear known GCD-only displays with an owned zero duration; otherwise use Blizzard's timer.
 local emptyCooldownDuration
 function Private.GetSpellCooldownDurationWithoutGCD(spellID, onGCD)
   if onGCD == true then
@@ -49,8 +46,7 @@ function Private.GetSpellCooldownData(spellID, track, showGCD, showLossOfControl
   local charges = C_Spell.GetSpellCharges(spellID)
   if not info and not charges then return end
 
-  -- The regular trigger has no native CDM source. Always retain Blizzard's fresh
-  -- GCD-free timer; a cached GCD flag must never replace a real timer with zero.
+  -- Keep the fresh filtered timer even if a cached GCD flag disagrees.
   local cooldown = C_Spell.GetSpellCooldownDuration(spellID, true)
   local zero
   if cooldown then
@@ -68,9 +64,7 @@ function Private.GetSpellCooldownData(spellID, track, showGCD, showLossOfControl
     end
   end
 
-  -- Keep the established public fallback for logical Ready/On Cooldown modes.
-  -- Appearance uses the fresh timer's classification instead: a cached flag must
-  -- not cancel desaturation while that timer still describes a real cooldown.
+  -- Logical checks use public flags; desaturation follows the fresh timer.
   local conditionOnCooldown = onCooldown
   if onCooldown == nil and info and info.isActive and gcdStates[spellID] ~= nil then
     onCooldown = not gcdStates[spellID]
@@ -167,8 +161,7 @@ function Private.ExecEnv.SelectSpellCooldownDesaturation(state, needle, valueIfT
     return valueIfFalse
   end
   local duration = state.spellCooldownConditionDuration
-  -- Appearance metadata is refreshed with this timer, unlike the event-scoped
-  -- public fallback retained for logical trigger visibility and actions.
+  -- Use fresh timer metadata for appearance and public flags for logical checks.
   local onCooldown = state.spellCooldownConditionOnCooldown
   if onCooldown == nil and not duration then onCooldown = state.onCooldown end
   if onCooldown ~= nil then

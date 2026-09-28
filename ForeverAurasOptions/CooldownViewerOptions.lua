@@ -4,6 +4,7 @@ local views = setmetatable({}, {__mode = "k"})
 function OptionsPrivate.AddCooldownViewerOptions(options, data, triggernum)
   local Private = OptionsPrivate.Private
   local trigger = data.triggers[triggernum].trigger
+  Private.MigrateCDMCooldownTrigger(trigger)
   if trigger.type == "cdm" then trigger.cdmSource = trigger.event == "Blizzard CDM Buff" and "buff" or "cooldown" end
   views[data] = views[data] or {}
   views[data][triggernum] = views[data][triggernum] or {}
@@ -36,8 +37,7 @@ function OptionsPrivate.AddCooldownViewerOptions(options, data, triggernum)
       local entry = #resolved == 1 and entries[resolved[1]]
       local info = entry and C_CooldownViewer.GetCooldownViewerCooldownInfo(resolved[1])
       if info then
-        if info.equipSlot or info.spellCategoryID then trigger.event = "Blizzard CDM Item"
-        elseif entry.category == Enum.CooldownViewerCategory.Utility then trigger.event = "Blizzard CDM Utility" end
+        if info.equipSlot or info.spellCategoryID then trigger.event = "Blizzard CDM Item" end
       end
     end
     if tostring(trigger.cdmSpell):find("%S") then

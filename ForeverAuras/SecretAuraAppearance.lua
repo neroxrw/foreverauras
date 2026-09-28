@@ -287,6 +287,7 @@ function Display.StyleAppearance(native, data, ElementFrame, StyleText, StyleGlo
   native.border:Hide()
   native.icon:Hide(); native.cooldown:Hide()
   if native.bar then native.bar:Hide() end
+  if native.progressBackground then native.progressBackground:Hide() end
   if native.mainText then native.mainText:Hide() end
   for _, entry in pairs(native.sharedElements or {}) do
     if entry.glow then StyleGlow(entry, {blizzardAuraDisplay = {glow = false}}) end
@@ -310,8 +311,10 @@ function Display.StyleAppearance(native, data, ElementFrame, StyleText, StyleGlo
     native.cooldown:SetHideCountdownNumbers(data.cooldownTextDisabled ~= false)
     native.cooldown:SetSwipeColor(unpack(data.blizzardAuraDisplay.swipeColor or {0, 0, 0, 0.8}))
     button:SetDurationCooldown(native.cooldown)
+  elseif data.regionType == "progresstexture" then
+    Private.ProgressTextureNative.StyleAura(native, data, base)
   elseif data.regionType == "aurabar" then
-    if not native.bar then native.bar = CreateFrame("StatusBar", nil, base) end
+    if not native.bar or (native.progressTexture and native.bar == native.progressTexture.bar) then native.bar = CreateFrame("StatusBar", nil, base) end
     local bar = native.bar
     bar:ClearAllPoints(); bar:SetAllPoints(button)
     bar:SetStatusBarTexture(data.textureSource == "LSM" and Media:Fetch("statusbar", data.texture or "Blizzard") or data.textureInput or "Interface\\Buttons\\WHITE8X8")

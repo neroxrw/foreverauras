@@ -1,5 +1,4 @@
--- Preserve spell countdowns and desaturation during Shoot's shared cooldown.
--- Duration objects remain opaque; logical cooldown state and swipes stay live.
+-- Preserve countdown and desaturation timers during Shoot's shared cooldown.
 if not ForeverAuras.IsLibsOK() then return end
 local _, Private = ...
 local expiryTimer, refreshQueued
@@ -11,7 +10,6 @@ local function PublicSpell(id)
   return not issecretvalue(id) and type(id) == "number"
 end
 
--- Refresh text through dedicated internal events, not synthetic Blizzard events.
 local function Refresh()
   if refreshQueued then return end
   refreshQueued = true
@@ -31,8 +29,7 @@ end
 
 local function NoteShot()
   local now = GetTime()
-  -- SUCCEEDED and COOLDOWN can report the same shot in either order. Do not
-  -- erase a subsequent cast when a duplicate update arrives in that frame.
+  -- Duplicate shot events must not clear a subsequent cast.
   if now - lastShotUpdate > 0.05 then
     shotAt = now
     wipe(castAfterShot)
@@ -61,31 +58,30 @@ local function OnEvent(_, event, unit, baseSpellID, spellID)
     end
     Refresh()
   elseif event == "SPELL_UPDATE_COOLDOWN" and ((PublicSpell(unit) and unit == 5019) or (PublicSpell(baseSpellID) and baseSpellID == 5019)) then
-    -- The expiration update is not another shot. Unknown flags leave cast events
-    -- in charge instead of extending the window from an unreadable value.
+    -- Only an active public flag identifies a new shot rather than its expiry.
     local info = C_Spell.GetSpellCooldown(5019)
     if info and not issecretvalue(info.isActive) and info.isActive == true then NoteShot() end
   end
 end
 
--- Call before choosing a recharge/loss-of-control timer. A copied timer expires
--- naturally in Blizzard's renderer even if no readable expiration is available.
+-- Select before recharge/loss-of-control timers; Blizzard expires the copied duration.
 function Private.GetWandCooldownDuration(spellID, duration, source)
   if not PublicSpell(spellID) or spellID == 5019 then return duration end
-  -- CDM and ordinary Spell triggers must not overwrite one another's samples.
+  -- Keep CDM and Spell trigger samples separate.
   local key = (source or "spell") .. ":" .. spellID
   local holding = GetTime() - shotAt < window and not castAfterShot[spellID]
   if holding then
-    -- Keep the live timer until a sample is available.
-    -- The second return describes our own selection, never the timer's contents.
+    -- The second return identifies a copied timer without reading its contents.
     return snapshots[key] or duration, snapshots[key] ~= nil
   end
-  if duration and duration.Copy then snapshots[key] = duration:Copy()
-  else snapshots[key] = nil end
+  if duration and duration.Copy then
+    snapshots[key] = duration:Copy()
+  else
+    snapshots[key] = nil
+  end
   return duration
 end
 
--- Track public cast events from login; no session toggle is required.
 local frame = CreateFrame("Frame")
 frame:SetScript("OnEvent", OnEvent)
 frame:RegisterUnitEvent("UNIT_SPELLCAST_SUCCEEDED", "player")

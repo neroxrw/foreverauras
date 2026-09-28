@@ -211,6 +211,13 @@ function Private.CDMFrames()
 
     if viewer and hooksecurefunc and not observedViewers[viewer] then
       observedViewers[viewer] = true
+      -- Observe new buff frames before Blizzard assigns their aura, including hidden entries.
+      if name == "BuffIconCooldownViewer" or name == "BuffBarCooldownViewer" then
+        if type(viewer.OnAcquireItemFrame) == "function" then
+          hooksecurefunc(viewer, "OnAcquireItemFrame", function(_, frame) Observe(frame) end)
+        end
+        if type(viewer.RefreshData) == "function" then hooksecurefunc(viewer, "RefreshData", NativeRefresh) end
+      end
       for _, method in ipairs({"OnUnitAura", "OnPlayerTargetChanged", "RefreshActiveFramesForTargetChange"}) do
         if type(viewer[method]) == "function" then hooksecurefunc(viewer, method, NativeRefresh) end
       end
@@ -388,6 +395,8 @@ local function ApplyCachedAura(state, identity, info, frame, exactID, buffSpellI
   local totem = not aura and frame and frame.totemData
   if totem then
     state.cdmAuraTotem = true
+    -- A totem has no aura instance; its viewer flag remains authoritative when timing is secret.
+    state.auraActive = nil
     local duration, expiration = Number(totem.duration), Number(totem.expirationTime)
     if duration and expiration then
       SetTimes(state, expiration - duration, duration, totem.modRate)
@@ -475,7 +484,9 @@ end
 function Private.CDMApplyAura(state, identity, info, frame, exactID, buffSpellIDs)
   ApplyCachedAura(state, identity, info, frame, exactID, buffSpellIDs)
 
-  if frame then
+  -- A linked spell can keep the viewer active after its aura clears or expires.
+  -- Do not let that flag revive an aura whose public data confirms it has ended.
+  if frame and state.auraActive ~= false then
     local active = frame.isActive
     if not Readable(active) then
       state.auraActive = nil

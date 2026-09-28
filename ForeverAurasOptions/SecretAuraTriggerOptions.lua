@@ -170,7 +170,7 @@ local function GetOptions(data, triggernum)
   -- Rank matching has independent storage, so old exact selections keep their meaning.
   SpellIDs("useRankSpellIDs", "rankspellid", "auraRankSpellIDs", "Spell ID(s) (All Ranks)", "Spell ID", 4.95,
     display.UsesRankSpellIDs, "secretUseRankSpellIDs")
-  options.useRankSpellIDs.desc = "Enter any rank to match every rank listed in the bundled Forever spell data, including ranks you have not learned. Spells absent from that data match only the entered ID. Exact selections below are also included; ignored IDs still apply."
+  options.useRankSpellIDs.desc = "Enter a Spell ID to track all ranks of that spell."
   -- Explain incomplete coverage without changing existing saved selections.
   local function UnsupportedRankIDs()
     local missing = {}
@@ -186,8 +186,8 @@ local function GetOptions(data, triggernum)
     type = "description", order = 5.9, width = "full", fontSize = "small",
     hidden = function() return not display.UsesRankSpellIDs(trigger) or #UnsupportedRankIDs() == 0 end,
     name = function()
-      return "Rank data unavailable for: " .. table.concat(UnsupportedRankIDs(), ", ")
-        .. ". Only these entered IDs will match. Add other ranks under Exact Spell ID(s)."
+      return "Other ranks could not be found for: " .. table.concat(UnsupportedRankIDs(), ", ")
+        .. ". Only the IDs you entered will be tracked. To track another rank, add its ID under Exact Spell ID(s)."
     end,
   }
   SpellIDs("useSpellIDs", "spellid", "auraspellids", "Exact Spell ID(s)", "Exact Spell ID", 6,

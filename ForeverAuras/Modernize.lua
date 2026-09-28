@@ -2511,6 +2511,11 @@ function Private.Modernize(data, oldSnapshot)
     data.toolTipArea = "ICON"
   end
 
+  -- Migrate event aliases regardless of the imported schema version.
+  for _, entry in ipairs(data.triggers or {}) do
+    Private.MigrateCDMCooldownTrigger(entry.trigger)
+  end
+
   data.internalVersion = max(data.internalVersion or 0, ForeverAuras.InternalVersion())
 end
 
