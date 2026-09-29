@@ -171,6 +171,17 @@ function Editor.AddOptions(options, data, triggernum)
         trigger.secretShowOn = value ~= "showOnActive" and value or nil
         Save()
       end}
+    -- The Missing icon's look, next to the setting that shows it.
+    options.missingDesaturate = {type = "toggle", name = "Desaturate while missing", order = 71.2, width = ForeverAuras.normalWidth,
+      desc = "Show the icon in grey while the aura is missing.",
+      hidden = function() return display.ShowOn(trigger) == "showOnActive" end,
+      get = function() return data.blizzardAuraDisplay and data.blizzardAuraDisplay.missingDesaturate or false end,
+      set = function(_, value)
+        data.blizzardAuraDisplay = data.blizzardAuraDisplay or {}
+        data.blizzardAuraDisplay.missingDesaturate = value or nil
+        ForeverAuras.Add(data)
+        OptionsPrivate.QueueOptionsRefresh(data.id)
+      end}
     options.showClones = {type = "toggle", name = "Auto-Clone (Show All Matches)", order = 72, width = "full",
       get = function() return trigger.showClones or false end, disabled = true}
     options.combineMode = {type = "select", name = "Preferred Match", order = 72.6, width = ForeverAuras.normalWidth,
@@ -178,9 +189,9 @@ function Editor.AddOptions(options, data, triggernum)
     options.nativeShowNotice = {type = "description", order = 73, width = "full", fontSize = "small",
       name = function()
         if display.IsSingle(trigger) then
-          return "One aura is shown, chosen by Sort by under Aura (Blizzard) Settings in Display."
+          return "One aura is shown, chosen by Sort by under Aura (Modern) Settings in Display."
         end
-        return "You cannot control clones with an Aura (Blizzard). Use the Aura (Blizzard) Settings under Display."
+        return "You cannot control clones with an Aura (Modern). Use the Aura (Modern) Settings under Display."
       end}
   end
 end

@@ -1,4 +1,4 @@
--- Modified for ForeverAuras, 2026-09-18.
+-- Modified for ForeverAuras, 2026-09-29.
 if not ForeverAuras.IsLibsOK() then return end
 ---@type string
 local AddonName = ...
@@ -267,11 +267,13 @@ local function commonParent(controlledChildren)
   end
 end
 
-local function CreateNewGroupFromSelection(regionType, resetChildPositions)
+-- settings: extra group fields, e.g. the Modern Aura Group flag.
+local function CreateNewGroupFromSelection(regionType, resetChildPositions, settings)
   local data = {
-    id = OptionsPrivate.Private.FindUnusedId(tempGroup.controlledChildren[1].." Group"),
+    id = OptionsPrivate.Private.FindUnusedId(tempGroup.controlledChildren[1]..(settings and settings.blizzardFlow and " Modern Aura Group" or " Group")),
     regionType = regionType,
   };
+  for key, value in pairs(settings or {}) do data[key] = value end
 
   ForeverAuras.DeepMixin(data, OptionsPrivate.Private.data_stub)
   data.internalVersion = ForeverAuras.InternalVersion()
@@ -359,6 +361,14 @@ function OptionsPrivate.MultipleDisplayTooltipMenu()
       notCheckable = 1,
       func = function()
         CreateNewGroupFromSelection("dynamicgroup", true)
+      end
+    },
+    -- A Group whose Aura (Modern) displays grow together (SecretAuraFlow.lua).
+    {
+      text = "Add to new Modern Aura Group",
+      notCheckable = 1,
+      func = function()
+        CreateNewGroupFromSelection("group", false, {blizzardFlow = true, blizzardFlowGrowth = "RIGHT", blizzardFlowSpacing = 2})
       end
     },
     {

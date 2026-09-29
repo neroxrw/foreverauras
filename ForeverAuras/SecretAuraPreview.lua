@@ -131,9 +131,14 @@ function Display.ShowPreview(region, data, StyleSample)
   region.secretAuraSamples = region.secretAuraSamples or {}
   Display.HidePreview(region)
   region.secretAuraSamplesActive = true
-  for index = 1, count do
-    local sample = region.secretAuraSamples[index] or CreateSample(region)
-    region.secretAuraSamples[index] = sample
+  -- In a Modern Aura Group grouped by unit frame, one row per unit that has a
+  -- frame, like a Dynamic Group's clones (the group lines them up).
+  local previewUnits = Display.FlowPreviewUnits and Display.FlowPreviewUnits(data) or {false}
+  for slot = 1, count * #previewUnits do
+    local index = (slot - 1) % count + 1
+    local sample = region.secretAuraSamples[slot] or CreateSample(region)
+    region.secretAuraSamples[slot] = sample
+    sample.previewUnit = previewUnits[math.floor((slot - 1) / count) + 1]
     local button = sample.button
     button.expires, button.inverse = GetTime() + 6, data.inverse == true
     local info = ids[index] and C_Spell.GetSpellInfo(ids[index])

@@ -72,13 +72,13 @@ function Trigger.Rename(oldid, newid)
 end
 
 function Trigger.FinishLoadUnload() end
-function Trigger.GetName() return "Aura (Blizzard)" end
+function Trigger.GetName() return "Aura (Modern)" end
 function Trigger.CanHaveTooltip() return false end
 function Trigger.SetToolTip() return false end
 function Trigger.GetOverlayInfo() return {} end
 function Trigger.GetAdditionalProperties() return {} end
 function Trigger.GetProgressSources(data, triggernum, values)
-  table.insert(values, {trigger = triggernum, property = "value", type = "number", display = "Aura (Blizzard)", total = "total"})
+  table.insert(values, {trigger = triggernum, property = "value", type = "number", display = "Aura (Modern)", total = "total"})
 end
 function Trigger.GetTriggerConditions() return {} end
 

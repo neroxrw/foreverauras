@@ -1,4 +1,4 @@
--- Modified for ForeverAuras, 2026-09-19.
+-- Modified for ForeverAuras, 2026-09-29.
 if not ForeverAuras.IsLibsOK() then return end
 ---@type string
 local AddonName = ...
@@ -298,6 +298,20 @@ function OptionsPrivate.GetDisplayOptions(data)
           name = L["Sub Elements"],
         }
       }
+    end
+
+    -- Aura (Modern) options exist per aura (PrepareSecretDisplayOptions); list
+    -- them here too so a change reaches every selected aura that has them.
+    local Display = OptionsPrivate.Private.BlizzardAuraDisplay
+    for child in OptionsPrivate.Private.TraverseLeafs(data) do
+      if Display.Enabled(child) then
+        if not allOptions.secretAura and not Display.FlowGroup(child) then
+          allOptions.secretAura = OptionsPrivate.GetSecretAuraSettings(child)
+        end
+        if child.regionType == "icon" and allOptions.icon and not allOptions.icon.secretSwipeColor then
+          allOptions.icon.secretSwipeColor = {type = "color", name = "Swipe Color", hasAlpha = true, order = 11.9, width = ForeverAuras.normalWidth}
+        end
+      end
     end
 
     fixMetaOrders(allOptions);

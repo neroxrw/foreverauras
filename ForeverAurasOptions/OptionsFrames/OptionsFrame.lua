@@ -1,4 +1,4 @@
--- Modified for ForeverAuras, 2026-09-19.
+-- Modified for ForeverAuras, 2026-09-29.
 if not ForeverAuras.IsLibsOK() then return end
 ---@type string
 local AddonName = ...
@@ -1383,6 +1383,21 @@ function OptionsPrivate.CreateFrame()
 
       return OptionsPrivate.Private.regionOptions[a].displayName < OptionsPrivate.Private.regionOptions[b].displayName
     end)
+
+    -- Modern Aura Group: a Group whose Aura (Modern) displays grow together
+    -- (SecretAuraFlow.lua), listed first.
+    if not targetIsDynamicGroup then
+      local flowButton = AceGUI:Create("ForeverAurasNewButton")
+      flowButton:SetTitle("Modern Aura Group")
+      -- Its own icon frame: a frame shown on one button cannot be shared.
+      frame.modernGroupIcon = frame.modernGroupIcon or OptionsPrivate.CreateModernGroupIcon()
+      flowButton:SetIcon(frame.modernGroupIcon)
+      flowButton:SetDescription("A group whose Aura (Modern) displays grow together, also in combat")
+      flowButton:SetClick(function()
+        ForeverAuras.NewAura({blizzardFlow = true, blizzardFlowGrowth = "RIGHT", blizzardFlowSpacing = 2}, "group", self:GetTargetAura())
+      end)
+      containerScroll:AddChild(flowButton)
+    end
 
     for index, regionType in ipairs(regionTypesSorted) do
       if (targetIsDynamicGroup and (regionType == "group" or regionType == "dynamicgroup")) then

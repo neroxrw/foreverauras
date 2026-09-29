@@ -25,21 +25,25 @@ end
 function OptionsPrivate.GetSecretAuraSettings(data)
   local Display = OptionsPrivate.Private.BlizzardAuraDisplay
   local function Settings() return data.blizzardAuraDisplay or {} end
-  local function Save(key, value)
+  -- quiet: a slider value, which changes no other option's visibility; the
+  -- panel is not rebuilt while it is dragged.
+  local function Save(key, value, quiet)
     data.blizzardAuraDisplay = data.blizzardAuraDisplay or {}
     data.blizzardAuraDisplay[key] = value
     ForeverAuras.Add(data)
-    OptionsPrivate.QueueOptionsRefresh(data.id)
+    if not quiet then OptionsPrivate.QueueOptionsRefresh(data.id) end
   end
   local function Disabled() return not Display.Enabled(data) end
-  local args = {__title = "Aura (Blizzard) Settings", __order = 8, __collapsed = true}
+  local args = {__title = "Aura (Modern) Settings", __order = 8, __collapsed = true}
   args.sortMethod = {
     type = "select", name = "Sort by", disabled = Disabled, values = Display.sortMethods,
     sorting = {"Default", "ExpirationOnly", "Expiration", "NameOnly", "Name", "ImportantOnly", "BigDefensive", "UnitFrameDebuff", "AuraInstanceIDOnly"},
     desc = "Sort each unit's auras. Remaining time puts the soonest-expiring aura first, with permanent auras last. Blizzard priority applies caster and priority rules before time or name. Unit-frame debuffs also enables debuff classification, which can hide auras.",
-    get = function() local trigger = Display.GetTrigger(data); return trigger and trigger.sortMethod or "Default" end,
+    -- The saved trigger: GetTrigger returns a copy when a Blizzard
+    -- classification is set, and a choice written there was lost.
+    get = function() local trigger = Display.GetSavedTrigger(data); return trigger and trigger.sortMethod or "Default" end,
     set = function(_, value)
-      local trigger = Display.GetTrigger(data)
+      local trigger = Display.GetSavedTrigger(data)
       if not trigger then return end
       if value == "UnitFrameDebuff" and trigger.processedAuraType ~= "Debuff" and trigger.processedAuraType ~= "Dispel" then
         trigger.processedAuraType = "Debuff"
@@ -52,24 +56,15 @@ function OptionsPrivate.GetSecretAuraSettings(data)
   args.sortReverse = {
     type = "toggle", name = "Reverse Sort", disabled = Disabled,
     desc = "Reverse the selected order. For Remaining time, later expirations and permanent auras come first.",
-    get = function() local trigger = Display.GetTrigger(data); return trigger and trigger.sortReverse or false end,
+    get = function() local trigger = Display.GetSavedTrigger(data); return trigger and trigger.sortReverse or false end,
     set = function(_, value)
-      local trigger = Display.GetTrigger(data)
+      local trigger = Display.GetSavedTrigger(data)
       if not trigger then return end
       trigger.sortReverse = value
       ForeverAuras.Add(data)
       OptionsPrivate.QueueOptionsRefresh(data.id)
     end,
   }
-  for _, axis in ipairs({"X", "Y"}) do
-    local key = "nameplate" .. axis
-    args[key] = {
-      type = "range", name = axis == "X" and "Nameplate X offset" or "Nameplate Y offset", min = -200, max = 200, step = 1, disabled = Disabled,
-      hidden = function() return data.anchorFrameType == "UNITFRAME" or not Display.UsesNameplates(data) end,
-      get = function() return Settings()[key] or (axis == "X" and 0 or 8) end,
-      set = function(_, value) Save(key, value) end,
-    }
-  end
   args.growth = {
     type = "select", name = "Icon growth direction", order = 3.1, disabled = Disabled,
     values = {RIGHT = "Right", LEFT = "Left", UP = "Up", DOWN = "Down", CENTER_HORIZONTAL = "Centered Horizontal", CENTER_VERTICAL = "Centered Vertical"},
@@ -79,35 +74,32 @@ function OptionsPrivate.GetSecretAuraSettings(data)
   args.spacing = {
     type = "range", name = "Icon spacing", order = 3.2, min = 0, max = 40, step = 1, disabled = Disabled,
     get = function() return Settings().spacing or 6 end,
-    set = function(_, value) Save("spacing", value) end,
+    set = function(_, value) Save("spacing", value, true) end,
   }
   args.maxIcons = {
     type = "range", name = "Maximum icons", order = 3.3, min = 1, softMax = 40, step = 1, disabled = Disabled,
     desc = "Maximum auras per unit. Drag up to 40, or type a larger number.",
     get = function() return Settings().maxIcons or 10 end,
-    set = function(_, value) Save("maxIcons", value) end,
+    set = function(_, value) Save("maxIcons", value, true) end,
   }
 
-  -- Show On Missing/Always, Remaining Time and Dynamic Group members draw one
-  -- aura in the region's rectangle: list layout settings do not apply there,
-  -- and Missing gets its own look option.
+  -- Show On Missing/Always and Remaining Time draw one aura: the list
+  -- settings stay visible but greyed out.
   local function Single() return Display.DrawsOne(data) end
-  local function ShowsMissing()
-    local trigger = Display.GetTrigger(data)
-    return Display.IsSingle(trigger) and Display.ShowOn(trigger) ~= "showOnActive"
+  for _, key in ipairs({"growth", "spacing", "maxIcons"}) do
+    local disabled = args[key].disabled
+    args[key].disabled = function()
+      if Single() then return true end
+      if type(disabled) == "function" then return disabled() end
+      return disabled
+    end
   end
-  for _, key in ipairs({"growth", "spacing", "maxIcons"}) do args[key].hidden = Single end
   args.singleNotice = {type = "description", width = "full", fontSize = "small",
     name = function()
-      if Display.InDynamicGroup(data) then return "In a Dynamic Group, one aura is shown in this display's position. Sort by chooses which aura when several match." end
+      if Display.InDynamicGroup(data) then return Display.dynamicGroupWarning end
       return "The trigger's Show On or Remaining Time shows one aura in this display's position. Sort by chooses which aura when several match."
     end,
-    hidden = function() return not Single() end}
-  args.missingDesaturate = {type = "toggle", name = "Desaturate while missing", disabled = Disabled,
-    desc = "Show the icon in grey while the aura is missing (Show On: Aura(s) Missing or Always).",
-    hidden = function() return not ShowsMissing() end,
-    get = function() return Settings().missingDesaturate or false end,
-    set = function(_, value) Save("missingDesaturate", value or nil) end}
+    hidden = function() return not (Single() or Display.InDynamicGroup(data)) end}
   args.growth.name = "Aura growth direction"
   args.spacing.name = "Aura spacing"
   args.maxIcons.name = "Maximum auras"
@@ -115,13 +107,10 @@ function OptionsPrivate.GetSecretAuraSettings(data)
     hidden = function() return data.regionType ~= "text" end,
     desc = "Space reserved for each aura's text. Set its width in Font Flags.",
     get = function() return Settings().textHeight or (data.fontSize or 18) * 1.2 end,
-    set = function(_, value) Save("textHeight", value) end}
-  args.swipeColor = {type = "color", name = "Swipe Color", hasAlpha = true, hidden = function() return data.regionType ~= "icon" end,
-    get = function() return unpack(Settings().swipeColor or {0, 0, 0, 0.8}) end,
-    set = function(_, red, green, blue, alpha) Save("swipeColor", {red, green, blue, alpha}) end}
+    set = function(_, value) Save("textHeight", value, true) end}
   args.status = {type = "description", width = "full", name = function() return Display.Validate(data) or "" end,
     hidden = function() return Display.Validate(data) == nil end}
-  local order = {"status", "singleNotice", "growth", "spacing", "maxIcons", "sortMethod", "sortReverse", "missingDesaturate", "nameplateX", "nameplateY", "textHeight", "swipeColor"}
+  local order = {"status", "singleNotice", "growth", "spacing", "maxIcons", "sortMethod", "sortReverse", "textHeight"}
   for index, key in ipairs(order) do
     args[key].order = index
     args[key].width = args[key].width or ForeverAuras.normalWidth
@@ -133,7 +122,19 @@ end
 function OptionsPrivate.PrepareSecretDisplayOptions(data, groups)
   local Display = OptionsPrivate.Private.BlizzardAuraDisplay
   if not Display.Enabled(data) then return end
-  groups.secretAura = OptionsPrivate.GetSecretAuraSettings(data)
+  -- In a Modern Aura Group, layout, sort and limit come from the group.
+  groups.secretAura = not Display.FlowGroup(data) and OptionsPrivate.GetSecretAuraSettings(data) or nil
+  -- The native swipe's colour, last among the swipe settings.
+  if groups.icon and data.regionType == "icon" then
+    groups.icon.secretSwipeColor = {type = "color", name = "Swipe Color", hasAlpha = true, order = 11.9, width = ForeverAuras.normalWidth,
+      hidden = function() return not data.cooldown end,
+      get = function() return unpack((data.blizzardAuraDisplay or {}).swipeColor or {0, 0, 0, 0.8}) end,
+      set = function(_, red, green, blue, alpha)
+        data.blizzardAuraDisplay = data.blizzardAuraDisplay or {}
+        data.blizzardAuraDisplay.swipeColor = {red, green, blue, alpha}
+        ForeverAuras.Add(data)
+      end}
+  end
   groups.progressOptions = nil
   local unsupported = {
     -- Native icons now implement the standard aspect ratio and texture offsets.
@@ -200,6 +201,21 @@ end
 
 function OptionsPrivate.PrepareSecretActionOptions(data, action)
   local Display = OptionsPrivate.Private.BlizzardAuraDisplay
+  if data.controlledChildren then
+    -- Several auras selected: each aura's own options apply the change; the
+    -- shared list only needs the Aura (Modern) keys and glow choices.
+    for child in OptionsPrivate.Private.TraverseLeafs(data) do
+      if Display.Enabled(child) then
+        action.args.start_glow_type.values = {Proc = "Proc Glow", buttonOverlay = "Pulse Glow"}
+        action.args.start_glow_padding = action.args.start_glow_padding or {
+          type = "range", control = "ForeverAurasSpinBox", name = "Padding", order = 10.865,
+          min = 0, max = 40, step = 1, width = ForeverAuras.normalWidth,
+        }
+        break
+      end
+    end
+    return
+  end
   if not Display.Enabled(data) then return end
   local supported = {header = true, do_sound = true, sound = true, sound_channel = true, sound_path = true, sound_fojji = true, hide_all_glows = true}
   for key, option in pairs(action.args) do

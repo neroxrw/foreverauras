@@ -1,6 +1,28 @@
 # Changelog
 
 ## Versions
+## 0.26.6
+New: Modern Aura Group
+- New group type for Aura (Modern) displays. Use this group when using Aura (Modern)
+- Missing and Always displays keep their place in the flow
+- Aura (Blizzard) renamed to Aura (Modern)
+- Can be placed in Dynamic Groups again, with a warning that growth may be limited
+- Swipe Color moved to the end of the Icon settings
+- Aura (Modern) Settings are hidden inside a Modern Aura Group, which handles layout instead
+- Aura (Modern) Settings and Swipe Color now apply to all selected displays
+- Glow type and padding options now work when several displays are selected
+- Paste Display now copies Aura (Modern) settings and sort
+- Smoother combat end: queued updates are spread across frames
+- Fewer unit refreshes on combat and restriction changes
+- Modern Aura Group re-anchors once per event
+- Sounds only re-register when changed
+- Fewer rebuilds during combat
+- Sliders no longer rebuild the whole options panel
+- Fixed an error when anchoring Missing displays inside a group
+- Fixed the group preview box appearing in the wrong spot
+- Fixed off-centre layout in centered growth
+- Fixed the anchor selector not being clickable
+
 ## 0.22.1
 New
 - **Show On:** Aura(s) Found, Aura(s) Missing or Always, laid out like Aura (Legacy). Missing and Always work on Icon displays for Player, Target, Focus, Pet, Target of Target and Target of Focus.

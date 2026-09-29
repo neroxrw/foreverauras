@@ -1,4 +1,4 @@
--- Modified for ForeverAuras, 2026-09-18.
+-- Modified for ForeverAuras, 2026-09-29.
 if not ForeverAuras.IsLibsOK() then return end
 ---@type string
 local AddonName = ...
@@ -1214,11 +1214,35 @@ local function ConstructMoverSizer(parent)
     frame:ScaleCorners(region:GetWidth(), region:GetHeight())
     local regionStrata = region:GetFrameStrata()
     if regionStrata then
-      local strata = math.min(tIndexOf(OptionsPrivate.Private.frame_strata_types, regionStrata) + 1, 9)
-      frame:SetFrameStrata(OptionsPrivate.Private.frame_strata_types[strata])
-      mover:SetFrameStrata(OptionsPrivate.Private.frame_strata_types[strata])
-      frame:SetFrameLevel(region:GetFrameLevel() + 1)
-      mover:SetFrameLevel(region:GetFrameLevel() + 1)
+      local strataTypes = OptionsPrivate.Private.frame_strata_types
+      local strataIndex = tIndexOf(strataTypes, regionStrata) or 4
+      local level = region:GetFrameLevel()
+      -- A group's box must sit above its children too: they are clickable
+      -- while the options are open, and one in a higher strata or level took
+      -- the click, so dragging picked that aura instead of moving the group.
+      if data.controlledChildren then
+        for child in OptionsPrivate.Private.TraverseAllChildren(data) do
+          local entry = OptionsPrivate.Private.regions[child.id]
+          local childRegion = entry and entry.region
+          if childRegion and childRegion.GetFrameStrata then
+            local childStrata, childLevel = childRegion:GetFrameStrata(), childRegion:GetFrameLevel()
+            if not issecretvalue(childStrata) and not issecretvalue(childLevel) then
+              local childIndex = tIndexOf(strataTypes, childStrata) or strataIndex
+              if childIndex > strataIndex then
+                strataIndex, level = childIndex, childLevel
+              elseif childIndex == strataIndex then
+                level = math.max(level, childLevel)
+              end
+            end
+          end
+        end
+      end
+      local strata = math.min(strataIndex + 1, 9)
+      frame:SetFrameStrata(strataTypes[strata])
+      mover:SetFrameStrata(strataTypes[strata])
+      -- Only needed when the strata cannot go higher.
+      frame:SetFrameLevel(level + 1)
+      mover:SetFrameLevel(level + 1)
     end
 
     local db = OptionsPrivate.savedVars.db

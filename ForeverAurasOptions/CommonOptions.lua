@@ -1,4 +1,4 @@
--- Modified for ForeverAuras, 2026-09-18.
+-- Modified for ForeverAuras, 2026-09-29.
 if not ForeverAuras.IsLibsOK() then return end
 ---@type string
 local AddonName = ...
@@ -1250,8 +1250,11 @@ local function PositionOptions(id, data, _, hideWidthHeight, disableSelfPoint, g
     end
   end
 
+  -- A Modern Aura Group grouped by frame reads its position like a Dynamic
+  -- Group grouped by frame: relative to each unit's frame.
   local function IsGroupByFrame()
-    return data.regionType == "dynamicgroup" and data.useAnchorPerUnit
+    return (data.regionType == "dynamicgroup" and data.useAnchorPerUnit)
+      or (data.regionType == "group" and data.blizzardFlow and data.blizzardFlowFrames ~= nil)
   end
 
   local screenWidth, screenHeight = math.ceil(GetScreenWidth() / 20) * 20, math.ceil(GetScreenHeight() / 20) * 20;
@@ -1365,7 +1368,9 @@ local function PositionOptions(id, data, _, hideWidthHeight, disableSelfPoint, g
       type = "select",
       width = ForeverAuras.normalWidth,
       name = function()
-        if (data.anchorFrameType == "SCREEN" or data.anchorFrameType == "UIPARENT") then
+        if IsGroupByFrame() then
+          return L["To Frame's"]
+        elseif (data.anchorFrameType == "SCREEN" or data.anchorFrameType == "UIPARENT") then
           return L["To Screen's"]
         elseif (data.anchorFrameType == "PRD") then
           return L["To Personal Ressource Display's"];

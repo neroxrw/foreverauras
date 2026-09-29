@@ -1,4 +1,4 @@
--- Glow elements on Aura (Blizzard) displays: Action Button Glow, Pixel Glow,
+-- Glow elements on Aura (Modern) displays: Action Button Glow, Pixel Glow,
 -- Autocast Shine and Proc Glow, using the Glow element's settings.
 --
 -- Nothing inside a shown aura button can be moved by addon code, so these

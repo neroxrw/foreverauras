@@ -1,5 +1,5 @@
 -- Show On, Remaining Time, Total Duration and Approximate Match for the
--- Aura (Blizzard) trigger.
+-- Aura (Modern) trigger.
 --
 -- Aura(s) Found lists every matching aura in a native aura group. Aura(s)
 -- Missing, Always and Remaining Time watch one unit and draw at most one aura
@@ -72,22 +72,27 @@ local function NeedsMissing(trigger)
   return showOn == "showOnMissing" or showOn == "showAlways"
 end
 
--- A single aura, or a Dynamic Group member, is one aura at the region's corner;
--- the group positions it like any other child.
+-- A single aura is one aura at the region's corner.
 local function DrawsOne(data)
-  return Display.IsSingle(Display.GetTrigger(data)) or Display.InDynamicGroup(data)
+  return Display.IsSingle(Display.GetTrigger(data))
 end
 Display.DrawsOne = DrawsOne
 
 function Display.Growth(data)
+  -- A Modern Aura Group sets the growth of all its displays.
+  local flowGrowth = Display.FlowGrowth(data)
+  if flowGrowth then return Display.VisibleGrowth(flowGrowth) end
   if DrawsOne(data) then return "RIGHT" end
   return data.blizzardAuraDisplay and data.blizzardAuraDisplay.growth or "RIGHT"
 end
 
 function Display.MaxAuras(data)
   -- The Total Duration gate stacks candidates: room for the right one among others.
-  if Display.DurationGate(data) then return 20 end
+  if Display.DurationGate(data) then return 10 end
   if DrawsOne(data) then return 1 end
+  -- A Modern Aura Group sets the limit for all its displays.
+  local limit = Display.FlowLimit(data)
+  if limit then return limit end
   return data.blizzardAuraDisplay and data.blizzardAuraDisplay.maxIcons or 10
 end
 
@@ -116,7 +121,7 @@ function Display.SingleUnitExists(trigger)
   return exists == true
 end
 
--- Countdown colour rules may come from any Aura (Blizzard) trigger; all of them
+-- Countdown colour rules may come from any Aura (Modern) trigger; all of them
 -- share the one binding that the Remaining Time window also uses.
 local function HasRemainingPercentConditions(data)
   for _, condition in ipairs(data.conditions or {}) do
@@ -128,8 +133,8 @@ local function HasRemainingPercentConditions(data)
   return false
 end
 
--- True when a Dynamic Group can position the display: one unit, drawn in the
--- region's own rectangle. Several units would need one clone per unit.
+-- True when the display draws one unit in its own rectangle, as a Blizzard
+-- Group needs. Several units would need one clone per unit.
 function Display.FitsOneSlot(data, trigger)
   if not trigger or not Display.singleUnits[trigger.unit] then return false end
   return data.anchorFrameType ~= "UNITFRAME" and data.anchorFrameType ~= "NAMEPLATE"
@@ -168,11 +173,16 @@ end
 local friendlyUnits = {player = true, pet = true, group = true, party = true, raid = true}
 local hostileUnits = {boss = true, arena = true}
 
+-- A spell's secrecy does not change during a session; cached per ID.
+local neverSecret = {}
 local function NeverSecret(ids)
   if #ids == 0 or not (C_Secrets and C_Secrets.GetSpellAuraSecrecy and Enum.SecrecyLevel) then return false end
   for _, id in ipairs(ids) do
-    local ok, level = pcall(C_Secrets.GetSpellAuraSecrecy, id)
-    if not ok or issecretvalue(level) or level ~= Enum.SecrecyLevel.NeverSecret then return false end
+    if neverSecret[id] == nil then
+      local ok, level = pcall(C_Secrets.GetSpellAuraSecrecy, id)
+      neverSecret[id] = ok and not issecretvalue(level) and level == Enum.SecrecyLevel.NeverSecret
+    end
+    if not neverSecret[id] then return false end
   end
   return true
 end
@@ -230,6 +240,9 @@ function Display.TriggerStatus(data, trigger)
   if severity == "note" then
     text = text .. " " .. ORANGE .. (trigger.debuffType == "HARMFUL" and "Hostile units only." or "Friendly units only.") .. "|r"
   end
+  if Display.InDynamicGroup(data) then
+    text = text .. " " .. ORANGE .. "In a Dynamic Group it keeps a fixed position; a Modern Aura Group is recommended.|r"
+  end
   local lateX = Display.LateGlowSpec(data, trigger)
   if lateX then
     local total = Display.LateGlowTotal(trigger)
@@ -267,7 +280,7 @@ function Display.ValidateSingle(data, trigger)
     if data.regionType ~= "icon" then
       return label .. " is available for Icon displays. Use Show On: Aura(s) Found for other display types."
     end
-    if data.anchorFrameType == "UNITFRAME" or data.anchorFrameType == "NAMEPLATE" then
+    if Display.FrameAnchorType(data) == "UNITFRAME" or Display.FrameAnchorType(data) == "NAMEPLATE" then
       return label .. " cannot anchor to unit frames or nameplates. Anchor the aura to the screen or a frame."
     end
   end
@@ -334,7 +347,7 @@ local function StyleMissing(missing, region, data)
   local native = missing.native
   Display.StyleNative(native, data, region)
   native.button:ClearAllPoints()
-  native.button:SetPoint("TOPLEFT", region, "TOPLEFT")
+  native.button:SetPoint("TOPLEFT", Display.ContentAnchor(region), "TOPLEFT")
   local trigger = Display.GetTrigger(data)
   local id = Display.GetSpellIDs(trigger, false)[1]
   local info = id and C_Spell.GetSpellInfo(id)
@@ -347,6 +360,60 @@ local function Warn(data, message)
 end
 -- Cleared by Apply before styling; any part that fails sets it again.
 Display.ClearSingleWarning = function(data) Warn(data) end
+
+-- In a Modern Aura Group, a second invisible container marks where the next
+-- display starts: one icon further on while the aura is missing
+-- (SecretAuraFlow.lua). It follows the Missing container's unit.
+local PRESENCE_GROUP = "FAPresence"
+local function EnsurePresence(missing, region, data, filter, candidates)
+  missing.presenceActive = false
+  if not Display.FlowGroup(data) then
+    if missing.presence then missing.presence:SetEnabled(false); missing.presence:Hide() end
+    return
+  end
+  if missing.presenceFailed then return end
+  local presence = missing.presence
+  if not presence then
+    presence = Display.CreateAuraContainer(region, data)
+    presence:SetEnabled(false)
+    presence:SetAuraProcessingPolicy(CustomAuraContainerAuraProcessingPolicy.None)
+    -- Placed on the region first, like every aura container; moved below.
+    presence:SetPoint("TOPLEFT", region, "TOPLEFT")
+    local layout = Display.FlowPresenceSize(data)
+    local ok, err = pcall(presence.AddAuraGroup, presence, PRESENCE_GROUP, filter, {
+      candidateFilters = candidates,
+      maxFrameCount = 1,
+      layout = layout,
+      initializeFrame = function(button)
+        -- Draws nothing; only the container's size is used.
+        button:SetSize(layout.elementWidth, layout.elementHeight)
+        button:SetAlpha(0)
+        button:EnableMouse(false)
+      end,
+    })
+    if not ok then
+      presence:Hide()
+      missing.presenceFailed = true
+      Warn(data, "Blizzard could not create the Modern Aura Group spacing: " .. tostring(err))
+      return
+    end
+    missing.presence = presence
+  else
+    local layout = Display.FlowPresenceSize(data)
+    presence:SetAuraGroupFilterString(PRESENCE_GROUP, filter)
+    presence:SetAuraGroupCandidateFilters(PRESENCE_GROUP, candidates)
+    presence:SetAuraGroupLayout(PRESENCE_GROUP, layout)
+    presence:SetAuraGroupEnabled(PRESENCE_GROUP, true)
+  end
+  missing.presenceBoundUnit = nil
+  if not Display.AnchorFlowPresence(region, data, presence) then
+    -- Refused: the display takes a fixed icon in the group instead.
+    presence:SetEnabled(false); presence:Hide()
+    Warn(data, "Blizzard refused the Modern Aura Group spacing; this display keeps a fixed space.")
+    return
+  end
+  missing.presenceActive = true
+end
 
 -- The Missing part: its own container, so its width depends only on presence.
 local function EnsureMissing(single, region, data, trigger)
@@ -362,7 +429,7 @@ local function EnsureMissing(single, region, data, trigger)
   local missing = single.missing
   if not missing then
     missing = {}
-    local container = CreateFrame("AuraContainer", nil, region, "CustomAuraContainerTemplate")
+    local container = Display.CreateAuraContainer(region, data)
     container:SetEnabled(false)
     container:SetAuraProcessingPolicy(CustomAuraContainerAuraProcessingPolicy.None)
     -- TOPLEFT only: Blizzard sizes the container from the group; nothing reads it.
@@ -400,10 +467,14 @@ local function EnsureMissing(single, region, data, trigger)
   end
   -- Absent: the container is 1 px wide and the clip spans the icon plus margin.
   -- Present: its right edge moves onto the clip's right edge, closing it.
+  local anchor = Display.ContentAnchor(region)
+  missing.container:ClearAllPoints()
+  if not Display.AnchorToContent(missing.container, "TOPLEFT", region, "TOPLEFT") then anchor = region end
   local clip = missing.clip
   clip:ClearAllPoints()
   clip:SetPoint("TOPLEFT", missing.container, "TOPRIGHT", -1 - margin, margin)
-  clip:SetPoint("BOTTOMRIGHT", region, "BOTTOMRIGHT", margin, -margin)
+  clip:SetPoint("BOTTOMRIGHT", anchor, "BOTTOMRIGHT", margin, -margin)
+  EnsurePresence(missing, region, data, filter, candidates)
   clip:SetFrameLevel(region:GetFrameLevel() + 1)
   missing.container:SetFrameLevel(region:GetFrameLevel() + 1)
   StyleMissing(missing, region, data)
@@ -414,6 +485,12 @@ local function DisableMissing(single)
   local missing = single.missing
   if not missing or not missing.active then return end
   missing.active = false
+  for _, key in ipairs({"presence", "flowShadow"}) do
+    if missing[key] then
+      missing[key]:SetEnabled(false)
+      missing[key]:Hide()
+    end
+  end
   missing.container:SetEnabled(false)
   missing.container:Hide()
   pcall(missing.container.SetAuraGroupEnabled, missing.container, MISSING_GROUP, false)
@@ -477,8 +554,7 @@ local function EnsureSlot(single, instance, region, key, trigger, data)
   slot.button:SetPoint("TOPLEFT", region, "TOPLEFT")
   container:SetAuraSlotFilterString(key, filter)
   container:SetAuraSlotCandidateFilters(key, candidates)
-  container:SetAuraSlotSortMethod(key, AuraContainerSortMethod[trigger.sortMethod or "Default"],
-    trigger.sortReverse and AuraContainerSortDirection.Reverse or AuraContainerSortDirection.Normal)
+  container:SetAuraSlotSortMethod(key, Display.SortOrder(data, trigger))
   slot.used = true
   return slot
 end
@@ -796,9 +872,16 @@ local FINGERPRINT_FLAGS = {"canApplyAura", "isStealable", "isBossAura", "isFromP
 local watchedProfiles = {}
 local learningRegions = setmetatable({}, {__mode = "k"})
 
+-- True while an Approximate Match display watches party or raid members, so
+-- the end-of-combat scan only reads the group when it has to.
+local learnsFromGroup = false
+local groupUnits = {group = true, party = true, raid = true}
+
 local function RebuildLearningWatches()
   wipe(watchedProfiles); wipe(watchedIDs)
+  learnsFromGroup = false
   for _, entry in pairs(learningRegions) do
+    if entry.approximate and entry.group then learnsFromGroup = true end
     for _, id in ipairs(entry.ids) do
       if entry.approximate then watchedProfiles[id] = true end
       if entry.glow then watchedIDs[id] = true end
@@ -818,9 +901,9 @@ function Display.WatchAuraLearning(region, data, trigger, glow)
   local approximate = Display.UsesApproximate(trigger)
   if not approximate and not glow then Display.ReleaseAuraLearning(region); return end
   local ids = Display.GetSpellIDs(trigger, true)
-  local key = table.concat(ids, ",") .. tostring(approximate) .. tostring(not not glow)
+  local key = table.concat(ids, ",") .. tostring(approximate) .. tostring(not not glow) .. tostring(trigger.unit)
   if not learningRegions[region] or learningRegions[region].key ~= key then
-    learningRegions[region] = {ids = ids, key = key, approximate = approximate, glow = glow}
+    learningRegions[region] = {ids = ids, key = key, approximate = approximate, glow = glow, group = groupUnits[trigger.unit]}
     RebuildLearningWatches()
   end
   -- Keep learned displays subscribed so later readable changes reach them too.
@@ -912,7 +995,6 @@ learnEvents:RegisterEvent("UNIT_AURA")
 learnEvents:RegisterEvent("PLAYER_TARGET_CHANGED")
 learnEvents:RegisterEvent("PLAYER_REGEN_ENABLED")
 learnEvents:RegisterEvent("SPELL_DATA_LOAD_RESULT")
-learnEvents:RegisterEvent("SPELLS_CHANGED")
 -- Applies again every display that waits for a duration or profile.
 local reapplyAfterCombat = {}
 local function ReapplyWaiting(changed)
@@ -930,14 +1012,6 @@ local function ReapplyWaiting(changed)
   end
 end
 learnEvents:SetScript("OnEvent", function(_, event, unit, updateInfo)
-  if event == "SPELLS_CHANGED" then
-    wipe(loadAttempted); wipe(describedDurations)
-    if InCombatLockdown() then
-      for id in pairs(watchedProfiles) do reapplyAfterCombat[id] = true end
-      for id in pairs(watchedIDs) do reapplyAfterCombat[id] = true end
-    else ReapplyWaiting() end
-    return
-  end
   -- A requested spell's description is now available (unit is the spell ID).
   if event == "SPELL_DATA_LOAD_RESULT" then
     if pendingSpellData[unit] then
@@ -955,67 +1029,79 @@ learnEvents:SetScript("OnEvent", function(_, event, unit, updateInfo)
   end
   if (not next(watchedIDs) and not next(watchedProfiles)) or InCombatLockdown()
     or (C_Secrets and C_Secrets.ShouldAurasBeSecret and C_Secrets.ShouldAurasBeSecret()) then return end
-  local units
-  if event == "UNIT_AURA" then
-    if unit ~= "target" and unit ~= "focus" and not Friendly(unit) then return end
-    -- Removals teach nothing; only new or changed auras are read.
-    if type(updateInfo) == "table" and not updateInfo.isFullUpdate and not updateInfo.addedAuras
-      and not updateInfo.updatedAuraInstanceIDs then return end
-    units = {unit}
-  elseif event == "PLAYER_TARGET_CHANGED" then
-    units = {"target"}
-  else
-    -- Combat ended: auras still up become readable.
-    units = FIXED_UNITS
-    if next(watchedProfiles) then
-      units = {unpack(FIXED_UNITS)}
-      for i = 1, (IsInRaid() and GetNumGroupMembers() or 0) do units[#units + 1] = "raid" .. i end
-      for i = 1, (not IsInRaid() and GetNumSubgroupMembers() or 0) do units[#units + 1] = "party" .. i end
-    end
-  end
   local seen, profiles = SeenDurations(), Profiles()
   if not seen or not profiles then return end
   local changed = {}
+  -- Reads one aura; harmful: it is a debuff.
+  local function Learn(token, aura, harmful)
+    local id, duration = aura.spellId, aura.duration
+    if not issecretvalue(id) and not issecretvalue(duration) and watchedIDs[id] and type(duration) == "number" and duration > 0 then
+      -- Durations carry a few ms of noise; keep tenths.
+      local tenths = math.floor(duration * 10 + 0.5) / 10
+      if seen[id] ~= tenths then seen[id] = tenths; changed[id] = true end
+    end
+    -- Approximate Match profiles, for the selected spell IDs only. A debuff
+    -- on an enemy teaches its duration and dispel type; the flags depend on
+    -- who it is on, so they come only from friendly units, and a friendly
+    -- profile is never replaced by an enemy sighting.
+    if type(id) == "number" and not issecretvalue(id) and watchedProfiles[id] and harmful
+      and type(duration) == "number" and not issecretvalue(duration) then
+      local friendly = Friendly(token)
+      local old = profiles[id]
+      if friendly or not (type(old) == "table" and old.friendly) then
+        local profile = {duration = math.floor(duration * 10 + 0.5) / 10, friendly = friendly or nil}
+        local dispel = aura.dispelName
+        if type(dispel) == "string" and not issecretvalue(dispel) then profile.dispel = dispel end
+        if friendly then
+          for _, key in ipairs(FINGERPRINT_FLAGS) do
+            local value = aura[key]
+            if type(value) == "boolean" and not issecretvalue(value) then profile[key] = value end
+          end
+        end
+        local same = type(old) == "table"
+        if same then
+          for key, value in pairs(profile) do if old[key] ~= value then same = false end end
+          for key in pairs(old) do if profile[key] == nil then same = false end end
+        end
+        if not same then profiles[id] = profile; changed[id] = true end
+      end
+    end
+  end
   -- Buff durations are only needed for timed glows (watchedIDs).
   local filters = next(watchedIDs) and BOTH_FILTERS or DEBUFF_FILTER
-  for _, token in ipairs(units) do
+  local function Scan(token)
     for _, filter in ipairs(filters) do
       for i = 1, 40 do
         local ok, aura = pcall(C_UnitAuras.GetAuraDataByIndex, token, i, filter)
         if not ok or type(aura) ~= "table" then break end
-        local id, duration = aura.spellId, aura.duration
-        if not issecretvalue(id) and not issecretvalue(duration) and watchedIDs[id] and type(duration) == "number" and duration > 0 then
-          -- Durations carry a few ms of noise; keep tenths.
-          local tenths = math.floor(duration * 10 + 0.5) / 10
-          if seen[id] ~= tenths then seen[id] = tenths; changed[id] = true end
-        end
-        -- Approximate Match profiles, for the selected spell IDs only. A debuff
-        -- on an enemy teaches its duration and dispel type; the flags depend on
-        -- who it is on, so they come only from friendly units, and a friendly
-        -- profile is never replaced by an enemy sighting.
-        if type(id) == "number" and not issecretvalue(id) and watchedProfiles[id] and filter == "HARMFUL"
-          and type(duration) == "number" and not issecretvalue(duration) then
-          local friendly = Friendly(token)
-          local old = profiles[id]
-          if friendly or not (type(old) == "table" and old.friendly) then
-            local profile = {duration = math.floor(duration * 10 + 0.5) / 10, friendly = friendly or nil}
-            local dispel = aura.dispelName
-            if type(dispel) == "string" and not issecretvalue(dispel) then profile.dispel = dispel end
-            if friendly then
-              for _, key in ipairs(FINGERPRINT_FLAGS) do
-                local value = aura[key]
-                if type(value) == "boolean" and not issecretvalue(value) then profile[key] = value end
-              end
-            end
-            local same = type(old) == "table"
-            if same then
-              for key, value in pairs(profile) do if old[key] ~= value then same = false end end
-              for key in pairs(old) do if profile[key] == nil then same = false end end
-            end
-            if not same then profiles[id] = profile; changed[id] = true end
-          end
-        end
+        Learn(token, aura, filter == "HARMFUL")
       end
+    end
+  end
+  if event == "UNIT_AURA" then
+    if unit ~= "target" and unit ~= "focus" and not Friendly(unit) then return end
+    if type(updateInfo) == "table" and not updateInfo.isFullUpdate then
+      -- Only the auras that were added or changed; removals teach nothing.
+      for _, aura in ipairs(updateInfo.addedAuras or {}) do
+        local harmful = aura.isHarmful
+        if not issecretvalue(harmful) then Learn(unit, aura, harmful == true) end
+      end
+      for _, instanceID in ipairs(updateInfo.updatedAuraInstanceIDs or {}) do
+        local ok, aura = pcall(C_UnitAuras.GetAuraDataByAuraInstanceID, unit, instanceID)
+        if ok and type(aura) == "table" and not issecretvalue(aura.isHarmful) then Learn(unit, aura, aura.isHarmful == true) end
+      end
+    else
+      Scan(unit)
+    end
+  elseif event == "PLAYER_TARGET_CHANGED" then
+    Scan("target")
+  else
+    -- Combat ended: auras still up become readable. The group only when an
+    -- Approximate Match display watches it.
+    for _, token in ipairs(FIXED_UNITS) do Scan(token) end
+    if learnsFromGroup then
+      for i = 1, (IsInRaid() and GetNumGroupMembers() or 0) do Scan("raid" .. i) end
+      for i = 1, (not IsInRaid() and GetNumSubgroupMembers() or 0) do Scan("party" .. i) end
     end
   end
   if next(changed) then ReapplyWaiting(changed) end
@@ -1047,7 +1133,7 @@ local function GateProblem(data, trigger)
   if data.regionType ~= "icon" then
     return "Total Duration = and >= only work on Icon displays. Use <= for bars, textures and text."
   end
-  if data.anchorFrameType == "UNITFRAME" or data.anchorFrameType == "NAMEPLATE" then
+  if Display.FrameAnchorType(data) == "UNITFRAME" or Display.FrameAnchorType(data) == "NAMEPLATE" then
     return "Total Duration = and >= can't anchor to unit frames or nameplates."
   end
   if Display.IsSingle(trigger) then
@@ -1269,6 +1355,20 @@ function Display.RefreshSingle(instance, unit, shown)
   shown = shown and unit ~= nil
   container:SetShown(shown)
   container:SetEnabled(shown)
+  -- The Modern Aura Group spacing and centring shadow follow the same unit.
+  for _, key in ipairs({"presence", "flowShadow"}) do
+    local follower = missing[key]
+    if follower and missing[key .. "Active"] then
+      if unit and missing[key .. "BoundUnit"] ~= unit then
+        follower:SetEnabled(false)
+        follower:SetUnit(unit)
+        missing[key .. "BoundUnit"] = unit
+      end
+      follower:SetShown(shown)
+      follower:SetEnabled(shown)
+      if shown then follower:UpdateAllAuras() end
+    end
+  end
   -- A disabled container keeps its last width; the clip must not show then.
   missing.clip:SetShown(shown)
   -- No unit (no target, focus or pet): nothing is missing. The display itself

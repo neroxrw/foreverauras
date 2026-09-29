@@ -25,7 +25,96 @@ function Display.IconTexCoords(data, zoom)
 end
 
 function Display.StyleIconTexCoords(native, data, zoom)
-  native.icon:SetTexCoord(Display.IconTexCoords(data, zoom))
+  local skin = data.regionType == "icon" and native.masqueCoords
+  if not skin then
+    native.icon:SetTexCoord(Display.IconTexCoords(data, zoom))
+    return
+  end
+  -- A Masque skin sets its own crop; zoom, aspect and offsets apply on top of
+  -- it, as on ordinary Icons.
+  local left, right, top, bottom = Display.IconTexCoords(data, zoom)
+  local xSpan, ySpan, xMid, yMid = right - left, bottom - top, (left + right) / 2, (top + bottom) / 2
+  native.icon:SetTexCoord(
+    (skin[1] - 0.5) * xSpan + xMid, (skin[2] - 0.5) * ySpan + yMid,
+    (skin[3] - 0.5) * xSpan + xMid, (skin[4] - 0.5) * ySpan + yMid,
+    (skin[5] - 0.5) * xSpan + xMid, (skin[6] - 0.5) * ySpan + yMid,
+    (skin[7] - 0.5) * xSpan + xMid, (skin[8] - 0.5) * ySpan + yMid)
+end
+
+---------------------------------------------------------------------------- masque
+-- Masque skins an Icon's shared base frame, which holds the icon and swipe like
+-- a button does. It lives inside the Total Duration clip, so the skin's border
+-- follows the gate. Buttons join the same Masque group as the display's own
+-- Icon region; the skin's swipe colour replaces Swipe Color while it is on.
+local MSQ = LibStub("Masque", true)
+local masqueMembers = setmetatable({}, {__mode = "k"})
+
+-- Re-reads the skin's crop and applies the display's own on top.
+local function ApplyMasqueCrop(native, group)
+  local base = native.elementFrames.sharedBase
+  if group.db and not group.db.Disabled then
+    native.masqueCoords = native.masqueCoords or {}
+    local c = native.masqueCoords
+    c[1], c[2], c[3], c[4], c[5], c[6], c[7], c[8] = native.icon:GetTexCoord()
+  else
+    -- A disabled group leaves the icon as the display draws it.
+    native.masqueCoords = nil
+    native.icon:ClearAllPoints(); native.icon:SetAllPoints(base)
+  end
+  Display.StyleIconTexCoords(native, native.masqueData)
+end
+
+-- Masque changes (skin, enable, disable) re-apply the crop once it has reskinned.
+local function MasqueChanged(group)
+  C_Timer.After(0, function()
+    for native in pairs(masqueMembers[group] or {}) do
+      if native.masqueGroup == group then ApplyMasqueCrop(native, group) end
+    end
+  end)
+end
+
+local function ReleaseMasque(native)
+  local group = native.masqueGroup
+  if not group then return end
+  group:RemoveButton(native.elementFrames.sharedBase)
+  if masqueMembers[group] then masqueMembers[group][native] = nil end
+  native.masqueGroup, native.masqueCoords, native.masqueData = nil, nil, nil
+end
+
+local function SkinWithMasque(native, data, base)
+  local group = MSQ:Group("ForeverAuras", data.id:lower():gsub(" ", "_"), data.uid)
+  if native.masqueGroup ~= group then
+    ReleaseMasque(native)
+    group:SetName(data.id)
+    group:AddButton(base, {Icon = native.icon, Cooldown = native.cooldown}, "WA_Aura", true)
+    native.masqueGroup = group
+    if not masqueMembers[group] then
+      masqueMembers[group] = setmetatable({}, {__mode = "k"})
+      group:RegisterCallback(MasqueChanged)
+    end
+    masqueMembers[group][native] = true
+  end
+  native.masqueData = data
+  -- Frames placed by Blizzard's containers can report secret sizes; Masque
+  -- takes the configured size instead.
+  local width, height = Display.Dimensions(data)
+  if group.SetFrameSize then group:SetFrameSize(width, height, base) end
+  group:ReSkin(base)
+  ApplyMasqueCrop(native, group)
+end
+
+-- Called after an Icon is styled. Only buttons that show an icon are skinned;
+-- Remaining Time list buttons, bars and texts keep no skin. A Masque error
+-- leaves the button unskinned rather than interrupting the restyle.
+function Display.StyleMasque(native, data)
+  if not MSQ then return end
+  local base = native.elementFrames and native.elementFrames.sharedBase
+  if base and data.regionType == "icon" and native.icon:IsShown() and pcall(SkinWithMasque, native, data, base) then return end
+  if base then
+    pcall(ReleaseMasque, native)
+    native.masqueGroup, native.masqueCoords, native.masqueData = nil, nil, nil
+    Display.StyleIconTexCoords(native, data)
+  end
 end
 
 Display.supportedElements = {subbackground = true, subforeground = true, subtext = true, subborder = true, subglow = true, subtexture = true, subcdmdispel = true, subcdmdispelborder = true}
@@ -481,6 +570,8 @@ function Display.StyleAppearance(native, data, ElementFrame, StyleText, StyleGlo
   Display.StyleNativeConditionIndicators(native, data)
   -- Remaining Time keeps only the countdown and glows on live list buttons.
   if Display.StyleRemainingList then Display.StyleRemainingList(native, data) end
+  -- Masque, once the icon's final visibility is known.
+  Display.StyleMasque(native, data)
   -- Total Duration gate (SecretAuraSingle.lua).
   if Display.StyleDurationGate then Display.StyleDurationGate(native, data) end
 end

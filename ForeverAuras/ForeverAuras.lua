@@ -6221,6 +6221,23 @@ function Private.AnchorFrame(data, region, parent, force)
       anchorFrameDeferred[data.id] = true
     end
   else
+    -- A Modern Aura Group grouped by frame sits on the frame its preview uses
+    -- while the options are open, as a Dynamic Group grouped by frame does, so
+    -- its box and To Frame's settings work on that frame. Its parent is kept.
+    local flowPreview = data.regionType == "group" and Private.BlizzardAuraDisplay.FlowPreviewFrame
+      and Private.BlizzardAuraDisplay.FlowPreviewFrame(data)
+    if flowPreview then
+      region:SetParent(parent or ForeverAurasFrame)
+      region:SetAnchor(data.selfPoint, flowPreview, data.anchorPoint)
+      if data.frameStrata == 1 then
+        region:SetFrameStrata(region:GetParent():GetFrameStrata())
+      else
+        region:SetFrameStrata(Private.frame_strata_types[data.frameStrata])
+      end
+      Private.ApplyFrameLevel(region)
+      anchorFrameDeferred[data.id] = nil
+      return
+    end
     local anchorParent = GetAnchorFrame(data, region, parent);
     if not anchorParent then return end
     if Private.BlizzardAuraDisplay.Enabled(data) and (data.anchorFrameType == "UNITFRAME" or data.anchorFrameType == "NAMEPLATE") then

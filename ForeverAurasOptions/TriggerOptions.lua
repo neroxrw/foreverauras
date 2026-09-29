@@ -312,7 +312,7 @@ function OptionsPrivate.GetTriggerTitle(data, triggernum)
       local triggerType = trigger.type
       local name
       if triggerType == "secretAura" then
-        name = "Aura (Blizzard)"
+        name = "Aura (Modern)"
       elseif triggerType == "aura2" then
         name = "Aura (Legacy)"
       elseif triggerType == "custom" then

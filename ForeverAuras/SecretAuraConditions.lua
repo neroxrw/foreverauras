@@ -342,13 +342,13 @@ function Display.ValidateConditions(data)
     if Display.ContainsNativeCondition(data, condition.check) then
       local kind = Display.NativeConditionKind(data, condition.check)
       if not kind or condition.linked or (data.conditions[index + 1] and data.conditions[index + 1].linked) then
-        return "Aura (Blizzard) conditions cannot use AND, OR, or Else If."
+        return "Aura (Modern) conditions cannot use AND, OR, or Else If."
       end
       if durationVariables[kind] and condition.check.op and condition.check.op ~= "<" and condition.check.op ~= ">=" then
-        return "Aura (Blizzard) time conditions support < and >=."
+        return "Aura (Modern) time conditions support < and >=."
       end
       if (kind == "faAuraDispel" or kind == "faAuraType") and condition.check.op and condition.check.op ~= "==" then
-        return "Aura (Blizzard) type conditions support equality only."
+        return "Aura (Modern) type conditions support equality only."
       end
       for _, change in ipairs(condition.changes or {}) do
         if kind == "faAuraRemaining" and IsGlowProperty(data, change.property)
@@ -365,12 +365,12 @@ function Display.ValidateConditions(data)
           end
         end
         if change.property and not Display.NativeConditionAllowsProperty(data, condition.check, change.property) then
-          return "Choose a supported property for this Aura (Blizzard) condition."
+          return "Choose a supported property for this Aura (Modern) condition."
         end
       end
     end
     if not ValidCheck(data, condition.check) then
-      return 'Use another trigger or a global condition. Aura (Blizzard) does not expose aura state to conditions.'
+      return 'Use another trigger or a global condition. Aura (Modern) does not expose aura state to conditions.'
     end
   end
 end

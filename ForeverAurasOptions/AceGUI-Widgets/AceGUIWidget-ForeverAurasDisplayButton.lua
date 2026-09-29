@@ -1,4 +1,4 @@
--- Modified for ForeverAuras, 2026-09-19.
+-- Modified for ForeverAuras, 2026-09-29.
 if not ForeverAuras.IsLibsOK() then return end
 ---@type string
 local AddonName = ...
@@ -92,6 +92,14 @@ local function copyAuraPart(source, destination, part)
   local all = (part == "all");
   if part == "display" and (NativeDisplayKind(destination) or NativeDisplayKind(source)) then
     CopyNativeAppearance(source, destination)
+    -- Between two Aura (Modern) displays, also their Aura (Modern) Settings
+    -- (layout, swipe colour, Missing look, unit-frame glow) and sort order.
+    if NativeDisplayKind(source) == "aura" and NativeDisplayKind(destination) == "aura" then
+      if source.blizzardAuraDisplay then destination.blizzardAuraDisplay = CopyTable(source.blizzardAuraDisplay) end
+      local Display = OptionsPrivate.Private.BlizzardAuraDisplay
+      local from, to = Display.GetSavedTrigger(source), Display.GetSavedTrigger(destination)
+      if from and to then to.sortMethod, to.sortReverse = from.sortMethod, from.sortReverse end
+    end
   elseif (part == "display" or all) then
     for k, v in pairs(source) do
       if (not ignoreForCopyingDisplay[k]) then
@@ -1116,6 +1124,8 @@ local methods = {
     end
     local regionData = OptionsPrivate.Private.regionOptions[data.regionType or ""]
     local displayName = regionData and regionData.displayName or "";
+    -- A Modern Aura Group is a Group with its own name.
+    if data.regionType == "group" and data.blizzardFlow then displayName = "Modern Aura Group" end
     self:SetDescription({data.id, displayName}, unpack(namestable));
   end,
   ["ReloadTooltip"] = function(self)

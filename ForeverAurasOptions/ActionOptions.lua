@@ -1164,7 +1164,7 @@ function OptionsPrivate.GetActionOptions(data)
         type = "toggle",
         width = ForeverAuras.doubleWidth,
         name = L["Hide Glows applied by this aura"],
-        desc = "Also clears unit-frame glows from Display > Aura (Blizzard) Settings. Secret glows additionally stop when no aura matches or the display unloads.",
+        desc = "Also clears unit-frame glows from Display > Aura (Modern) Settings. Secret glows additionally stop when no aura matches or the display unloads.",
         order = 31,
       },
       finish_do_custom = {

@@ -27,7 +27,9 @@ Display.booleanFilters = {
   {"nameplateShowPersonal", "Marked for personal debuff display", "Auras Blizzard marks for its personal-debuff display on nameplates."},
 }
 
-function Display.GetTrigger(data, displayFilters)
+-- The saved Aura (Modern) trigger that drives the display. Options write to
+-- this table; GetTrigger below may return a working copy.
+function Display.GetSavedTrigger(data)
   if not data or type(data.triggers) ~= "table" then return end
   local source = data.progressSource and data.progressSource[1] or -1
   if source == 0 then return end
@@ -35,7 +37,12 @@ function Display.GetTrigger(data, displayFilters)
   if source < 0 then source = (Private.GetActiveTriggerFor and Private.GetActiveTriggerFor(data.id)) or 1 end
   local entry = data.triggers[source]
   local trigger = type(entry) == "table" and entry.trigger
-  if trigger and trigger.type == "secretAura" then
+  if trigger and trigger.type == "secretAura" then return trigger end
+end
+
+function Display.GetTrigger(data, displayFilters)
+  local trigger = Display.GetSavedTrigger(data)
+  if trigger then
     if displayFilters then
       trigger = CopyTable(trigger)
       trigger.processedAuraType = nil
@@ -276,6 +283,8 @@ local function UnitTokens(trigger)
   return result
 end
 
+Display.UnitTokens = UnitTokens
+
 function Display.GetPreviewUnit(data)
   local trigger = Display.GetTrigger(data)
   if not trigger then return "player" end
@@ -287,7 +296,7 @@ end
 
 function Display.Validate(data)
   if not Display.Eligible(data) then
-    return "Select an Aura (Blizzard) trigger as the progress source of an Icon, Progress Bar, Progress Texture or Text."
+    return "Select an Aura (Modern) trigger as the progress source of an Icon, Progress Bar, Progress Texture or Text."
   end
   if data.regionType == "progresstexture" and Private.ProgressTextureNative.IsCircular(data.orientation) and not Enum.StatusBarRenderMode then
     return "This client does not support native circular Progress Textures."
@@ -341,11 +350,10 @@ function Display.Validate(data)
   -- Show On and Remaining Time have their own unit and display rules.
   local singleProblem = Display.ValidateSingle(data, trigger)
   if singleProblem then return singleProblem end
-  -- A display that stays inside its own rectangle can be positioned by a
-  -- Dynamic Group; a list of several auras grows past it and stays excluded.
-  if Display.InDynamicGroup(data) and not Display.FitsOneSlot(data, trigger) then
-    return "In a Dynamic Group, choose one unit: Player, Target, Focus, Pet, Target of Target or Target of Focus."
-  end
+  -- A Dynamic Group is allowed, with a warning (DynamicGroupWarning). A
+  -- Modern Aura Group has its own rules (SecretAuraFlow.lua).
+  local flowProblem = Display.FlowProblem(data, trigger)
+  if flowProblem then return flowProblem end
   local conditionProblem = Display.ValidateConditions(data)
   if conditionProblem then return conditionProblem end
   for when, action in pairs(data.actions or {}) do
@@ -438,6 +446,24 @@ local function SyncSounds(region)
   pendingSounds[region] = nil
   local native = region.blizzardAuraDisplay
   if not native then return end
+  -- Unchanged units, spells and sound actions: the registrations stand.
+  local signature
+  if native.active and region:IsShown() and not IsPreview() then
+    local trigger = Display.GetTrigger(native.data)
+    local actions = native.data.actions or {}
+    local parts = {}
+    for _, key in ipairs({"start", "finish"}) do
+      local action = actions[key] or {}
+      parts[#parts + 1] = table.concat({tostring(action.do_sound), tostring(action.sound), tostring(action.sound_path),
+        tostring(action.sound_fojji), tostring(action.sound_channel)}, ",")
+    end
+    parts[#parts + 1] = table.concat(UnitTokens(trigger), ",")
+    parts[#parts + 1] = table.concat(Display.GetSpellIDs(trigger, true), ",")
+    parts[#parts + 1] = table.concat(trigger.excludedAuraSpellIDs or {}, ",")
+    signature = table.concat(parts, "|")
+    if signature == native.soundSignature then return end
+  end
+  native.soundSignature = signature
   for _, id in ipairs(native.soundIDs or {}) do C_UnitAuras.RemoveAuraSound(id) end
   native.soundIDs = {}
   local data = native.data
@@ -584,6 +610,7 @@ end
 function Display.Restore(region)
   -- Pooled samples must never survive release or a trigger switch.
   if Display.HidePreview then Display.HidePreview(region) end
+  if Display.RestorePreviewRegion then Display.RestorePreviewRegion(region) end
   if region.secretAuraPreviewNotice then region.secretAuraPreviewNotice:Hide() end
   region.secretAuraConditionValues = nil
   for frame, alpha in pairs(region.blizzardSuppressed or {}) do frame:SetAlpha(alpha) end
@@ -615,6 +642,7 @@ function Display.Release(region)
   Display.HideUnitGlows(region)
   Display.Restore(region)
   pending[region] = nil
+  if Display.CancelEditorApply then Display.CancelEditorApply(region) end
   local native = region.blizzardAuraDisplay
   if native then
     native.active = false
@@ -625,8 +653,11 @@ function Display.Release(region)
     end
     -- A released display draws nothing, so no Missing or Remaining Time part can be failing.
     Private.AuraWarnings.UpdateWarning(native.data.uid, "blizzard_aura_single", nil)
+    Private.AuraWarnings.UpdateWarning(native.data.uid, "blizzard_aura_dynamicgroup", nil)
     activeRegions[region] = nil
     SyncSounds(region)
+    -- The next display in a Modern Aura Group starts where this one did.
+    Display.RechainFlow(Display.FlowGroup(native.data))
   end
 end
 
@@ -782,14 +813,24 @@ local function CandidateFilters(data)
 end
 
 -- The editor always renders public samples; live containers remain disabled.
+-- Samples depend only on the settings, which Apply restyles; unit and roster
+-- changes keep samples already drawn for the same settings.
 local function RefreshPreview(region)
   local native = region.blizzardAuraDisplay
   native.previewHasAuras = IsPreview()
   if native.previewHasAuras then
-    Display.ShowPreview(region, native.data, function(sample, data)
-      Display.StyleAppearance(sample, Display.PrepareConditionAppearance(data), ElementFrame, StyleText, StyleGlow)
-    end)
+    if not (region.secretAuraSamplesActive and native.previewStyled == native.data) then
+      Display.ShowPreview(region, native.data, function(sample, data)
+        Display.StyleAppearance(sample, Display.PrepareConditionAppearance(data), ElementFrame, StyleText, StyleGlow)
+      end)
+      native.previewStyled = native.data
+    end
+    -- In a Modern Aura Group the samples line up like the live auras.
+    Display.ArrangeFlowPreview(Display.FlowGroup(native.data))
   else
+    -- The editor's boxes go back to their own places.
+    Display.RestorePreviewRegion(region)
+    Display.RestoreGroupPreview(Display.FlowGroup(native.data))
     Display.HidePreview(region)
   end
   Suppress(region)
@@ -830,13 +871,14 @@ local function ConfigureUnitGlow(instance, region, data)
     StyleGlow(native, data, true)
   end
   ConfigureProcessing(native.container, trigger)
-  native.container:SetAuraSlotSortMethod("UnitGlow", AuraContainerSortMethod[trigger.sortMethod or "Default"],
-    trigger.sortReverse and AuraContainerSortDirection.Reverse or AuraContainerSortDirection.Normal)
+  native.container:SetAuraSlotSortMethod("UnitGlow", Display.SortOrder(data, trigger))
   native.container:SetAuraSlotFilterString("UnitGlow", FilterString(trigger))
   native.container:SetAuraSlotCandidateFilters("UnitGlow", CandidateFilters(data))
 end
 
 local function CompactUnits(data)
+  -- In a Modern Aura Group on the screen, units are always chained.
+  if Display.FlowGroup(data) and not Display.FlowFrameMode(data) then return Capacity(Display.GetTrigger(data)) > 1 end
   return data.anchorFrameType ~= "UNITFRAME" and not Display.UsesNameplates(data)
     and Capacity(Display.GetTrigger(data)) > 1
 end
@@ -851,13 +893,18 @@ local function Layout(native, region, data)
   local container = native.container
   container:ClearAllPoints()
   local centered = direction == "CENTER_HORIZONTAL" or direction == "CENTER_VERTICAL"
-  container:SetPoint(centered and "CENTER" or anchor, region, centered and "CENTER" or anchor)
+  -- In a Modern Aura Group the content starts where the previous display ends.
+  if centered then container:SetPoint("CENTER", region, "CENTER")
+  else Display.AnchorToContent(container, anchor, region, anchor) end
   container:SetFlowLayoutAxis(vertical and AnchorUtil.FlowLayoutAxis.Vertical or AnchorUtil.FlowLayoutAxis.Horizontal)
   container:SetFlowLayoutAnchorPoint(anchor)
   container:SetFlowLayoutGrowthDirection(direction == "LEFT" and AnchorUtil.FlowDirection.Left or AnchorUtil.FlowDirection.Right,
     direction == "UP" and AnchorUtil.FlowDirection.Up or AnchorUtil.FlowDirection.Down)
-  local spacing = settings.spacing or 6
-  local compact = not centered and CompactUnits(data)
+  local _, flowSpacing = Display.FlowGrowth(data)
+  local spacing = flowSpacing or settings.spacing or 6
+  -- A Modern Aura Group measures a list by its container, so it uses the compact
+  -- layout whose width is exactly the icons shown.
+  local compact = not centered and (CompactUnits(data) or flowSpacing ~= nil)
   -- The Total Duration gate stacks every candidate on the same spot: only one
   -- with the right full duration is drawn, so the others must not take space.
   if Display.DurationGate(data) then spacing = -(vertical and height or width) end
@@ -873,8 +920,10 @@ end
 
 local function Create(region, data)
   local display = {buttons = {}, data = data}
-  local container = CreateFrame("AuraContainer", nil, region, "CustomAuraContainerTemplate")
+  local container, inFlow = Display.CreateAuraContainer(region, data)
   display.container = container
+  -- Made for a Modern Aura Group (SecretAuraFlow.lua); Apply replaces it on a change.
+  display.flowContainer = inFlow
   container:SetEnabled(false)
   ConfigureProcessing(container, Display.GetTrigger(data))
   container:SetPoint("TOPLEFT", region, "TOPLEFT")
@@ -920,6 +969,26 @@ local function Create(region, data)
   return display
 end
 
+-- Frames cannot be destroyed. Ones no longer used are hidden under a hidden
+-- holder, outside every display's frame tree.
+local retiredHolder
+function Display.RetireFrame(frame)
+  if not frame then return end
+  retiredHolder = retiredHolder or CreateFrame("Frame")
+  retiredHolder:Hide()
+  if frame.SetEnabled then frame:SetEnabled(false) end
+  frame:Hide()
+  frame:ClearAllPoints()
+  frame:SetParent(retiredHolder)
+end
+
+-- True when a frame's current strata or level differs from the wanted one.
+-- Containers made for a Modern Aura Group report secret values; those are
+-- always set, as they cannot be compared.
+local function Changed(current, wanted)
+  return issecretvalue(current) or current ~= wanted
+end
+
 local unitFrameGlowSizes = setmetatable({}, {__mode = "k"})
 
 local function AnchorUnitGlow(container, frame)
@@ -944,7 +1013,10 @@ function Display.UpdateDetachedFrameLevels(region)
   if not native or not native.active then return end
   local level = region:GetFrameLevel()
   for _, instance in ipairs(native.instances) do
-    level = math.max(level, instance.container:GetFrameLevel())
+    -- A Modern Aura Group's containers may report a secret level; they sit
+    -- just above the region, which the reserve below covers.
+    local containerLevel = instance.container:GetFrameLevel()
+    if not issecretvalue(containerLevel) then level = math.max(level, containerLevel) end
   end
   -- Reserve the native button, three levels per element, and glow/cooldown children.
   -- Only container frames are inspected; native aura buttons may be inaccessible.
@@ -963,12 +1035,22 @@ local function RefreshUnits(region, removedUnit, changedUnit)
   local units = UnitTokens(trigger)
   local growth = Display.Growth(data)
   local vertical = growth == "UP" or growth == "DOWN" or growth == "CENTER_VERTICAL"
+  -- A Modern Aura Group grouped by frame places these on unit frames or
+  -- nameplates itself (RelinkFlowUnits, below).
+  local frameMode = Display.FlowFrameMode(data)
   for index, instance in ipairs(native.instances) do
     local container = instance.container
     local unit = units[index]
     if not changedUnit or unit == changedUnit then
-      local unitFrames = data.anchorFrameType == "UNITFRAME"
-      local nameplates = not unitFrames and Display.UsesNameplates(data)
+      -- In a Modern Aura Group the group's mode decides (screen, unit frames or
+      -- nameplates); the display's own anchor is not used for its auras.
+      local unitFrames, nameplates
+      if Display.FlowGroup(data) then
+        unitFrames, nameplates = frameMode == "UNITFRAME", frameMode == "NAMEPLATE"
+      else
+        unitFrames = data.anchorFrameType == "UNITFRAME"
+        nameplates = not unitFrames and Display.UsesNameplates(data)
+      end
       local anchorFrame
       if unit then
         if unitFrames then
@@ -989,16 +1071,30 @@ local function RefreshUnits(region, removedUnit, changedUnit)
         if container:GetParent() ~= parent then container:SetParent(parent) end
       end
       container:SetAlpha(parent == region and 1 or data.alpha or 1)
-      container:SetFrameStrata((data.frameStrata == nil or data.frameStrata == 1) and parent:GetFrameStrata() or region:GetFrameStrata())
+      -- Strata and level are set only when they change: each change walks
+      -- every button of the container.
+      local strata = (data.frameStrata == nil or data.frameStrata == 1) and parent:GetFrameStrata() or region:GetFrameStrata()
+      if Changed(container:GetFrameStrata(), strata) then container:SetFrameStrata(strata) end
       if unitFrames then
         -- Keep native aura content above the unit glow and its two child layers.
         local level = anchorFrame and settings.unitGlow and anchorFrame:GetFrameLevel() + unitGlowFrameLevel + 3 or parent:GetFrameLevel() + 1
-        container:SetFrameLevel(level)
-        container:ClearAllPoints()
-        container:SetPoint(data.selfPoint or "CENTER", anchorFrame or region, data.anchorPoint or "CENTER", data.xOffset or 0, data.yOffset or 0)
+        if Changed(container:GetFrameLevel(), level) then container:SetFrameLevel(level) end
+        if not frameMode then
+          container:ClearAllPoints()
+          container:SetPoint(data.selfPoint or "CENTER", anchorFrame or region, data.anchorPoint or "CENTER", data.xOffset or 0, data.yOffset or 0)
+        end
+      elseif frameMode then
+        -- Placed by RelinkFlowUnits.
       elseif nameplates then
         container:ClearAllPoints()
-        container:SetPoint("BOTTOM", anchorFrame or region, "TOP", settings.nameplateX or 0, settings.nameplateY or 8)
+        if data.anchorFrameType == "NAMEPLATE" then
+          -- Anchored to nameplates: the display's Position and Size settings.
+          container:SetPoint(data.selfPoint or "BOTTOM", anchorFrame or region, data.anchorPoint or "TOP", data.xOffset or 0, data.yOffset or 0)
+        else
+          -- Nameplate unit on a screen anchor: above the plate (older auras
+          -- may still carry their own offsets).
+          container:SetPoint("BOTTOM", anchorFrame or region, "TOP", settings.nameplateX or 0, settings.nameplateY or 8)
+        end
       else
         local direction = growth
         local anchor = direction == "LEFT" and "TOPRIGHT" or direction == "UP" and "BOTTOMLEFT" or "TOPLEFT"
@@ -1013,7 +1109,8 @@ local function RefreshUnits(region, removedUnit, changedUnit)
             vertical and 0 or (direction == "LEFT" and 1 or -1),
             vertical and (direction == "UP" and -1 or 1) or 0)
         else
-          container:SetPoint(anchor, region, anchor)
+          -- In a Modern Aura Group the content starts where the previous display ends.
+          Display.AnchorToContent(container, anchor, region, anchor)
         end
       end
       instance.visible = shown
@@ -1022,6 +1119,8 @@ local function RefreshUnits(region, removedUnit, changedUnit)
       if shown then container:UpdateAllAuras() end
       -- The Missing container follows the same unit and visibility as the aura slot.
       Display.RefreshSingle(instance, unit, shown)
+      -- So does a centred Modern Aura Group's half-size shadow.
+      Display.RefreshFlowShadow(instance, unit, shown)
       if instance.unitGlow then
         local glowContainer = instance.unitGlow.container
         local frame = unitFrames and unit and settings.unitGlow and anchorFrame
@@ -1036,14 +1135,18 @@ local function RefreshUnits(region, removedUnit, changedUnit)
         end
         glowContainer:ClearAllPoints()
         if frame then AnchorUnitGlow(glowContainer, frame) else glowContainer:SetAllPoints(glowParent) end
-        glowContainer:SetFrameStrata(glowParent:GetFrameStrata())
-        glowContainer:SetFrameLevel(glowParent:GetFrameLevel() + unitGlowFrameLevel)
+        if Changed(glowContainer:GetFrameStrata(), glowParent:GetFrameStrata()) then glowContainer:SetFrameStrata(glowParent:GetFrameStrata()) end
+        local glowLevel = glowParent:GetFrameLevel() + unitGlowFrameLevel
+        if Changed(glowContainer:GetFrameLevel(), glowLevel) then glowContainer:SetFrameLevel(glowLevel) end
         glowContainer:SetShown(glowShown)
         glowContainer:SetEnabled(glowShown)
         if glowShown then glowContainer:UpdateAllAuras() end
       end
     end
   end
+  -- Every display in the group relinks all of them, so the order in which
+  -- they rebind their units does not matter.
+  if frameMode then Display.RelinkFlowUnits(Display.FlowGroup(data)) end
   Display.UpdateDetachedFrameLevels(region)
   RefreshPreview(region)
 end
@@ -1054,7 +1157,7 @@ function Display.UnitFramesChanged()
   local needed
   for region in pairs(activeRegions) do
     local data = region.blizzardAuraDisplay.data
-    if data.anchorFrameType == "UNITFRAME" then needed = true; break end
+    if data.anchorFrameType == "UNITFRAME" or Display.FlowFrameMode(data) == "UNITFRAME" then needed = true; break end
   end
   if not needed then return end
   unitFrameRefreshPending = true
@@ -1063,12 +1166,22 @@ function Display.UnitFramesChanged()
     unitFrameRefreshPending = nil
     for region in pairs(activeRegions) do
       local data = region.blizzardAuraDisplay.data
-      if data.anchorFrameType == "UNITFRAME" then RefreshUnits(region) end
+      if data.anchorFrameType == "UNITFRAME" or Display.FlowFrameMode(data) == "UNITFRAME" then RefreshUnits(region) end
     end
   end)
 end
 
+-- The display's frames stay shown (their contents cannot be known in combat),
+-- so a Dynamic Group keeps its place even when no aura is there.
+Display.dynamicGroupWarning = "Aura (Modern) in a Dynamic Group: it keeps its position even when no aura is shown. Recommended: use a Modern Aura Group, or the Aura (Modern) Settings under Display to grow and sort auras."
+local function DynamicGroupWarning(data)
+  local inGroup = Display.Enabled(data) and Display.InDynamicGroup(data)
+  Private.AuraWarnings.UpdateWarning(data.uid, "blizzard_aura_dynamicgroup", inGroup and "warning" or nil,
+    inGroup and Display.dynamicGroupWarning or nil)
+end
+
 function Display.Apply(region, data)
+  DynamicGroupWarning(data)
   if not Display.Enabled(data) then Display.Release(region); Warn(data); SoundWarning(data); return end
   Suppress(region)
   local problem = Display.Validate(data)
@@ -1079,9 +1192,12 @@ function Display.Apply(region, data)
     Display.ShowPreview(region, data, function(sample, appearance)
       Display.StyleAppearance(sample, Display.PrepareConditionAppearance(appearance), ElementFrame, StyleText, StyleGlow)
     end)
+    Display.ArrangeFlowPreview(Display.FlowGroup(data))
     Suppress(region)
   else
     Display.HidePreview(region)
+    Display.RestorePreviewRegion(region)
+    Display.RestoreGroupPreview(Display.FlowGroup(data))
   end
   if Restricted() then
     pending[region] = data
@@ -1111,8 +1227,29 @@ function Display.Apply(region, data)
     end)
   end
   native.data = data
+  -- A Modern Aura Group child draws from its start frame (SecretAuraFlow.lua).
+  Display.EnsureFlowStart(region, data)
+  -- The samples were styled above; RefreshPreview keeps them.
+  native.previewStyled = IsPreview() and data or nil
   if IsPreview() then UpdatePreviewNotice(region) end
   native.unitGlowsHidden = false
+  -- Joining or leaving a Modern Aura Group needs containers made for it: the old
+  -- ones are retired (frames cannot be destroyed, so they stay hidden).
+  local wantsFlow = Display.FlowGroup(data) ~= nil
+  if native.instances[1] and native.instances[1].flowContainer ~= wantsFlow then
+    for _, instance in ipairs(native.instances) do
+      instance.container:SetEnabled(false)
+      instance.container:Hide()
+      Display.RefreshSingle(instance, nil, false)
+      if instance.single and instance.single.missing then instance.single.missing.active = false end
+      -- Retired frames leave the region: every frame under it is walked again
+      -- whenever its parent, strata or level is set.
+      Display.RetireFrame(instance.container)
+      if instance.flowShadow then Display.RetireFrame(instance.flowShadow) end
+      if instance.unitGlow then Display.RetireFrame(instance.unitGlow.container) end
+    end
+    native.instances = {}
+  end
   -- Reserve containers before combat; roster and plate events only rebind existing ones.
   for index = 1, Capacity(Display.GetTrigger(data)) do
     if not native.instances[index] then native.instances[index] = Create(region, data) end
@@ -1126,8 +1263,7 @@ function Display.Apply(region, data)
     Layout(instance, region, data)
     local trigger = Display.GetTrigger(data)
     ConfigureProcessing(instance.container, trigger)
-    instance.container:SetAuraGroupSortMethod("Auras", AuraContainerSortMethod[trigger.sortMethod or "Default"],
-      trigger.sortReverse and AuraContainerSortDirection.Reverse or AuraContainerSortDirection.Normal)
+    instance.container:SetAuraGroupSortMethod("Auras", Display.SortOrder(data, trigger))
     instance.container:SetAuraGroupFilterString("Auras", FilterString(trigger))
     instance.container:SetAuraGroupCandidateFilters("Auras", CandidateFilters(data))
     ConfigureUnitGlow(instance, region, data)
@@ -1135,7 +1271,13 @@ function Display.Apply(region, data)
     Display.ConfigureSingle(instance, region, data, index)
   end
   native.active = true
+  native.appliedTrigger = Display.GetSavedTrigger(data)
   activeRegions[region] = true
+  -- Where the next display in a Modern Aura Group starts, then the whole chain.
+  local single = native.instances[1] and native.instances[1].single
+  Display.EnsureFlowShadows(region, data)
+  Display.SetFlowEnd(region, data, single and single.missing and single.missing.active and single.missing.presenceActive and single.missing.presence)
+  Display.RechainFlow(Display.FlowGroup(data))
   RefreshUnits(region)
   pending[region] = nil
   SyncSounds(region)
@@ -1175,6 +1317,7 @@ function Display.Activate(region, data)
     native.unitGlowsHidden = false
     native.active = true
     activeRegions[region] = true
+    Display.RechainFlow(Display.FlowGroup(data))
     RefreshUnits(region)
     SyncSounds(region)
   else
@@ -1188,7 +1331,45 @@ function Display.SyncProgressSource(region, data)
   local key = trigger and (data.progressSource and data.progressSource[1] or -1) or 0
   if key < 0 then key = (data.triggers.activeTriggerMode and data.triggers.activeTriggerMode > 0 and data.triggers.activeTriggerMode)
     or (Private.GetActiveTriggerFor and Private.GetActiveTriggerFor(data.id)) or 1 end
-  if region.secretAuraProgressSourceIndex ~= key then Display.Modify(region, data) end
+  if region.secretAuraProgressSourceIndex ~= key then
+    -- Another trigger turning on or off can change the index while the same
+    -- Aura (Modern) trigger still drives the display: nothing to rebuild.
+    local native = region.blizzardAuraDisplay
+    if native and native.active and native.data == data and native.appliedTrigger
+      and native.appliedTrigger == Display.GetSavedTrigger(data) then
+      region.secretAuraProgressSourceIndex = key
+      return
+    end
+    Display.Modify(region, data)
+  end
+end
+
+-- In the editor one action can modify a display several times in one frame, and
+-- many displays at once: multi-select setters, texture pickers, paste. A display
+-- that is already built is rebuilt once, on the next frame, a few per frame.
+local EDITOR_APPLIES_PER_FRAME = 2
+local editorQueue = {}
+local editorDraining = false
+local function DrainEditorQueue()
+  local regions = {}
+  for region in pairs(editorQueue) do regions[#regions + 1] = region end
+  local done = 0
+  for _, region in ipairs(regions) do
+    if done >= EDITOR_APPLIES_PER_FRAME then break end
+    local data = editorQueue[region]
+    editorQueue[region] = nil
+    -- Skip displays deleted, renamed or replaced since they were queued.
+    local entry = Private.regions[data.id]
+    if entry and entry.region == region and (ForeverAuras.GetData(data.id) or data) == data and Display.Enabled(data) then
+      Display.Apply(region, data)
+      done = done + 1
+    end
+  end
+  if next(editorQueue) then C_Timer.After(0, DrainEditorQueue) else editorDraining = false end
+end
+
+function Display.CancelEditorApply(region)
+  editorQueue[region] = nil
 end
 
 function Display.Modify(region, data)
@@ -1200,6 +1381,16 @@ function Display.Modify(region, data)
   region.secretAuraConditionValues = nil
   if not Display.Enabled(data) then Display.Release(region); Warn(data); SoundWarning(data); return end
   Install(region)
+  local native = region.blizzardAuraDisplay
+  if ForeverAuras.IsOptionsOpen() and native and native.active and native.data == data and not Restricted() then
+    editorQueue[region] = data
+    if not editorDraining then
+      editorDraining = true
+      C_Timer.After(0, DrainEditorQueue)
+    end
+    return
+  end
+  editorQueue[region] = nil
   Display.Apply(region, data)
 end
 
@@ -1212,6 +1403,11 @@ local unitEvents = {
   UPDATE_MOUSEOVER_UNIT = {mouseover = true},
   INSTANCE_ENCOUNTER_ENGAGE_UNIT = {boss = true},
   ARENA_OPPONENT_UPDATE = {arena = true},
+  -- Names only matter to group displays filtered by player name.
+  UNIT_NAME_UPDATE = {group = true, party = true, raid = true},
+  -- Combat and restriction changes do not change which units are watched.
+  PLAYER_REGEN_ENABLED = {},
+  ADDON_RESTRICTION_STATE_CHANGED = {},
 }
 
 local function NeedsUnitRefresh(mode, event, unit)
@@ -1225,7 +1421,6 @@ local function NeedsUnitRefresh(mode, event, unit)
 end
 
 local events = CreateFrame("Frame")
-events:RegisterEvent("UNIT_AURA")
 events:RegisterEvent("PLAYER_REGEN_ENABLED")
 events:RegisterEvent("ADDON_RESTRICTION_STATE_CHANGED")
 -- Reconfigure physical-pixel borders when the screen's pixel-to-UI ratio changes.
@@ -1234,24 +1429,31 @@ events:RegisterEvent("DISPLAY_SIZE_CHANGED")
 for _, event in ipairs({"PLAYER_ENTERING_WORLD", "GROUP_ROSTER_UPDATE", "PLAYER_TARGET_CHANGED", "PLAYER_FOCUS_CHANGED",
   "UPDATE_MOUSEOVER_UNIT", "UNIT_TARGET", "UNIT_PET", "INSTANCE_ENCOUNTER_ENGAGE_UNIT", "ARENA_OPPONENT_UPDATE",
   "NAME_PLATE_UNIT_ADDED", "NAME_PLATE_UNIT_REMOVED", "UNIT_NAME_UPDATE", "PLAYER_ROLES_ASSIGNED"}) do events:RegisterEvent(event) end
+-- Displays waiting for restrictions to end are rebuilt a few per frame, so
+-- the end of combat does not rebuild every display in one frame.
+local APPLIES_PER_FRAME = 3
+local draining = false
+local function DrainPending()
+  if Restricted() then draining = false; return end
+  local done = 0
+  for region, data in pairs(pending) do
+    pending[region] = nil
+    if ForeverAuras.GetData(data.id) == data and Private.regions[data.id] and Private.regions[data.id].region == region then
+      Display.Apply(region, data)
+      done = done + 1
+      if done >= APPLIES_PER_FRAME then break end
+    end
+  end
+  if next(pending) then C_Timer.After(0, DrainPending) else draining = false end
+end
+
 events:SetScript("OnEvent", function(_, event, unit)
   if event == "UI_SCALE_CHANGED" or event == "DISPLAY_SIZE_CHANGED" then
     for region in pairs(activeRegions) do Display.Apply(region, region.blizzardAuraDisplay.data) end
     return
   end
-  if event == "UNIT_AURA" then
-    if IsPreview() then
-      for region in pairs(activeRegions) do
-        for _, instance in ipairs(region.blizzardAuraDisplay.instances) do
-          if instance.visible and instance.boundUnit == unit then
-            RefreshPreview(region)
-            break
-          end
-        end
-      end
-    end
-    return
-  end
+  -- Modern Aura Groups re-anchor once after all their displays rebound units.
+  Display.BeginFlowBatch()
   for region in pairs(activeRegions) do
     local mode = Display.GetTrigger(region.blizzardAuraDisplay.data).unit
     if event == "NAME_PLATE_UNIT_ADDED" or event == "NAME_PLATE_UNIT_REMOVED" then
@@ -1262,21 +1464,25 @@ events:SetScript("OnEvent", function(_, event, unit)
           RefreshUnits(region)
         end
       end
+    elseif pending[region] and not Restricted() then
+      -- Rebuilt below; refreshing it first would be wasted.
     elseif NeedsUnitRefresh(mode, event, unit) then
       RefreshUnits(region)
     end
-    if (event == "GROUP_ROSTER_UPDATE" or event == "UNIT_NAME_UPDATE" or event == "PLAYER_ROLES_ASSIGNED") and unitEvents.GROUP_ROSTER_UPDATE[mode] then SyncSounds(region) end
+    local trigger = Display.GetTrigger(region.blizzardAuraDisplay.data)
+    if (event == "GROUP_ROSTER_UPDATE" or event == "PLAYER_ROLES_ASSIGNED"
+      or (event == "UNIT_NAME_UPDATE" and trigger.useUnitNames)) and unitEvents.GROUP_ROSTER_UPDATE[mode] then
+      SyncSounds(region)
+    end
   end
+  Display.EndFlowBatch()
   if Restricted() then return end
   if event == "PLAYER_REGEN_ENABLED" or event == "ADDON_RESTRICTION_STATE_CHANGED" or event == "PLAYER_ENTERING_WORLD" then
     for region in pairs(activeRegions) do Display.RefreshConditionAppearance(region) end
   end
   for region in pairs(pendingSounds) do SyncSounds(region) end
-  for region, data in pairs(pending) do
-    if ForeverAuras.GetData(data.id) == data and Private.regions[data.id] and Private.regions[data.id].region == region then
-      Display.Apply(region, data)
-    else
-      pending[region] = nil
-    end
+  if next(pending) and not draining then
+    draining = true
+    DrainPending()
   end
 end)

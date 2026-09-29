@@ -1,4 +1,4 @@
--- Modified for ForeverAuras, 2026-09-18.
+-- Modified for ForeverAuras, 2026-09-29.
 if not ForeverAuras.IsLibsOK() then return end
 ---@type string
 local AddonName = ...
@@ -91,7 +91,11 @@ end
 
 -- Modify a given region/display
 local function modify(parent, region, data)
-  if data.information.groupOffset then
+  if data.blizzardFlow and data.blizzardFlowFrames then
+    -- A Modern Aura Group grouped by frame uses its Anchor point, as a
+    -- Dynamic Group grouped by frame does (SecretAuraFlow.lua).
+    data.selfPoint = data.selfPoint or "CENTER"
+  elseif data.information.groupOffset then
     data.selfPoint = "BOTTOMLEFT";
   else
     data.selfPoint = "CENTER";
@@ -194,6 +198,11 @@ local function modify(parent, region, data)
   end
 
   Private.regionPrototype.modifyFinish(parent, region, data);
+  -- Modern Aura Group: re-anchor its Aura (Modern) children in the current order.
+  if data.blizzardFlow and Private.BlizzardAuraDisplay and Private.BlizzardAuraDisplay.RechainFlow then
+    Private.BlizzardAuraDisplay.RechainFlow(data)
+    if ForeverAuras.IsOptionsOpen() then Private.BlizzardAuraDisplay.ArrangeFlowPreview(data) end
+  end
 end
 
 -- Register new region type with ForeverAuras
