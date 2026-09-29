@@ -1,6 +1,9 @@
 # Changelog
 
 ## Versions
+## 0.27.1
+- Re-added range features
+
 ## 0.26.6
 New: Modern Aura Group
 - New group type for Aura (Modern) displays. Use this group when using Aura (Modern)

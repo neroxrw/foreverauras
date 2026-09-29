@@ -29,12 +29,16 @@ end
 
 local LibRangeCheck = LibStub("LibRangeCheck-3.0")
 
+-- Range results can be secret, and another addon may have loaded an older
+-- copy of the library: an error or a secret result reads as "unknown".
 function ForeverAuras.GetRange(unit, checkVisible)
-  return LibRangeCheck:GetRange(unit, checkVisible);
+  local ok, min, max = pcall(LibRangeCheck.GetRange, LibRangeCheck, unit, checkVisible)
+  if not ok or issecretvalue(min) or issecretvalue(max) then return end
+  return min, max
 end
 
 function ForeverAuras.CheckRange(unit, range, operator)
-  local min, max = LibRangeCheck:GetRange(unit, true);
+  local min, max = ForeverAuras.GetRange(unit, true);
   if (type(range) ~= "number") then
     range = tonumber(range);
   end
@@ -9619,6 +9623,93 @@ if count == nil then return false end
     iconFunc = function(trigger)
       return Private.ExecEnv.GetSpellIcon(trigger.spellName or 0);
     end,
+    automaticrequired = true,
+    progressType = "none"
+  },
+  -- Range Check, as in WeakAuras. Uses LibRangeCheck through ForeverAuras.GetRange,
+  -- which treats a secret or failed range check as unknown (0 to 999 yards).
+  ["Range Check"] = {
+    type = "unit",
+    events = {
+      ["events"] = {"FRAME_UPDATE"}
+    },
+    name = L["Range Check"],
+    init = function(trigger)
+      trigger.unit = trigger.unit or "target";
+      local ret = [=[
+          local unit = %q;
+          local min, max = ForeverAuras.GetRange(unit, true);
+          min = min or 0;
+          max = max or 999;
+          local triggerResult = true;
+      ]=]
+      if (trigger.use_range) then
+        trigger.range = trigger.range or 8;
+        if (trigger.range_operator == "<=") then
+          ret = ret .. "triggerResult = max <= " .. tostring(tonumber(trigger.range) or 8) .. "\n";
+        else
+          ret = ret .. "triggerResult = min >= " .. tostring(tonumber(trigger.range) or 8) .. "\n";
+        end
+      end
+      return ret:format(trigger.unit);
+    end,
+    statesParameter = "one",
+    args = {
+      {
+        name = "note",
+        type = "description",
+        display = "",
+        text = function() return L["Note: This trigger type estimates the range to the hitbox of a unit. The actual range of friendly players is usually 3 yards more than the estimate. Range checking capabilities depend on your current class and known abilities as well as the type of unit being checked. Some of the ranges may also not work with certain NPCs.|n|n|cFFAAFFAAFriendly Units:|r %s|n|cFFFFAAAAHarmful Units:|r %s|n|cFFAAAAFFMiscellanous Units:|r %s"]:format(RangeCacheStrings.friend or "", RangeCacheStrings.harm or "", RangeCacheStrings.misc or "") end
+      },
+      {
+        name = "unit",
+        required = true,
+        display = L["Unit"],
+        type = "unit",
+        init = "unit",
+        values = "unit_types_range_check",
+        test = "true",
+        store = true
+      },
+      {
+        hidden = true,
+        name = "minRange",
+        display = L["Minimum Estimate"],
+        type = "number",
+        init = "min",
+        store = true,
+        test = "true",
+        conditionType = "number",
+        operator_types = "without_equal",
+      },
+      {
+        hidden = true,
+        name = "maxRange",
+        display = L["Maximum Estimate"],
+        type = "number",
+        init = "max",
+        store = true,
+        test = "true",
+        conditionType = "number",
+        operator_types = "without_equal",
+      },
+      {
+        name = "range",
+        display = L["Distance"],
+        type = "number",
+        operator_types = "without_equal",
+        test = "triggerResult",
+        conditionType = "number",
+        conditionTest = function(state, needle, needle2)
+          return state and ForeverAuras.CheckRange(state.unit, needle, needle2);
+        end,
+        noProgressSource = true
+      },
+      {
+        hidden = true,
+        test = "UnitExists(unit)"
+      }
+    },
     automaticrequired = true,
     progressType = "none"
   },
