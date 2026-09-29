@@ -136,7 +136,7 @@ Enable this setting if you want this timer to be hidden, or when using a Forever
 	L["Add Property Change"] = "添加属性修改"
 	L["Add Snippet"] = "添加片段"
 	L["Add Sub Option"] = "添加子选项"
-	L["Add to group %s"] = "添加到组％s"
+	L["Add to group %s"] = "添加到组%s"
 	L["Add to new Dynamic Group"] = "添加到新的动态群组"
 	L["Add to new Group"] = "添加到新的组"
 	L["Add Trigger"] = "添加触发器"

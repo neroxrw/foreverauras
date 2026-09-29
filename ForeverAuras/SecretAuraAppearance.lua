@@ -7,13 +7,13 @@ local Media = LibStub("LibSharedMedia-3.0")
 -- Match ordinary icon zoom/offset/aspect calculations using configured sizes.
 -- No geometry or aura data is read from protected children. The same helper is
 -- used by preview, native initialization and supported zoom condition changes.
-function Display.StyleIconTexCoords(native, data, zoom)
+-- Returns left, right, top, bottom so inline icon markup can reuse the crop.
+function Display.IconTexCoords(data, zoom)
   zoom = zoom or data.zoom or 0
   if data.regionType ~= "icon" then
     -- Aura bar icons retain their existing crop behavior.
     local crop = math.min(0.45, math.max(0, zoom / 2))
-    native.icon:SetTexCoord(crop, 1 - crop, crop, 1 - crop)
-    return
+    return crop, 1 - crop, crop, 1 - crop
   end
   local width, height = Display.Dimensions(data)
   local aspect = data.keepAspectRatio and width > 0 and height > 0 and width / height or 1
@@ -21,8 +21,11 @@ function Display.StyleIconTexCoords(native, data, zoom)
   local xSpan = span * (aspect < 1 and aspect or 1)
   local ySpan = span * (aspect > 1 and 1 / aspect or 1)
   local x, y = data.texXOffset or 0, data.texYOffset or 0
-  native.icon:SetTexCoord(0.5 - xSpan / 2 - x, 0.5 + xSpan / 2 - x,
-    0.5 - ySpan / 2 + y, 0.5 + ySpan / 2 + y)
+  return 0.5 - xSpan / 2 - x, 0.5 + xSpan / 2 - x, 0.5 - ySpan / 2 + y, 0.5 + ySpan / 2 + y
+end
+
+function Display.StyleIconTexCoords(native, data, zoom)
+  native.icon:SetTexCoord(Display.IconTexCoords(data, zoom))
 end
 
 Display.supportedElements = {subbackground = true, subforeground = true, subtext = true, subborder = true, subglow = true, subtexture = true, subcdmdispel = true, subcdmdispelborder = true}
@@ -145,8 +148,8 @@ function Display.ValidateAppearance(data)
     elseif element.type == "subtext" then
       local problem = CheckText(element.text_text, element.text_visible)
       if problem then return problem end
-    elseif element.type == "subglow" and element.glow and element.glowType ~= "Proc" and element.glowType ~= "buttonOverlay" then
-      return "Secret auras support Proc Glow and Action Button Glow. Choose one in Display."
+    elseif element.type == "subglow" and element.glow and not ({Proc = true, buttonOverlay = true, Pixel = true, ACShine = true})[element.glowType or "Proc"] then
+      return "Choose Action Button Glow, Pixel Glow, Autocast Shine or Proc Glow."
     end
   end
 end
@@ -158,8 +161,15 @@ local function TextSettings(element)
     textX = element.text_anchorXOffset or element.anchorXOffset, textY = element.text_anchorYOffset or element.anchorYOffset}
 end
 
-local function BindText(button, text, value, config, prefix, data, baseColor, property)
+-- window (optional) is the trigger's Remaining Time filter; it hides the
+-- countdown outside that time range through the same native colour curve.
+local function BindText(button, text, value, config, prefix, data, baseColor, property, window)
   local kind = Display.TextKind(value)
+  -- The trigger's Remaining Time limits every countdown of the display.
+  if not window and kind == "duration" and Display.RemainingWindow then
+    local op, x = Display.RemainingWindow(Display.GetTrigger(data))
+    if op then window = {op, x} end
+  end
   if kind == "duration" then
     local format = config[prefix .. "p_time_format"]
     local options
@@ -167,7 +177,7 @@ local function BindText(button, text, value, config, prefix, data, baseColor, pr
       options = {textFormatter = Private.GetDurationTextFormatter(config[prefix .. "p_time_legacy_floor"] and 0 or 99,
         config[prefix .. "p_time_dynamic_threshold"] or 3, config[prefix .. "p_time_precision"] or 1, format == -2)}
     end
-    local color = Display.DurationColorCondition(data, baseColor, property)
+    local color = Display.DurationColorCondition(data, baseColor, property, window)
     if color then
       options = options or {}
       options.textColor = color
@@ -176,6 +186,9 @@ local function BindText(button, text, value, config, prefix, data, baseColor, pr
       if pcall(button.SetDurationText, button, text, options) then return end
       options.textColor = nil
     end
+    -- A time-limited countdown without its curve would show outside the range:
+    -- leave it unbound (empty) instead.
+    if window then return end
     button:SetDurationText(text, options)
   elseif kind == "stack" then
     local formatter = Display.StackTextCondition(data, property)
@@ -184,6 +197,8 @@ local function BindText(button, text, value, config, prefix, data, baseColor, pr
   elseif kind == "name" then button:SetSpellName(text)
   else text:SetText((value or ""):gsub("%%%%", "%%")) end
 end
+
+Display.TextSettings = TextSettings
 
 local function TextLayout(text, mode, width, wrap)
   text:SetWidth(mode == "Fixed" and (width or 200) or 0)
@@ -291,7 +306,10 @@ function Display.StyleAppearance(native, data, ElementFrame, StyleText, StyleGlo
   if native.mainText then native.mainText:Hide() end
   for _, entry in pairs(native.sharedElements or {}) do
     if entry.glow then StyleGlow(entry, {blizzardAuraDisplay = {glow = false}}) end
+    -- Glow elements (SecretAuraGlow.lua) are rebuilt below when still configured.
+    Display.ClearElementGlow(entry)
   end
+  if native.lateGlow then native.lateGlow.clip:Hide() end
   native.sharedElements = native.sharedElements or {}
   local base = ElementFrame(native, "sharedBase")
   base:SetFrameLevel(button:GetFrameLevel() + 1); base:Show()
@@ -382,9 +400,16 @@ function Display.StyleAppearance(native, data, ElementFrame, StyleText, StyleGlo
         borderSeen = true
       elseif element.type == "subglow" then
         entry.glowAnchor, entry.glowWidth, entry.glowHeight = Area(native, data, element.anchor_area)
-        StyleGlow(entry, {width = width, height = height, blizzardAuraDisplay = {glow = element.glow, glowType = element.glowType == "buttonOverlay" and "pulse" or "proc",
-          useGlowColor = element.useGlowColor, glowColor = element.glowColor, glowScale = element.glowScale, glowDuration = element.glowDuration,
-          glowX = element.glowXOffset, glowY = element.glowYOffset}})
+        -- All four glow types, played by Blizzard (SecretAuraGlow.lua).
+        -- A glow tied to remaining time lives in a clip that Blizzard's timer
+        -- opens (SecretAuraSingle.lua); false means its duration is not known yet.
+        local holder = Display.TimedGlowHolder(native, data, index, frame)
+        if holder == nil then
+          Display.StyleElementGlow(entry, button, frame, entry.glowAnchor, element, entry.glowWidth, entry.glowHeight)
+        elseif holder then
+          Display.StyleElementGlow(entry, button, holder, entry.glowAnchor,
+            setmetatable({glow = true}, {__index = element}), entry.glowWidth, entry.glowHeight)
+        end
       elseif element.type == "subcdmdispelborder" and element.dispelVisible ~= false then
         -- Geometry follows a normal frame; Blizzard owns the four textures' type tint.
         entry.dispelAnchor = entry.dispelAnchor or CreateFrame("Frame", nil, frame)
@@ -454,4 +479,8 @@ function Display.StyleAppearance(native, data, ElementFrame, StyleText, StyleGlo
   end
   -- Preview frames evaluate public samples; live frames register native rules.
   Display.StyleNativeConditionIndicators(native, data)
+  -- Remaining Time keeps only the countdown and glows on live list buttons.
+  if Display.StyleRemainingList then Display.StyleRemainingList(native, data) end
+  -- Total Duration gate (SecretAuraSingle.lua).
+  if Display.StyleDurationGate then Display.StyleDurationGate(native, data) end
 end

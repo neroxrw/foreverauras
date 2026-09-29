@@ -60,8 +60,18 @@ local function TextProperty(data, property, kind)
     if channel then return "sub." .. index .. ".text_color", channel end
   end
 end
+-- "Remaining Time < X" may also turn on a Glow element: SecretAuraSingle.lua
+-- draws it as a glow that opens when X seconds are left (Display.LateGlowSpec).
+local function IsGlowProperty(data, property)
+  local index = property and property:match("^sub%.(%d+)%.glow$")
+  local element = index and data.subRegions and data.subRegions[tonumber(index)]
+  return element ~= nil and element.type == "subglow" and not Display.IsDetachedElement(data, element)
+end
+Display.IsGlowProperty = IsGlowProperty
+
 function Display.NativeConditionAllowsProperty(data, check, property)
   local kind = Display.NativeConditionKind(data, check)
+  if kind == "faAuraRemaining" and IsGlowProperty(data, property) then return true end
   if durationVariables[kind] then
     local target, channel = TextProperty(data, property, "duration")
     return target ~= nil and channel ~= "text"
@@ -137,17 +147,25 @@ local function BaseTextVisible(data, property)
   local element = index and original.subRegions and original.subRegions[tonumber(index)]
   return not element or element.text_visible ~= false
 end
-function Display.DurationColorCondition(data, baseColor, property)
+-- window = {op, x}: the trigger's Remaining Time filter. It adds its own
+-- step points and forces alpha 0 outside the range, so it only combines with
+-- conditions on Remaining Time in seconds (Display.ValidateSingle enforces this).
+function Display.DurationColorCondition(data, baseColor, property, window)
   if not Display.SupportsDurationColorCondition() then return end
   local rules = NumericRules(data, property)
-  if #rules == 0 then return end
-  local definition = durationVariables[rules[1].kind]
+  if #rules == 0 and not window then return end
+  local kind = rules[1] and rules[1].kind or "faAuraRemaining"
+  if window and kind ~= "faAuraRemaining" then return end
+  local definition = durationVariables[kind]
   local bindingProperty = Enum.DurationTextBindingProperty[definition[1]]
   if bindingProperty == nil then return end
   local points, seen = {0}, {[0] = true}
   for _, rule in ipairs(rules) do
-    if rule.kind ~= rules[1].kind then return end -- One native binding samples one time property.
+    if rule.kind ~= kind then return end -- One native binding samples one time property.
     if not seen[rule.threshold] then points[#points + 1] = rule.threshold; seen[rule.threshold] = true end
+  end
+  for _, value in ipairs(window and Display.RemainingWindowPoints(window[1], window[2]) or {}) do
+    if not seen[value] then points[#points + 1] = value; seen[value] = true end
   end
   table.sort(points)
   local curve = C_CurveUtil.CreateColorCurve()
@@ -160,6 +178,7 @@ function Display.DurationColorCondition(data, baseColor, property)
         elseif rule.channel == "visible" then visible = rule.value ~= false end
       end
     end
+    if window and not Display.InRemainingWindow(value, window[1], window[2]) then visible = false end
     local result = Color(color, {1, 1, 1, 1})
     if not visible then local r,g,b = result:GetRGB(); result = CreateColor(r,g,b,0) end
     curve:AddPoint(value, result)
@@ -332,6 +351,10 @@ function Display.ValidateConditions(data)
         return "Aura (Blizzard) type conditions support equality only."
       end
       for _, change in ipairs(condition.changes or {}) do
+        if kind == "faAuraRemaining" and IsGlowProperty(data, change.property)
+          and (condition.check.op ~= "<" or change.value ~= true) then
+          return "A Remaining Time glow condition must use < and turn the glow on."
+        end
         if durationVariables[kind] and change.property then
           local target = TextProperty(data, change.property, "duration")
           if target then
@@ -450,6 +473,12 @@ function Display.SetConditionProperty(region, property, ...)
   region.secretAuraConditionValues[property] = value
   for _, instance in ipairs(native.instances) do
     for _, button in ipairs(instance.buttons) do ApplyProperty(button, native.data, property, value, region.secretAuraConditionValues) end
+    -- The Missing look follows the same non-aura conditions.
+    local missing = instance.single and instance.single.missing
+    if missing and missing.native then
+      ApplyProperty(missing.native, native.data, property, value, region.secretAuraConditionValues)
+      Display.KeepMissingDesaturated(missing.native, native.data)
+    end
   end
 end
 
@@ -460,6 +489,12 @@ function Display.RefreshConditionAppearance(region)
   for _, instance in ipairs(native.instances) do
     for _, button in ipairs(instance.buttons) do
       Display.ApplyConditionAppearance(button, region, native.data)
+    end
+    -- Keep the Missing look in step with the live aura slot.
+    local missing = instance.single and instance.single.missing
+    if missing and missing.native then
+      Display.ApplyConditionAppearance(missing.native, region, native.data)
+      Display.KeepMissingDesaturated(missing.native, native.data)
     end
   end
 end
@@ -483,7 +518,9 @@ function Display.StyleNativeConditionIndicators(native, data)
   native.conditionData = native.preview and data or nil
   -- Highlight textures must be above the icon and swipe. The button itself is
   -- below both; placing textures there hid thin borders and exposed only overflow.
-  native.conditionOverlay = native.conditionOverlay or CreateFrame("Frame", nil, button)
+  -- Inside the Total Duration gate clip, when there is one, so a rejected aura
+  -- shows no highlight either.
+  native.conditionOverlay = native.conditionOverlay or CreateFrame("Frame", nil, native.gateClip or button)
   native.conditionOverlay:SetAllPoints(button)
   local base = native.elementFrames and native.elementFrames.sharedBase
   native.conditionOverlay:SetFrameLevel(math.max(native.cooldown:GetFrameLevel(), native.bar and native.bar:GetFrameLevel() or 0,

@@ -3,8 +3,11 @@ if not ForeverAuras.IsLibsOK() then return end
 local _, Private = ...
 local Display = Private.BlizzardAuraDisplay
 
-local function CreateSample(region)
-  local button = CreateFrame("Frame", nil, region)
+-- Builds a plain frame with the native button's binding methods. Previews add a
+-- timer on top; Show On: Aura Missing reuses it unanimated for its Missing look,
+-- which must be created in place inside its clip frame (parent).
+function Display.CreateSampleNative(parent)
+  local button = CreateFrame("Frame", nil, parent)
   button:EnableMouse(false)
   button.bindings = {}
   -- These adapters belong only to ordinary preview frames, never AuraContainer children.
@@ -49,10 +52,44 @@ local function CreateSample(region)
   native.cooldown:SetDrawBling(false)
   native.overlay = CreateFrame("Frame", nil, button)
   native.overlay:SetAllPoints(button)
+  return native
+end
+
+-- Fills recorded bindings with static public values. timed = false leaves the
+-- countdown, stack and swipe empty, as for an aura that is not present.
+function Display.FillSampleBindings(button, iconID, name, data, timed)
+  for kind, entries in pairs(button.bindings) do
+    for _, entry in ipairs(entries) do
+      local widget = entry.widget
+      if kind == "Icon" then widget:SetTexture(iconID)
+      elseif kind == "SpellName" then widget:SetText(name)
+      elseif kind == "ApplicationCount" then widget:SetText(timed and "3" or "")
+      elseif kind == "DurationText" then widget:SetText(timed and "6" or "")
+      elseif kind == "DurationBar" then
+        widget:SetMinMaxValues(0, 6)
+        widget:SetValue(timed and (data.inverse and 0 or 6) or 0)
+      elseif kind == "DurationCooldown" then
+        if timed then
+          widget:SetCooldown(GetTime(), 6)
+          widget:Show()
+        else
+          widget:Clear()
+          widget:Hide()
+        end
+      end
+    end
+  end
+end
+
+local function CreateSample(region)
+  local native = Display.CreateSampleNative(region)
+  local button = native.button
   -- Loop sample progress just as the framework renews expired OPTIONS timers.
   -- Only shown samples receive OnUpdate; keep text and bars in step with the swipe.
   button:SetScript("OnUpdate", function(self, elapsed)
     if not ForeverAuras.IsOptionsOpen() then Display.HidePreview(region); return end
+    -- A Missing sample stands for an absent aura and has no countdown.
+    if self.staticSample then return end
     self.elapsed = (self.elapsed or 0) + elapsed
     if self.elapsed < 0.05 then return end
     self.elapsed = 0
@@ -83,9 +120,11 @@ function Display.ShowPreview(region, data, StyleSample)
   local ids = Display.GetSpellIDs(Display.GetTrigger(data), false)
   if #ids == 0 then ids[1] = false end
   local settings = data.blizzardAuraDisplay
-  local count = math.min(#ids, settings.maxIcons or 10)
+  -- The single-aura settings preview one aura in the region's own rectangle.
+  local count = math.min(#ids, Display.MaxAuras(data))
   local width, height = Display.Dimensions(data)
-  local growth, spacing = settings.growth or "RIGHT", settings.spacing or 6
+  local growth, spacing = Display.Growth(data), settings.spacing or 6
+  local missingLook = Display.PreviewShowsMissing(data)
   local vertical = growth == "UP" or growth == "DOWN" or growth == "CENTER_VERTICAL"
   local centered = growth == "CENTER_HORIZONTAL" or growth == "CENTER_VERTICAL"
   local anchor = growth == "LEFT" and "TOPRIGHT" or growth == "UP" and "BOTTOMLEFT" or "TOPLEFT"
@@ -107,22 +146,10 @@ function Display.ShowPreview(region, data, StyleSample)
     button:ClearAllPoints()
     button:SetPoint(centered and "CENTER" or anchor, region, centered and "CENTER" or anchor, x, y)
     -- Like ordinary OPTIONS states, each sample has a six-second duration.
-    for kind, entries in pairs(button.bindings) do
-      for _, entry in ipairs(entries) do
-        local widget = entry.widget
-        if kind == "Icon" then widget:SetTexture(sample.iconID)
-        elseif kind == "SpellName" then widget:SetText(sample.name)
-        elseif kind == "ApplicationCount" then widget:SetText("3")
-        elseif kind == "DurationText" then widget:SetText("6")
-        elseif kind == "DurationBar" then
-          widget:SetMinMaxValues(0, 6)
-          widget:SetValue(data.inverse and 0 or 6)
-        elseif kind == "DurationCooldown" then
-          widget:SetCooldown(GetTime(), 6)
-          widget:Show()
-        end
-      end
-    end
+    -- Show On: Aura Missing previews the static look drawn while the aura is absent.
+    button.staticSample = missingLook
+    Display.FillSampleBindings(button, missingLook and Display.SingleIcon(data) or sample.iconID, sample.name, data, not missingLook)
+    if missingLook then Display.StyleMissingIcon(sample, data) end
     button:Show()
   end
 end

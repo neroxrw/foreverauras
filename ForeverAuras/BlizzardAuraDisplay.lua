@@ -1,4 +1,4 @@
--- Modified for ForeverAuras, 2026-09-19.
+-- Modified for ForeverAuras, 2026-09-29.
 if not ForeverAuras.IsLibsOK() then return end
 local _, Private = ...
 local SharedMedia = LibStub("LibSharedMedia-3.0")
@@ -150,7 +150,7 @@ end
 function Display.HasAdditionalFilters(trigger)
   if next(trigger.nativeFilters or {}) then return true end
   if Display.UsesExcludedSpellIDs(trigger) or next(trigger.includeDispelTypes or {})
-    or next(trigger.excludeDispelTypes or {}) or trigger.maxDuration ~= nil
+    or next(trigger.excludeDispelTypes or {}) or Display.TotalFilter(trigger) ~= nil
     or (trigger.processedAuraType and trigger.processedAuraType ~= "any") then return true end
   for _, field in ipairs(Display.booleanFilters) do
     if trigger[field[1]] ~= nil and (not IsNameplateFilter(field[1]) or trigger.unit == "nameplate") then return true end
@@ -173,7 +173,8 @@ end
 local function ElementFrame(native, key)
   native.elementFrames = native.elementFrames or {}
   if not native.elementFrames[key] then
-    local frame = CreateFrame("Frame", nil, native.button)
+    -- Icons: every element lives in the Total Duration gate clip (SecretAuraSingle.lua).
+    local frame = CreateFrame("Frame", nil, native.gateClip or native.button)
     frame:SetAllPoints(native.button)
     frame:EnableMouse(false)
     native.elementFrames[key] = frame
@@ -195,6 +196,10 @@ function Display.Migrate(data)
       entry.trigger.auraspellids = entry.trigger.auraspellids or {}
       entry.trigger.useExactSpellId = true
       entry.trigger.onlyMaw = nil
+      -- Settings from pre-release test builds (SecretAuraSingle.lua).
+      Display.MigrateSingle(data, entry.trigger)
+      -- Maximum Duration becomes Total Duration.
+      Display.MigrateTotal(entry.trigger)
       data.blizzardAuraDisplay = data.blizzardAuraDisplay or {}
       data.blizzardAuraDisplay.enabled = nil
     end
@@ -223,6 +228,8 @@ function Display.Enabled(data)
 end
 
 local function Capacity(trigger)
+  -- The single-aura settings always watch exactly one unit token.
+  if Display.IsSingle and Display.IsSingle(trigger) then return 1 end
   local unit = trigger.unit
   if unit == "group" or unit == "raid" or unit == "nameplate" then return 40 end
   if unit == "party" or unit == "arena" then return 5 end
@@ -331,12 +338,13 @@ function Display.Validate(data)
       if not Display.dispelTypes[name] or value ~= true then return "Choose supported dispel types." end
     end
   end
-  local parent = data.parent and ForeverAuras.GetData(data.parent)
-  while parent do
-    if parent.regionType == "dynamicgroup" then
-      return "Secret Aura trigger detected. You cannot place this aura in a Dynamic Group."
-    end
-    parent = parent.parent and ForeverAuras.GetData(parent.parent)
+  -- Show On and Remaining Time have their own unit and display rules.
+  local singleProblem = Display.ValidateSingle(data, trigger)
+  if singleProblem then return singleProblem end
+  -- A display that stays inside its own rectangle can be positioned by a
+  -- Dynamic Group; a list of several auras grows past it and stays excluded.
+  if Display.InDynamicGroup(data) and not Display.FitsOneSlot(data, trigger) then
+    return "In a Dynamic Group, choose one unit: Player, Target, Focus, Pet, Target of Target or Target of Focus."
   end
   local conditionProblem = Display.ValidateConditions(data)
   if conditionProblem then return conditionProblem end
@@ -503,12 +511,10 @@ local function UpdatePreviewNotice(region)
   local data = region.blizzardAuraDisplay and region.blizzardAuraDisplay.data
   local trigger = Display.GetTrigger(data)
   local warning
-  if trigger and (Display.UsesSpellIDs(trigger) or Display.UsesRankSpellIDs(trigger)) then
-    local unit = trigger.unit
-    local friendly = unit == "player" or unit == "pet" or unit == "group" or unit == "party" or unit == "raid"
-    if friendly and trigger.debuffType == "HARMFUL" then
-      warning = "Preview only: secret debuffs will not display with spell ID filters.\nConfigured sounds in Actions can still play."
-    end
+  -- Same rule as the trigger's status line: only a selection Blizzard always
+  -- refuses (not Approximate Match, not never-secret spells) gets the notice.
+  if trigger and Display.SpellIDFilterNote(trigger) == "error" then
+    warning = "Preview only: these auras will not display in combat with spell ID filters.\nConfigured sounds in Actions can still play."
   end
   if warning then
     if not region.secretAuraPreviewNotice then
@@ -605,6 +611,7 @@ function Display.HideUnitGlows(region)
 end
 
 function Display.Release(region)
+  Display.ReleaseAuraLearning(region)
   Display.HideUnitGlows(region)
   Display.Restore(region)
   pending[region] = nil
@@ -614,7 +621,10 @@ function Display.Release(region)
     for _, instance in ipairs(native.instances) do
       instance.container:SetEnabled(false)
       instance.container:Hide()
+      Display.RefreshSingle(instance, nil, false)
     end
+    -- A released display draws nothing, so no Missing or Remaining Time part can be failing.
+    Private.AuraWarnings.UpdateWarning(native.data.uid, "blizzard_aura_single", nil)
     activeRegions[region] = nil
     SyncSounds(region)
   end
@@ -749,7 +759,10 @@ end
 
 local function CandidateFilters(data)
   local trigger = Display.GetTrigger(data)
-  local filters = {maxDuration = trigger.maxDuration}
+  -- Total Duration: "<=" is Blizzard's own limit; "=" also narrows the
+  -- candidates before the gate (StyleDurationGate) picks the exact one.
+  local totalOp, total = Display.TotalFilter(trigger)
+  local filters = {maxDuration = totalOp == "<=" and total + 0.05 or totalOp == "=" and total + 0.5 or nil}
   -- Rank and exact selections form one union; ignored exact IDs still win.
   if Display.UsesSpellIDs(trigger) or Display.UsesRankSpellIDs(trigger) then
     filters.includeSpellIDs = SpellIDMap(Display.GetSpellIDs(trigger, true)) or {}
@@ -764,7 +777,8 @@ local function CandidateFilters(data)
       for name, value in pairs(trigger[field]) do filters[field][name] = value end
     end
   end
-  return filters
+  -- Approximate Match swaps spell IDs for learned properties (SecretAuraSingle.lua).
+  return Display.ApproximateFilters(trigger, filters)
 end
 
 -- The editor always renders public samples; live containers remain disabled.
@@ -830,7 +844,8 @@ end
 local function Layout(native, region, data)
   local width, height = Display.Dimensions(data)
   local settings = data.blizzardAuraDisplay
-  local direction = settings.growth or "RIGHT"
+  -- The single-aura drawing pins the one slot to the region's top-left corner.
+  local direction = Display.Growth(data)
   local vertical = direction == "UP" or direction == "DOWN" or direction == "CENTER_VERTICAL"
   local anchor = direction == "LEFT" and "TOPRIGHT" or direction == "UP" and "BOTTOMLEFT" or "TOPLEFT"
   local container = native.container
@@ -843,6 +858,9 @@ local function Layout(native, region, data)
     direction == "UP" and AnchorUtil.FlowDirection.Up or AnchorUtil.FlowDirection.Down)
   local spacing = settings.spacing or 6
   local compact = not centered and CompactUnits(data)
+  -- The Total Duration gate stacks every candidate on the same spot: only one
+  -- with the right full duration is drawn, so the others must not take space.
+  if Display.DurationGate(data) then spacing = -(vertical and height or width) end
   -- Empty native containers are one pixel wide/high. Reserve that pixel after
   -- occupied content too, then subtract it in the anchor chain, without reading sizes.
   container:SetAuraGroupLayout("Auras", {
@@ -850,7 +868,7 @@ local function Layout(native, region, data)
     elementHeight = height + (compact and vertical and spacing + 1 or 0),
     elementSpacing = compact and -1 or spacing,
   })
-  container:SetAuraGroupMaxFrameCount("Auras", settings.maxIcons or 10)
+  container:SetAuraGroupMaxFrameCount("Auras", Display.MaxAuras(data))
 end
 
 local function Create(region, data)
@@ -861,18 +879,27 @@ local function Create(region, data)
   ConfigureProcessing(container, Display.GetTrigger(data))
   container:SetPoint("TOPLEFT", region, "TOPLEFT")
   container:AddAuraGroup("Auras", FilterString(Display.GetTrigger(data)), {
-    maxFrameCount = data.blizzardAuraDisplay.maxIcons or 10,
+    maxFrameCount = Display.MaxAuras(data),
     candidateFilters = CandidateFilters(data),
     initializeFrame = function(button)
       local native = {container = container}
       native.button = button
       button:EnableMouse(false)
+      -- Total Duration gate: a clip created before any element, sized by
+      -- Blizzard's total-duration text (StyleDurationGate). It does not clip
+      -- while no gate is used.
+      if display.data.regionType == "icon" then
+        native.gateClip = CreateFrame("Frame", nil, button, "DisableUntrustedLayoutScriptsTemplate")
+        native.gateClip:SetClipsChildren(true)
+        native.gateClip:SetAllPoints(button)
+        native.gateText = button:CreateFontString(nil, "BACKGROUND")
+      end
       for _, area in ipairs({"inner", "outer"}) do
         native[area] = CreateFrame("Frame", nil, button)
         native[area]:SetPoint("CENTER", button, "CENTER")
         native[area]:EnableMouse(false)
       end
-      native.border = button:CreateTexture(nil, "BACKGROUND")
+      native.border = (native.gateClip or button):CreateTexture(nil, "BACKGROUND")
       native.border:SetAllPoints(button)
       local base = ElementFrame(native, "sharedBase")
       native.icon = base:CreateTexture(nil, "ARTWORK")
@@ -882,7 +909,7 @@ local function Create(region, data)
       native.cooldown:SetDrawBling(false)
       native.cooldown:SetHideCountdownNumbers(true)
       button:SetDurationCooldown(native.cooldown)
-      local overlay = CreateFrame("Frame", nil, button)
+      local overlay = CreateFrame("Frame", nil, native.gateClip or button)
       native.overlay = overlay
       overlay:SetAllPoints(button)
       overlay:SetFrameLevel(native.cooldown:GetFrameLevel() + 1)
@@ -934,7 +961,8 @@ local function RefreshUnits(region, removedUnit, changedUnit)
   local trigger = Display.GetTrigger(data)
   local settings = data.blizzardAuraDisplay
   local units = UnitTokens(trigger)
-  local vertical = settings.growth == "UP" or settings.growth == "DOWN" or settings.growth == "CENTER_VERTICAL"
+  local growth = Display.Growth(data)
+  local vertical = growth == "UP" or growth == "DOWN" or growth == "CENTER_VERTICAL"
   for index, instance in ipairs(native.instances) do
     local container = instance.container
     local unit = units[index]
@@ -972,7 +1000,7 @@ local function RefreshUnits(region, removedUnit, changedUnit)
         container:ClearAllPoints()
         container:SetPoint("BOTTOM", anchorFrame or region, "TOP", settings.nameplateX or 0, settings.nameplateY or 8)
       else
-        local direction = settings.growth or "RIGHT"
+        local direction = growth
         local anchor = direction == "LEFT" and "TOPRIGHT" or direction == "UP" and "BOTTOMLEFT" or "TOPLEFT"
         container:ClearAllPoints()
         if direction == "CENTER_HORIZONTAL" or direction == "CENTER_VERTICAL" then
@@ -992,6 +1020,8 @@ local function RefreshUnits(region, removedUnit, changedUnit)
       container:SetShown(shown)
       container:SetEnabled(shown)
       if shown then container:UpdateAllAuras() end
+      -- The Missing container follows the same unit and visibility as the aura slot.
+      Display.RefreshSingle(instance, unit, shown)
       if instance.unitGlow then
         local glowContainer = instance.unitGlow.container
         local frame = unitFrames and unit and settings.unitGlow and anchorFrame
@@ -1071,6 +1101,7 @@ function Display.Apply(region, data)
       for _, instance in ipairs(native.instances) do
         instance.container:SetEnabled(false)
         instance.container:Hide()
+        Display.RefreshSingle(instance, nil, false)
       end
       SyncSounds(region)
     end)
@@ -1086,7 +1117,8 @@ function Display.Apply(region, data)
   for index = 1, Capacity(Display.GetTrigger(data)) do
     if not native.instances[index] then native.instances[index] = Create(region, data) end
   end
-  for _, instance in ipairs(native.instances) do
+  Display.ClearSingleWarning(data)
+  for index, instance in ipairs(native.instances) do
     instance.data = data
     -- Apply the complete configuration before Blizzard refreshes visible auras.
     instance.container:SetEnabled(false)
@@ -1099,6 +1131,8 @@ function Display.Apply(region, data)
     instance.container:SetAuraGroupFilterString("Auras", FilterString(trigger))
     instance.container:SetAuraGroupCandidateFilters("Auras", CandidateFilters(data))
     ConfigureUnitGlow(instance, region, data)
+    -- Builds or retires the Missing and Remaining Time parts before units are bound.
+    Display.ConfigureSingle(instance, region, data, index)
   end
   native.active = true
   activeRegions[region] = true
@@ -1107,6 +1141,12 @@ function Display.Apply(region, data)
   SyncSounds(region)
   Warn(data)
 end
+
+-- Shared with SecretAuraSingle.lua.
+Display.FilterString = FilterString
+Display.CandidateFilters = CandidateFilters
+Display.StyleNative = Style
+Display.StyleText = StyleText
 
 local function Install(region)
   if not region.blizzardOriginalUpdate then
@@ -1129,6 +1169,9 @@ function Display.Activate(region, data)
   Install(region)
   local native = region.blizzardAuraDisplay
   if native and native.data == data and not pending[region] and Display.Validate(data) == nil then
+    -- Reloading an existing display must restore its learning subscription too.
+    local trigger = Display.GetTrigger(data)
+    Display.WatchAuraLearning(region, data, trigger, Display.LateGlowSpec(data, trigger))
     native.unitGlowsHidden = false
     native.active = true
     activeRegions[region] = true

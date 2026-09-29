@@ -767,7 +767,7 @@ every 3 events starting from 2nd and ending at 11th: 2-11/3]=] ] = "Ocurrencia d
 	L["Start Collapsed"] = "Iniciar colapsado"
 	L["Start of %s"] = "Inicio de %s"
 	L["Step Size"] = "Tamaño de paso"
-	L["Stop Motion %s"] = "Stop motion de %"
+	L["Stop Motion %s"] = "Stop motion de %s"
 	L["Stop Motion Settings"] = "Configuración de Stop Motion"
 	L["Stop Sound"] = "Detener sonido"
 	L["Stretched by Foreground"] = "Estirado por primer plano"

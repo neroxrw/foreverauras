@@ -437,7 +437,7 @@ local function BuildCooldownViewerStates(allstates, selected, event, showGCD, tr
         -- an absent/changed viewer must not retain the previous aura's slot.
         state.cdmAuraRenderUnit, state.cdmAuraRenderSpellIDs = nil, nil
         state.cdmCountdownSource, state.cdmStackSource, state.cdmTextRecord, state.cdmDispelName = nil, nil, nil, nil
-        state.isUsable = nil
+        state.isUsable, state.insufficientResources = nil, nil
         state.onCooldown, state.isReady, state.recharging, state.stacks, state.auraActive = nil, nil, nil, nil, nil
         state.wandAppearanceDuration = nil -- No snapshot may survive source/clone reuse.
         state.cdmGCDOnly, state.cdmHideGCDText = false, hideGCDText == true
@@ -477,8 +477,9 @@ local function BuildCooldownViewerStates(allstates, selected, event, showGCD, tr
           -- Usability includes reactive/resource requirements, independently of cooldown readiness.
           -- Never compare or expose a secret result as a condition value.
           if C_Spell.IsSpellUsable then
-            local usable = C_Spell.IsSpellUsable(spellID)
-            if IsReadable(usable) and type(usable) == "boolean" then state.isUsable = usable end
+            local usable, insufficientResources = C_Spell.IsSpellUsable(spellID)
+            state.isUsable = ReadBoolean(usable)
+            state.insufficientResources = ReadBoolean(insufficientResources)
           end
           local onCooldown, hasCooldownFlags, onGCD = GetSpellCooldownState(spellID, event)
           -- Keep the GCD-free text source independent of native frame flags, which
@@ -995,16 +996,18 @@ local spellArgs = {}
 for i, arg in ipairs(Private.CooldownViewerPrototype.args) do spellArgs[i] = arg end
 spellArgs[#spellArgs + 1] = {name = "inRange", display = "Spell In Range", hidden = true,
   conditionType = "bool", conditionTest = BooleanCondition("inRange")}
--- Only spell cooldown triggers expose usability; item and aura triggers retain their conditions.
-spellArgs[#spellArgs + 1] = {name = "isUsable", display = "Spell Usable (when readable)", hidden = true,
+-- Only spell cooldown triggers expose usability and resource checks; item and aura triggers retain their conditions.
+spellArgs[#spellArgs + 1] = {name = "isUsable", display = "Spell Usable", hidden = true,
   conditionType = "bool", conditionTest = BooleanCondition("isUsable")}
+spellArgs[#spellArgs + 1] = {name = "insufficientResources", display = "Insufficient Resources", hidden = true,
+  conditionType = "bool", conditionTest = BooleanCondition("insufficientResources")}
 Private.CooldownViewerPrototype.args = spellArgs
 Private.CooldownViewerUtilityPrototype.args = spellArgs
 -- Resource, stance and reactive-action changes can occur without a cooldown change.
 local cooldownEvents = Private.CooldownViewerPrototype.events
 local function SpellCooldownEvents()
   local result = cooldownEvents()
-  for _, event in ipairs({"ACTIONBAR_UPDATE_USABLE", "ACTION_USABLE_CHANGED", "UPDATE_SHAPESHIFT_FORM"}) do
+  for _, event in ipairs({"ACTIONBAR_UPDATE_USABLE", "ACTION_USABLE_CHANGED", "SPELL_UPDATE_USABLE", "UPDATE_SHAPESHIFT_FORM"}) do
     result.events[#result.events + 1] = event
   end
   return result

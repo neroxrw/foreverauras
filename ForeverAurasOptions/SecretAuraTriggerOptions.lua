@@ -1,4 +1,4 @@
--- Modified for ForeverAuras, 2026-09-19.
+-- Modified for ForeverAuras, 2026-09-29.
 if not ForeverAuras.IsLibsOK() then return end
 local _, OptionsPrivate = ...
 
@@ -36,14 +36,18 @@ local function GetOptions(data, triggernum)
     return values
   end
   local options = {
+    -- Green/red status for this trigger's own selection (Display.TriggerStatus).
     help = {type = "description", order = 2, width = "full", fontSize = "small",
-      name = "Trigger Always Active. Blizzard Controls Display."},
+      name = function() return display.TriggerStatus(data, trigger) end},
     unitLabel = {
       type = "toggle", name = "Unit", order = 3, width = width,
       disabled = true, get = function() return true end,
     },
     unit = {
-      type = "select", name = "Unit", order = 3.01, width = width, values = display.units,
+      type = "select", name = "Unit", order = 3.01, width = width,
+      -- Every unit stays selectable; the status line says when a unit does
+      -- not work with the rest of the selection.
+      values = display.units,
       get = function() return trigger.unit end, set = function(_, value) Save("unit", value) end,
     },
     auraTypeLabel = {
@@ -111,18 +115,7 @@ local function GetOptions(data, triggernum)
       end,
     },
     filtersHeader = {type = "header", name = "Aura Filters", order = 10},
-    durationEnabled = {
-      type = "toggle", name = "Limit total duration", order = 22, width = width,
-      desc = "Filters total duration, not remaining time. Permanent auras are excluded when enabled.",
-      get = function() return trigger.maxDuration ~= nil end,
-      set = function(_, value) Save("maxDuration", value and 60 or nil) end,
-    },
-    maxDuration = {
-      type = "range", name = "Maximum total duration (seconds)", order = 23, width = width,
-      control = "ForeverAurasSpinBox", min = 0.1, softMax = 3600, step = 0.1,
-      disabled = function() return trigger.maxDuration == nil end,
-      get = function() return trigger.maxDuration or 60 end, set = function(_, value) Save("maxDuration", value) end,
-    },
+    -- Maximum Duration is now Total Duration "<=" (AuraTriggerOptions.lua).
     includeNameplateOnly = {
       type = "toggle", name = "Include nameplate-only auras", order = 21, width = "full",
       desc = "Also allows auras normally returned only for nameplate displays. Other filters still apply.",
@@ -132,14 +125,6 @@ local function GetOptions(data, triggernum)
 
   }
   options.spellSelectionHeader = {type = "header", name = "Spell Selection Filters", order = 4.5}
-  options.debuffSpellIDWarning = {
-    type = "description", order = 4.9, width = "full", fontSize = "small",
-    name = "|cffff0000Filtering Debuffs by spell ID will cause the Aura not display. Sounds can still be added in Actions.|r",
-    hidden = function()
-      return trigger.debuffType ~= "HARMFUL"
-        or not (display.UsesSpellIDs(trigger) or display.UsesRankSpellIDs(trigger) or display.UsesExcludedSpellIDs(trigger))
-    end,
-  }
   local function SpellIDs(toggleKey, prefix, storageKey, title, inputName, order, Enabled, flag)
     options[toggleKey] = {
       type = "toggle", name = title, order = order, width = width - 0.2,

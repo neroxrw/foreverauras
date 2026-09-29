@@ -1,4 +1,4 @@
--- Modified for ForeverAuras, 2026-09-18.
+-- Modified for ForeverAuras, 2026-09-29.
 if not ForeverAuras.IsLibsOK() then return end
 ---@type string
 local AddonName = ...
@@ -1145,8 +1145,16 @@ local function modify(parent, region, data)
   local function createRegionData(childData, childRegion, childID, cloneID, dataIndex)
     cloneID = cloneID or ""
     local controlPoint = region.controlPoints:Acquire()
-    controlPoint:SetWidth(childRegion:GetWidth())
-    controlPoint:SetHeight(childRegion:GetHeight())
+    -- Size the control point from the same public dimensions the layout uses
+    -- (PositionChildren resizes it from them too). The child frame's own
+    -- GetWidth/GetHeight can be secret when its current anchoring depends on a
+    -- frame with secret geometry, and a secret cannot be passed to SetWidth.
+    local dimensions = childData.regionType == "text" and childRegion or childData
+    local width, height = dimensions.width, dimensions.height
+    if type(width) ~= "number" or issecretvalue(width) then width = 1 end
+    if type(height) ~= "number" or issecretvalue(height) then height = 1 end
+    controlPoint:SetWidth(width)
+    controlPoint:SetHeight(height)
     local regionData = {
       data = childData,
       region = childRegion,

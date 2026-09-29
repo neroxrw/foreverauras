@@ -1,6 +1,38 @@
 # Changelog
 
 ## Versions
+## 0.22.1
+New
+- **Show On:** Aura(s) Found, Aura(s) Missing or Always, laid out like Aura (Legacy). Missing and Always work on Icon displays for Player, Target, Focus, Pet, Target of Target and Target of Focus.
+- **Remaining Time filter:** show the aura only while its time left is in a range (for example, less than 5 seconds). Icon displays only.
+- **Total Duration filter** (=, <= or >=): filter auras by their full duration.
+  - <= works on every display type and replaces the old Maximum Duration option. Existing settings carry over.
+  - = and >= work on Icon displays only.
+- **Approximate Match** for Debuffs on Player, Pet, Smart Group, Party and Raid, which Blizzard hides from spell ID filters in combat. Enable this to attempt to display filtered spell ID debuffs on the aforementioned units.
+- **Dynamic Groups:** Aura (Blizzard) displays can now be placed in Dynamic Groups when they watch one unit. You still cannot place Smart Group, Party, Raid etc into dynamic groups, but you can Anchor to Unit Frames, Nameplates, and control their Growth direction under the Display tab.
+- **Glow elements:** Action Button Glow, Pixel Glow, Autocast Shine and Proc Glow all animate on Aura (Blizzard) displays, in and out of combat.
+- **Glow in the last seconds:** turn a Glow on with a "Remaining Time < X" condition, or with the Remaining Time filter.
+- **Status line:** the trigger shows whether your selection works in combat.
+  - Green: it works.
+  - Orange: it works with a limit.
+  - Red: it won't work, with the reason.
+- **Desaturate while missing:** a new display option for the Missing icon.
+
+Changed
+- **Preview notice:** the "won't display in combat" notice only appears for selections Blizzard always refuses. It no longer appears for spells Blizzard never hides, or when Approximate Match is on.
+- **Sounds note:** when spell ID filtering won't work, the status line says that sounds set in Actions still play.
+- **Time inputs:** Remaining Time, Total Duration and Aura Duration accept a decimal comma (for example 1,5).
+
+Known limitations
+- With Total Duration = or >=, or Approximate Match on an Icon, the countdown text shows as the swipe's own countdown numbers. It keeps your text's font, colour, position and format.
+- With Total Duration = or >=, auras that match are drawn on top of each other in one spot.
+- Approximate Match can also match a different Debuff with the same duration and dispel type.
+
+Fixes
+- **Dynamic Group error:** fixed a Lua error when a Dynamic Group positioned an Aura (Blizzard) display.
+- **Spanish (Mexico) error:** fixed a Lua error when opening a Stop Motion element's options on esMX clients.
+- **Translations:** fixed Simplified Chinese, Traditional Chinese and Russian texts that left out a name they should show.
+
 ## 0.13.5
 - Fixed Spell Cooldown conditions checking the wrong spell rank. Range, usability and insufficient-resource checks now follow the rank being tracked, even if you entered a higher rank you haven’t learned yet. Exact Spell ID settings are still respected.
 

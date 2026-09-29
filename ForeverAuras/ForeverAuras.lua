@@ -1,4 +1,4 @@
--- Modified for ForeverAuras, 2026-09-19.
+-- Modified for ForeverAuras, 2026-09-29.
 ---@type string
 local AddonName = ...
 ---@class Private
@@ -3185,6 +3185,8 @@ function pAdd(data, simpleChange)
   if not Private.BlizzardAuraDisplay.Enabled(data) then
     Private.AuraWarnings.UpdateWarning(data.uid, "blizzard_aura_display", nil)
     Private.AuraWarnings.UpdateWarning(data.uid, "blizzard_aura_sound", nil)
+    -- SecretAuraSingle.lua reports its own build failures.
+    Private.AuraWarnings.UpdateWarning(data.uid, "blizzard_aura_single", nil)
   end
 
   local otherID = UIDtoID[data.uid]

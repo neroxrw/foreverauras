@@ -8,6 +8,7 @@ local Private = select(2, ...)
 -- This is a more or less 1:1 copy of SmoothStatusBarMixin except that it
 -- doesn't clamp the targetValue in ProcessSmoothStatusBars, because that's incorrect for us
 local g_updatingBars = {};
+local smoothingTimer;
 
 local function IsCloseEnough(bar, newValue, targetValue)
         local min, max = bar:GetMinMaxValues();
@@ -30,9 +31,13 @@ local function ProcessSmoothStatusBars()
                         bar:SetValue(newValue);
                 end
         end
+        if not next(g_updatingBars) and smoothingTimer then
+                smoothingTimer:Cancel();
+                smoothingTimer = nil;
+        end
 end
 
-C_Timer.NewTicker(0, ProcessSmoothStatusBars);
+-- Idle bars need no per-frame timer. The first new transition restarts it.
 
 Private.SmoothStatusBarMixin = {};
 
@@ -44,10 +49,17 @@ function Private.SmoothStatusBarMixin:ResetSmoothedValue(value) --If nil, tries 
         elseif value then
                 self:SetValue(value);
         end
+        if not next(g_updatingBars) and smoothingTimer then
+                smoothingTimer:Cancel();
+                smoothingTimer = nil;
+        end
 end
 
 function Private.SmoothStatusBarMixin:SetSmoothedValue(value)
         g_updatingBars[self] = value;
+        if value ~= nil and not smoothingTimer then
+                smoothingTimer = C_Timer.NewTicker(0, ProcessSmoothStatusBars);
+        end
 end
 
 function Private.SmoothStatusBarMixin:SetMinMaxSmoothedValue(min, max)

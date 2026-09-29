@@ -1,4 +1,4 @@
--- Modified for ForeverAuras, 2026-09-18.
+-- Modified for ForeverAuras, 2026-09-29.
 if not ForeverAuras.IsLibsOK() then return end
 local _, Private = ...
 local Display = Private.BlizzardAuraDisplay
@@ -108,6 +108,11 @@ end
 function Trigger.GetTriggerDescription(data, triggernum, lines)
   local trigger = data.triggers[triggernum].trigger
   lines[#lines + 1] = {"Secret Auras", Display.units[trigger.unit] or trigger.unit}
+  -- What makes the display appear.
+  local showOn = Display.showOnValues[Display.ShowOn(trigger)]
+  local op, seconds = Display.RemainingWindow(trigger)
+  if op then showOn = showOn .. ", remaining " .. op .. " " .. seconds .. " s" end
+  lines[#lines + 1] = {"Show On", showOn}
   -- Describe both modes without relabelling existing exact selections.
   lines[#lines + 1] = {"Spell IDs (All Ranks)", SpellIDSummary(trigger.auraRankSpellIDs, Display.UsesRankSpellIDs(trigger))}
   lines[#lines + 1] = {"Exact Spell IDs", SpellIDSummary(trigger.auraspellids, Display.UsesSpellIDs(trigger))}

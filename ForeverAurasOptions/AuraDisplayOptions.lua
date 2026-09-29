@@ -88,6 +88,26 @@ function OptionsPrivate.GetSecretAuraSettings(data)
     set = function(_, value) Save("maxIcons", value) end,
   }
 
+  -- Show On Missing/Always, Remaining Time and Dynamic Group members draw one
+  -- aura in the region's rectangle: list layout settings do not apply there,
+  -- and Missing gets its own look option.
+  local function Single() return Display.DrawsOne(data) end
+  local function ShowsMissing()
+    local trigger = Display.GetTrigger(data)
+    return Display.IsSingle(trigger) and Display.ShowOn(trigger) ~= "showOnActive"
+  end
+  for _, key in ipairs({"growth", "spacing", "maxIcons"}) do args[key].hidden = Single end
+  args.singleNotice = {type = "description", width = "full", fontSize = "small",
+    name = function()
+      if Display.InDynamicGroup(data) then return "In a Dynamic Group, one aura is shown in this display's position. Sort by chooses which aura when several match." end
+      return "The trigger's Show On or Remaining Time shows one aura in this display's position. Sort by chooses which aura when several match."
+    end,
+    hidden = function() return not Single() end}
+  args.missingDesaturate = {type = "toggle", name = "Desaturate while missing", disabled = Disabled,
+    desc = "Show the icon in grey while the aura is missing (Show On: Aura(s) Missing or Always).",
+    hidden = function() return not ShowsMissing() end,
+    get = function() return Settings().missingDesaturate or false end,
+    set = function(_, value) Save("missingDesaturate", value or nil) end}
   args.growth.name = "Aura growth direction"
   args.spacing.name = "Aura spacing"
   args.maxIcons.name = "Maximum auras"
@@ -101,7 +121,7 @@ function OptionsPrivate.GetSecretAuraSettings(data)
     set = function(_, red, green, blue, alpha) Save("swipeColor", {red, green, blue, alpha}) end}
   args.status = {type = "description", width = "full", name = function() return Display.Validate(data) or "" end,
     hidden = function() return Display.Validate(data) == nil end}
-  local order = {"status", "growth", "spacing", "maxIcons", "sortMethod", "sortReverse", "nameplateX", "nameplateY", "textHeight", "swipeColor"}
+  local order = {"status", "singleNotice", "growth", "spacing", "maxIcons", "sortMethod", "sortReverse", "missingDesaturate", "nameplateX", "nameplateY", "textHeight", "swipeColor"}
   for index, key in ipairs(order) do
     args[key].order = index
     args[key].width = args[key].width or ForeverAuras.normalWidth
@@ -122,8 +142,7 @@ function OptionsPrivate.PrepareSecretDisplayOptions(data, groups)
     spark = true, sparkTexture = true, sparkChooseTexture = true, sparkDesaturate = true, sparkColor = true, sparkBlendMode = true,
     sparkWidth = true, sparkHeight = true, sparkOffsetX = true, sparkOffsetY = true, sparkRotationMode = true, sparkRotation = true,
     sparkMirror = true, sparkHidden = true, customTextUpdate = true, text_customTextUpdate = true, text_customTextUpdateThrottle = true,
-    text_smoothScaling = true, smoothScaling = true, rotateText = true, glowStartAnim = true, glowLines = true, glowFrequency = true,
-    glowLength = true, glowThickness = true, glowBorder = true,
+    text_smoothScaling = true, smoothScaling = true, rotateText = true, glowStartAnim = true,
     slanted = true, slant = true, slantFirst = true, slantMode = true,
   }
   local timeFields = {p_format = true, p_time_format = true, p_time_precision = true, p_time_dynamic_threshold = true, p_time_legacy_floor = true}
@@ -152,7 +171,8 @@ function OptionsPrivate.PrepareSecretDisplayOptions(data, groups)
             option.values = {Fixed = "Fixed"}
             option.desc = "Native aura layout uses a fixed text area."
           elseif key == "glowType" then
-            option.values = {Proc = "Proc Glow", buttonOverlay = "Pulse Glow"}
+            -- All four types are native animations (SecretAuraGlow.lua).
+            option.values = {buttonOverlay = "Action Button Glow", Pixel = "Pixel Glow", ACShine = "Autocast Shine", Proc = "Proc Glow"}
           elseif key == "anchor_area" then
             option.values = data.regionType == "aurabar" and {ALL = "Whole Area", bar = "Bar", icon = "Icon"} or {ALL = "Whole Area"}
           elseif key == "anchor_point" and type(option.values) == "table" then
