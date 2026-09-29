@@ -4404,6 +4404,7 @@ Private.event_prototypes = {
         store = true,
         test = "true"
       },
+      -- Spell checks follow the same resolved rank and override as the cooldown.
       {
         name = "spellUsable",
         display = L["Spell Usable"],
@@ -4411,7 +4412,7 @@ Private.event_prototypes = {
         test = "true",
         conditionType = "bool",
         conditionTest = function(state, needle)
-          return state and state.show and (Private.ExecEnv.IsUsableSpell(state.spellname or "") == (needle == 1))
+          return state and state.show and (Private.ExecEnv.IsUsableSpell(state.effectiveSpellId or state.spellname or "") == (needle == 1))
         end,
         conditionEvents = AddTargetConditionEvents({
           "SPELL_UPDATE_USABLE",
@@ -4425,7 +4426,7 @@ Private.event_prototypes = {
         test = "true",
         conditionType = "bool",
         conditionTest = function(state, needle)
-          return state and state.show and (select(2, Private.ExecEnv.IsUsableSpell(state.spellname or "")) == (needle == 1));
+          return state and state.show and (select(2, Private.ExecEnv.IsUsableSpell(state.effectiveSpellId or state.spellname or "")) == (needle == 1));
         end,
         conditionEvents = AddTargetConditionEvents({
           "SPELL_UPDATE_USABLE",
@@ -4439,7 +4440,8 @@ Private.event_prototypes = {
         test = "true",
         conditionType = "bool",
         conditionTest = function(state, needle)
-          return state and state.show and (UnitExists('target') and state.spellname and ForeverAuras.IsSpellInRange(state.spellname, 'target') == needle)
+          local spellId = state and (state.effectiveSpellId or state.spellname)
+          return state and state.show and (UnitExists('target') and spellId and ForeverAuras.IsSpellInRange(spellId, 'target') == needle)
         end,
         conditionEvents = AddTargetConditionEvents({
           "WA_SPELL_RANGECHECK",

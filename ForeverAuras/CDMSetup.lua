@@ -1,7 +1,7 @@
 -- Save class-pack CDM settings for Blizzard to apply on reload.
 if not ForeverAuras.IsLibsOK() then return end
 local _, Private = ...
-local pending, timer, requested, needsReload
+local pending, timer, needsReload
 local attempts = 0
 
 local function RecordPending(self, value)
@@ -201,8 +201,7 @@ function ForeverAuras.SetupClassPackCDM(class)
   local _, playerClass = UnitClass("player")
   if type(class) ~= "string" or class ~= playerClass then return false end
   if needsReload then return true end
-  -- A prior no-op must not prevent a later explicit request or newly loaded catalog from being checked.
-  requested = true
+  -- Every explicit call can recheck the saved layout after a previous no-op.
   if not pending then attempts = 0 end
   pending = true
   if not timer then timer = C_Timer.NewTimer(0, RunSetup) end
@@ -211,15 +210,7 @@ end
 
 local events = CreateFrame("Frame")
 events:RegisterEvent("PLAYER_REGEN_ENABLED")
-events:RegisterEvent("COOLDOWN_VIEWER_DATA_LOADED")
-events:RegisterEvent("COOLDOWN_VIEWER_TABLE_HOTFIXED")
-events:RegisterEvent("SPELLS_CHANGED")
-events:SetScript("OnEvent", function(_, event)
-  if not requested or needsReload then return end
-  -- Init can precede CDM data loading. Recheck when the catalog changes, using the same combat/edit deferral.
-  if event ~= "PLAYER_REGEN_ENABLED" and not pending then
-    pending = true
-    attempts = 0
-  end
-  if pending and not timer then timer = C_Timer.NewTimer(0, RunSetup) end
+-- Only resume an explicit request that was deferred by combat.
+events:SetScript("OnEvent", function()
+  if pending and not needsReload and not timer then timer = C_Timer.NewTimer(0, RunSetup) end
 end)

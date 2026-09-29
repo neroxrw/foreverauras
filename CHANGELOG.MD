@@ -1,6 +1,9 @@
 # Changelog
 
 ## Versions
+## 0.13.5
+- Fixed Spell Cooldown conditions checking the wrong spell rank. Range, usability and insufficient-resource checks now follow the rank being tracked, even if you entered a higher rank you haven’t learned yet. Exact Spell ID settings are still respected.
+
 ## 0.13.4
 - Combined Blizzard CDM Essential and Utility into one **Cooldown** trigger. Spells are detected in either category, and existing triggers convert automatically while preserving their settings.
 - Fixed delayed GCD refreshes on **Spell → Cooldown/Charges/Count**.
