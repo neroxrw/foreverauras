@@ -1,6 +1,9 @@
 # Changelog
 
 ## Versions
+## 0.28.0
+- Add Spell - Spell in Range trigger
+
 ## 0.27.1
 - Re-added range features
 

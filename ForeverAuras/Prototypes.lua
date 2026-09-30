@@ -23,7 +23,14 @@ local ForeverAuras = ForeverAuras
 local L = ForeverAuras.L
 
 local SpellRange = LibStub("SpellRange-1.0")
+-- 1 in range, 0 out of range, nil when it cannot be told (no or invalid unit,
+-- unknown spell, or a secret result, which reads as unknown).
 function ForeverAuras.IsSpellInRange(spellId, unit)
+  if C_Spell.IsSpellInRange then
+    local result = C_Spell.IsSpellInRange(spellId, unit)
+    if issecretvalue(result) or result == nil then return nil end
+    return result and 1 or 0
+  end
   return SpellRange.IsSpellInRange(spellId, unit)
 end
 
@@ -9619,6 +9626,89 @@ if count == nil then return false end
         -- Keep the legacy trigger semantics, with a readable boolean from the modern API.
         test = "Private.ExecEnv.IsQueuedSpell(spellname)";
       },
+    },
+    iconFunc = function(trigger)
+      return Private.ExecEnv.GetSpellIcon(trigger.spellName or 0);
+    end,
+    automaticrequired = true,
+    progressType = "none"
+  },
+  -- Spell in Range: active while the spell can reach the unit; Inverse, while
+  -- the unit is out of the spell's range. Inactive when range cannot be told.
+  ["Spell in Range"] = {
+    type = "spell",
+    events = {
+      ["events"] = {"FRAME_UPDATE"}
+    },
+    name = L["Spell in Range"],
+    statesParameter = "one",
+    init = function(trigger)
+      trigger.unit = trigger.unit or "target"
+      local spell
+      if trigger.use_exact_spellName then
+        spell = tostring(tonumber(trigger.spellName) or 0)
+      else
+        local name = type(trigger.spellName) == "number" and Private.ExecEnv.GetSpellName(trigger.spellName) or trigger.spellName or ""
+        spell = ("%q"):format(name)
+      end
+      return ([[
+        local unit = %q
+        local spell = %s
+        local name, _, icon = Private.ExecEnv.GetSpellInfo(spell)
+        local inRange = UnitExists(unit) and ForeverAuras.IsSpellInRange(spell, unit) or nil
+        local active = inRange == %d
+      ]]):format(trigger.unit, spell, trigger.use_inverse and 0 or 1)
+    end,
+    GetNameAndIcon = function(trigger)
+      local name, _, icon = Private.ExecEnv.GetSpellInfo(trigger.spellName)
+      return name, icon
+    end,
+    args = {
+      {
+        name = "spellName",
+        required = true,
+        display = L["Spell"],
+        type = "spell",
+        test = "true",
+        showExactOption = true,
+      },
+      {
+        name = "unit",
+        required = true,
+        display = L["Unit"],
+        type = "unit",
+        init = "unit",
+        values = "unit_types_range_check",
+        test = "true",
+        store = true
+      },
+      {
+        name = "inverse",
+        display = L["Inverse"],
+        desc = "Show while the unit is out of the spell's range instead.",
+        type = "toggle",
+        test = "true",
+      },
+      {
+        name = "name",
+        display = L["Name"],
+        hidden = true,
+        init = "name",
+        test = "true",
+        store = true,
+        conditionType = "string"
+      },
+      {
+        name = "icon",
+        hidden = true,
+        init = "icon",
+        test = "true",
+        store = true
+      },
+      {
+        hidden = true,
+        test = "active"
+      }
     },
     iconFunc = function(trigger)
       return Private.ExecEnv.GetSpellIcon(trigger.spellName or 0);
