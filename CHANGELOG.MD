@@ -1,6 +1,9 @@
 # Changelog
 
 ## Versions
+## 0.28.1
+- Fix LUA error involving secretive text
+
 ## 0.28.0
 - Add Spell - Spell in Range trigger
 

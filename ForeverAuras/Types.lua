@@ -1,4 +1,4 @@
--- Modified for ForeverAuras, 2026-09-19.
+-- Modified for ForeverAuras, 2026-09-30.
 if not ForeverAuras.IsLibsOK() then return end
 
 ---@type string
@@ -860,6 +860,8 @@ Private.format_types = {
             return ""
           end
           local name, realm = ForeverAuras.UnitName(unit)
+          -- A secret realm cannot be tested; show the name alone.
+          if issecretvalue(realm) then return name end
           if realm then
             return name .. "*"
           end
@@ -871,6 +873,7 @@ Private.format_types = {
             return ""
           end
           local name, realm = ForeverAuras.UnitName(unit)
+          if issecretvalue(realm) then return name end
           if realm then
             return name .. "-" .. realm
           end

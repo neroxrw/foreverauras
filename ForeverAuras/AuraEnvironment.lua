@@ -1,4 +1,4 @@
--- Modified for ForeverAuras, 2026-09-18.
+-- Modified for ForeverAuras, 2026-09-30.
 if not ForeverAuras.IsLibsOK() then return end
 ---@type string
 local AddonName = ...
@@ -69,6 +69,9 @@ end
 -- UTF-8 Sub is pretty commonly needed
 local WA_Utf8Sub = function(input, size)
   local output = ""
+  -- A secret text (a name from a restricted unit or spell) cannot be read or
+  -- cut; it is shown whole instead of raising an error.
+  if issecretvalue(input) then return input end
   input = tostring(input)
   if type(input) ~= "string" then
     return output
@@ -142,6 +145,8 @@ end
 ForeverAuras.WA_ClassColorName = WA_ClassColorName
 
 ForeverAuras.PadString = function(input, padMode, padLength)
+  -- Secret text cannot be measured, so it is not padded.
+  if issecretvalue(input) then return input end
   input = tostring(input)
   if type(input) ~= "string" then
     return input
