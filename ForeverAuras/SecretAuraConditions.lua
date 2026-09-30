@@ -21,11 +21,25 @@ local durationVariables = {
   faAuraElapsed = {"ElapsedDuration", "Elapsed Time", 1},
   faAuraElapsedPercent = {"ElapsedPercent", "Elapsed Time (%)", 100},
   faAuraTotal = {"TotalDuration", "Total Duration", 1},
-  faAuraStart = {"StartTime", "Start Time (session seconds)", 1},
-  faAuraEnd = {"EndTime", "End Time (session seconds)", 1},
+  -- Game-clock timestamps (GetTime), not countdowns. Offered only where a
+  -- display already uses them (Display.FilterConditionTemplates).
+  faAuraStart = {"StartTime", "Start Time (game clock)", 1},
+  faAuraEnd = {"EndTime", "End Time (game clock)", 1},
 }
+-- True when a condition (or a nested check) on this trigger uses the variable.
+local function UsesVariable(check, trigger, variable)
+  if not check then return false end
+  if check.trigger == trigger and check.variable == variable then return true end
+  for _, child in ipairs(check.checks or {}) do
+    if UsesVariable(child, trigger, variable) then return true end
+  end
+  return false
+end
 local nativeVariables = {faAuraPandemic = true, faAuraStealable = true, faAuraNotStealable = true,
-  faAuraDispel = true, faAuraType = true, faAuraPresent = true, faAuraApplications = true}
+  faAuraDispel = true, faAuraType = true, faAuraPresent = true, faAuraApplications = true,
+  -- The Missing look of Show On: Aura(s) Missing or Always. Unlike the others
+  -- it styles our own static icon, never a live aura (Display.MissingDesaturated).
+  faAuraMissing = true}
 for key in pairs(durationVariables) do nativeVariables[key] = true end
 local indicatorProperties = {faAuraHighlightColor = true, faAuraHighlightStyle = true, faAuraHighlightSize = true, faAuraHighlightTexture = true, faAuraHighlightPulse = true}
 function Display.IsNativeDurationCondition(check) return check and durationVariables[check.variable] ~= nil end
@@ -69,19 +83,106 @@ local function IsGlowProperty(data, property)
 end
 Display.IsGlowProperty = IsGlowProperty
 
+-- True when an "In Pandemic Window" condition turns on the Glow element at
+-- index and the glow is off otherwise. data may be the prepared copy, whose
+-- conditional glows are all on; the saved setting is read from its original.
+local function PandemicGlow(data, index)
+  local original = data.nativeConditionBaseData or data
+  local element = original.subRegions and original.subRegions[index]
+  if not element or element.type ~= "subglow" or element.glow then return false end
+  for _, condition in ipairs(data.conditions or {}) do
+    if not condition.linked and Display.NativeConditionKind(data, condition.check) == "faAuraPandemic" then
+      for _, change in ipairs(condition.changes or {}) do
+        if change.property == "sub." .. index .. ".glow" and change.value == true then return true end
+      end
+    end
+  end
+  return false
+end
+
+-- Called by StyleAppearance for each Glow element. Returns the frame a
+-- pandemic glow is drawn in, or nil for an ordinary glow. The frame sits
+-- outside the element's own frame, whose alpha follows the glow's saved
+-- setting; Blizzard shows it during the pandemic window once
+-- StyleNativeConditionIndicators registers it.
+function Display.PandemicGlowHolder(native, data, index, frame)
+  if not PandemicGlow(data, index) then return end
+  native.pandemicGlowFrames = native.pandemicGlowFrames or {}
+  local holder = native.pandemicGlowFrames[index]
+  if not holder then
+    -- Inside the Total Duration / Stack Count clip, so a rejected aura never glows.
+    holder = CreateFrame("Frame", nil, native.gateClip or native.button)
+    native.pandemicGlowFrames[index] = holder
+  end
+  holder:ClearAllPoints()
+  holder:SetAllPoints(native.button)
+  holder:SetFrameLevel(frame:GetFrameLevel() + 1)
+  -- Hidden until the window (or the preview sample) shows it.
+  holder:Hide()
+  native.pandemicGlows = native.pandemicGlows or {}
+  native.pandemicGlows[index] = holder
+  return holder
+end
+
+-- Forgets last styling's pandemic glows before the elements are rebuilt.
+function Display.ResetPandemicGlows(native)
+  for _, holder in pairs(native.pandemicGlowFrames or {}) do holder:Hide() end
+  native.pandemicGlows = {}
+end
+
 function Display.NativeConditionAllowsProperty(data, check, property)
   local kind = Display.NativeConditionKind(data, check)
   if kind == "faAuraRemaining" and IsGlowProperty(data, property) then return true end
+  -- Blizzard shows and hides a frame for the pandemic window, so a Glow can
+  -- live in one (Display.PandemicGlowHolder).
+  if kind == "faAuraPandemic" and IsGlowProperty(data, property) then return true end
   if durationVariables[kind] then
     local target, channel = TextProperty(data, property, "duration")
     return target ~= nil and channel ~= "text"
   end
   if kind == "faAuraApplications" then return TextProperty(data, property, "stack") ~= nil end
+  -- Aura Missing styles the static Missing icon: anything drawn on it shows
+  -- only while the aura is missing (its clip hides it otherwise).
+  if kind == "faAuraMissing" then
+    if data.regionType ~= "icon" then return false end
+    if indicatorProperties[property] or property == "desaturate" or property == "color" or property == "zoom" then return true end
+    local index, key = (property or ""):match("^sub%.(%d+)%.(.+)$")
+    local element = index and data.subRegions and data.subRegions[tonumber(index)]
+    if not element or Display.IsDetachedElement(data, element) then return false end
+    return (element.type == "subglow" and key == "glow")
+      or (element.type == "subtext" and (key == "text_visible" or key == "text_color"))
+  end
   if kind then return indicatorProperties[property] == true end
   return not indicatorProperties[property]
 end
+-- True when an "Aura Missing" condition turns Desaturate on for the icon drawn
+-- while the aura is missing.
+function Display.MissingDesaturated(data)
+  for _, condition in ipairs(data.conditions or {}) do
+    if Display.NativeConditionKind(data, condition.check) == "faAuraMissing" then
+      for _, change in ipairs(condition.changes or {}) do
+        if change.property == "desaturate" and change.value == true then return true end
+      end
+    end
+  end
+  return false
+end
+
 function Display.MigrateNativeConditions(data)
   local settings = data.blizzardAuraDisplay or {}
+  -- The trigger's former "Desaturate while missing" box becomes an "Aura
+  -- Missing" condition on the first Aura (Modern) trigger.
+  if settings.missingDesaturate then
+    for index, entry in ipairs(data.triggers or {}) do
+      if type(entry) == "table" and entry.trigger and entry.trigger.type == "secretAura" then
+        data.conditions = data.conditions or {}
+        table.insert(data.conditions, {check = {trigger = index, variable = "faAuraMissing"},
+          changes = {{property = "desaturate", value = true}}})
+        settings.missingDesaturate = nil
+        break
+      end
+    end
+  end
   if settings.remainingTimeColorEnabled then
     local property
     if data.regionType == "text" and Display.TextKind(data.displayText) == "duration" then property = "color" end
@@ -185,8 +286,9 @@ function Display.DurationColorCondition(data, baseColor, property, window)
   end
   return {curve = curve, property = bindingProperty}
 end
-function Display.StackTextCondition(data, property)
-  if not (C_StringUtil and C_StringUtil.CreateNumericRuleFormatter) then return end
+-- The stack text's breakpoints from the display's Stack Count conditions, or
+-- nil without any.
+local function StackBreakpoints(data, property)
   local rules = NumericRules(data, property, true)
   if #rules == 0 then return end
   local points, seen = {0, 2}, {[0]=true,[2]=true}
@@ -214,6 +316,26 @@ function Display.StackTextCondition(data, property)
     end
     breakpoints[#breakpoints + 1] = {threshold = value, format = format}
   end
+  return breakpoints
+end
+-- The stack text for a known count (Stack Count "=" in the trigger): what the
+-- formatter would write, or Blizzard's default of the number from 2 stacks.
+function Display.StackTextFor(data, property, count)
+  local breakpoints = StackBreakpoints(data, property)
+  if not breakpoints then return count >= 2 and tostring(count) or "" end
+  local format = ""
+  for _, point in ipairs(breakpoints) do
+    if point.threshold <= count then format = point.format end
+  end
+  -- %d is the count and %% a literal percent sign.
+  local parts = {}
+  for piece in (format .. "%%"):gmatch("(.-)%%%%") do parts[#parts + 1] = (piece:gsub("%%d", tostring(count))) end
+  return table.concat(parts, "%")
+end
+function Display.StackTextCondition(data, property)
+  if not (C_StringUtil and C_StringUtil.CreateNumericRuleFormatter) then return end
+  local breakpoints = StackBreakpoints(data, property)
+  if not breakpoints then return end
   local formatter = C_StringUtil.CreateNumericRuleFormatter()
   formatter:SetBreakpoints(breakpoints)
   return formatter
@@ -299,13 +421,21 @@ function Display.FilterConditionTemplates(data, templates)
         faAuraStealable = {display = "Buff Is Stealable", type = "alwaystrue"},
         faAuraNotStealable = {display = "Buff Is Not Stealable", type = "alwaystrue"},
         faAuraPresent = {display = "Aura Present", type = "alwaystrue"},
+        faAuraMissing = {display = "Aura Missing", type = "alwaystrue"},
         faAuraType = {display = "Aura Type", type = "select", operator_types = "native_aura_dispel", values = {HELPFUL = "Buff", HARMFUL = "Debuff"}},
         faAuraDispel = {display = "Dispel Type", type = "select", operator_types = "native_aura_dispel",
           values = {Magic = "Magic", Curse = "Curse", Disease = "Disease", Poison = "Poison", Bleed = "Bleed", Enrage = "Enrage", None = "None"}},
       }
       if Display.SupportsDurationColorCondition() then
         for key, definition in pairs(durationVariables) do
-          if Enum.DurationTextBindingProperty[definition[1]] ~= nil then
+          -- Start and End Time are kept for displays that already use them.
+          local offered = (key ~= "faAuraStart" and key ~= "faAuraEnd")
+          if not offered then
+            for _, condition in ipairs(data.conditions or {}) do
+              if UsesVariable(condition.check, index, key) then offered = true end
+            end
+          end
+          if offered and Enum.DurationTextBindingProperty[definition[1]] ~= nil then
             native[key] = {display = definition[2], type = "number", operator_types = "native_aura_duration"}
           end
         end
@@ -347,13 +477,28 @@ function Display.ValidateConditions(data)
       if durationVariables[kind] and condition.check.op and condition.check.op ~= "<" and condition.check.op ~= ">=" then
         return "Aura (Modern) time conditions support < and >=."
       end
-      if (kind == "faAuraDispel" or kind == "faAuraType") and condition.check.op and condition.check.op ~= "==" then
-        return "Aura (Modern) type conditions support equality only."
+      if (kind == "faAuraDispel" or kind == "faAuraType") and condition.check.op
+        and condition.check.op ~= "==" and condition.check.op ~= "~=" then
+        return "Aura (Modern) type conditions support = and !=."
+      end
+      if kind == "faAuraMissing" then
+        local showOn = Display.ShowOn(Display.GetTrigger(data))
+        if data.regionType ~= "icon" or (showOn ~= "showOnMissing" and showOn ~= "showAlways") then
+          return "Aura Missing needs an Icon with Show On: Aura(s) Missing or Always."
+        end
       end
       for _, change in ipairs(condition.changes or {}) do
         if kind == "faAuraRemaining" and IsGlowProperty(data, change.property)
           and (condition.check.op ~= "<" or change.value ~= true) then
           return "A Remaining Time glow condition must use < and turn the glow on."
+        end
+        if kind == "faAuraPandemic" and IsGlowProperty(data, change.property) then
+          if change.value ~= true then return "An In Pandemic Window glow condition must turn the glow on." end
+          -- One glow follows one timer: Remaining Time's clip or the pandemic frame.
+          local _, _, lateIndex = Display.LateGlowSpec(data, Display.GetTrigger(data))
+          if lateIndex and change.property == "sub." .. lateIndex .. ".glow" then
+            return "A Glow can follow Remaining Time or the pandemic window, not both."
+          end
         end
         if durationVariables[kind] and change.property then
           local target = TextProperty(data, change.property, "duration")
@@ -405,7 +550,9 @@ end
 
 local function ApplyProperty(button, data, property, value, overrides)
   -- Native aura children deny addon access while aura information is secret.
-  if InCombatLockdown() or C_Secrets.ShouldAurasBeSecret() or OwnsDurationColor(data, property) then return end
+  -- Sample icons (the preview and the static Missing icon) are the addon's own.
+  if OwnsDurationColor(data, property) then return end
+  if not button.preview and (InCombatLockdown() or C_Secrets.ShouldAurasBeSecret()) then return end
   local index, key = property:match('^sub%.(%d+)%.(.+)$')
   if index then
     index = tonumber(index)
@@ -448,6 +595,25 @@ local function ApplyProperty(button, data, property, value, overrides)
   elseif property == 'cooldownTextDisabled' then button.cooldown:SetHideCountdownNumbers(value)
   elseif property == 'fontSize' and button.mainText then SetFontSize(button.mainText, value)
   elseif property == 'displayText' and button.mainText then button.mainText:SetText((value:gsub('%%%%', '%%'))) end
+end
+
+-- Applies the "Aura Missing" conditions to the static Missing icon: its
+-- colour, desaturation, zoom, glows and texts. Called when it is styled and
+-- after other conditions changed the same properties. Highlights are drawn by
+-- StyleNativeConditionIndicators and shown by StyleMissingIcon.
+function Display.ApplyMissingConditions(native, data)
+  local values = {}
+  for _, condition in ipairs(data.conditions or {}) do
+    if Display.NativeConditionKind(data, condition.check) == "faAuraMissing" then
+      for _, change in ipairs(condition.changes or {}) do
+        if change.property and not indicatorProperties[change.property] and change.value ~= nil
+          and Display.NativeConditionAllowsProperty(data, condition.check, change.property) then
+          values[change.property] = change.value
+        end
+      end
+    end
+  end
+  for property, value in pairs(values) do ApplyProperty(native, data, property, value, values) end
 end
 
 function Display.ApplyConditionAppearance(button, region, data)
@@ -516,6 +682,15 @@ function Display.StyleNativeConditionIndicators(native, data)
   native.conditionDispelTextures = {}
   native.conditionPreview = {}
   native.conditionData = native.preview and data or nil
+  -- Glows turned on by "In Pandemic Window" (Display.PandemicGlowHolder):
+  -- Blizzard shows their frames during the window; previews use the sample.
+  for _, holder in pairs(native.pandemicGlows or {}) do
+    if native.preview then
+      native.conditionPreview[#native.conditionPreview + 1] = {texture = holder, kind = "faAuraPandemic"}
+    elseif button.AddPandemicRegion then
+      button:AddPandemicRegion(holder)
+    end
+  end
   -- Highlight textures must be above the icon and swipe. The button itself is
   -- below both; placing textures there hid thin borders and exposed only overflow.
   -- Inside the Total Duration gate clip, when there is one, so a rejected aura
@@ -534,8 +709,12 @@ function Display.StyleNativeConditionIndicators(native, data)
         if indicatorProperties[change.property] then settings[change.property] = change.value; configured = true end
       end
       local check = condition.check
-      if kind == "faAuraType" and (check.op ~= "==" or (check.value ~= "HELPFUL" and check.value ~= "HARMFUL")) then configured = false end
-      if kind == "faAuraDispel" and (check.op ~= "==" or type(check.value) ~= "string") then configured = false end
+      -- Type checks accept = and ~= (the other types).
+      local equal = check.op == "=="
+      if kind == "faAuraType" and ((check.op ~= "==" and check.op ~= "~=") or (check.value ~= "HELPFUL" and check.value ~= "HARMFUL")) then configured = false end
+      if kind == "faAuraDispel" and ((check.op ~= "==" and check.op ~= "~=") or type(check.value) ~= "string") then configured = false end
+      -- Aura Missing highlights belong to the static Missing icon only.
+      if kind == "faAuraMissing" and not native.preview then configured = false end
       if configured then
         local host = native.conditionHosts[index]
         if not host then
@@ -605,14 +784,17 @@ function Display.StyleNativeConditionIndicators(native, data)
             end
             if native.preview then
               -- Only ordinary preview textures use a public sample predicate.
-              native.conditionPreview[#native.conditionPreview + 1] = {texture = texture, kind = kind, value = check.value}
+              native.conditionPreview[#native.conditionPreview + 1] = {texture = texture, kind = kind, value = check.value, equal = equal}
             elseif kind == "faAuraPandemic" and button.AddPandemicRegion then
               button:AddPandemicRegion(texture)
             elseif button.AddDispelTypeTexture then
               local options = {showWhenHelpful = true, showWhenHarmful = true, showWithoutDispelType = true,
                 style = Enum.CustomAuraButtonDispelTypeTextureStyle.CustomAsset, customDispelAssetMap = {}, customDispelColorMap = {}}
               if kind == "faAuraType" then
-                options.showWhenHelpful, options.showWhenHarmful = check.value == "HELPFUL", check.value == "HARMFUL"
+                -- ~= Buff is Debuff and the other way round.
+                local wanted = check.value
+                if not equal then wanted = wanted == "HELPFUL" and "HARMFUL" or "HELPFUL" end
+                options.showWhenHelpful, options.showWhenHarmful = wanted == "HELPFUL", wanted == "HARMFUL"
               elseif kind == "faAuraStealable" or kind == "faAuraNotStealable" then
                 options.showWhenHarmful = false
                 options.stealableFilter = Enum.CustomAuraButtonDispelTypeStealableFilter[kind == "faAuraStealable" and "Stealable" or "NotStealable"]
@@ -620,7 +802,8 @@ function Display.StyleNativeConditionIndicators(native, data)
               for _, key in ipairs(dispelKeys) do
                 -- Blizzard represents Enrage as an empty dispel name.
                 local dispelKey = check.value == "Enrage" and "" or check.value
-                if kind ~= "faAuraDispel" or dispelKey == key then
+                -- = maps only the chosen type; ~= maps every other one.
+                if kind ~= "faAuraDispel" or (dispelKey == key) == equal then
                   options.customDispelAssetMap[key] = {asset = asset}
                   options.customDispelColorMap[key] = CreateColor(r,g,b,1)
                 end
@@ -642,9 +825,10 @@ function Display.UpdateConditionPreview(native, data, remaining)
   local trigger = Display.GetTrigger(data)
   local helpful = not trigger or trigger.debuffType ~= "HARMFUL"
   for _, entry in ipairs(native.conditionPreview or {}) do
+    -- ~= checks (entry.equal == false) show for every other type.
     local show = entry.kind == "faAuraPresent"
-      or entry.kind == "faAuraType" and entry.value == (helpful and "HELPFUL" or "HARMFUL")
-      or entry.kind == "faAuraDispel" and entry.value == "Magic"
+      or entry.kind == "faAuraType" and (entry.value == (helpful and "HELPFUL" or "HARMFUL")) == (entry.equal ~= false)
+      or entry.kind == "faAuraDispel" and (entry.value == "Magic") == (entry.equal ~= false)
       or entry.kind == "faAuraNotStealable" and helpful
       or entry.kind == "faAuraPandemic" and remaining <= 1.8 and remaining > 0
     entry.texture:SetShown(show == true)

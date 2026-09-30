@@ -1,4 +1,4 @@
--- Modified for ForeverAuras, 2026-09-29.
+-- Modified for ForeverAuras, 2026-09-30.
 if not ForeverAuras.IsLibsOK() then return end
 local _, Private = ...
 local Display = Private.BlizzardAuraDisplay
@@ -14,6 +14,28 @@ function Trigger.Add(data)
   end
 end
 
+-- Units that may not exist. As with Aura (Legacy), the trigger is inactive
+-- while such a unit does not exist, unless Show If Unit Does Not Exist
+-- (trigger.unitExists, the Legacy field) is ticked. Whether a unit exists is
+-- public; whether it has the aura is not, so this is the only case in which
+-- the trigger goes inactive. Mouseover has no event when it clears, so it
+-- stays active, as before.
+local optionalUnits = {target = true, focus = true, pet = true, targettarget = true, focustarget = true}
+local function UnitMissing(trigger)
+  if type(trigger) ~= "table" or not optionalUnits[trigger.unit] or trigger.unitExists then return false end
+  return not Display.SingleUnitExists(trigger)
+end
+
+-- Whether this Aura (Modern) trigger is active. The editor always shows its
+-- samples, so there the unit does not matter.
+local function IsActive(data, triggernum)
+  if not (not Display.Enabled(data) or Display.Validate(data) == nil) then return false end
+  local entry = data.triggers[triggernum]
+  return ForeverAuras.IsOptionsOpen() or not UnitMissing(entry and entry.trigger)
+end
+
+-- Also the framework's fallback state when this trigger supplies a shown
+-- display's information; that one is always shown.
 function Trigger.CreateFallbackState(data, triggernum, state)
   state.show = not Display.Enabled(data) or Display.Validate(data) == nil
   state.changed = true
@@ -33,7 +55,10 @@ function Trigger.CreateFakeStates(id, triggernum)
   local states = ForeverAuras.GetTriggerStateForTrigger(id, triggernum)
   wipe(states)
   states[""] = {}
-  Trigger.CreateFallbackState(ForeverAuras.GetData(id), triggernum, states[""])
+  local data = ForeverAuras.GetData(id)
+  Trigger.CreateFallbackState(data, triggernum, states[""])
+  -- The trigger's own state follows its unit (IsActive).
+  states[""].show = IsActive(data, triggernum)
 end
 
 function Trigger.LoadDisplays(toLoad)
@@ -49,6 +74,40 @@ function Trigger.LoadDisplays(toLoad)
     end
   end
 end
+
+-- Unit changes that can make a unit appear or disappear, and the units they
+-- affect (UNIT_TARGET and UNIT_PET are keyed by the unit that changed).
+local unitChangeEvents = {
+  PLAYER_TARGET_CHANGED = {target = true, targettarget = true},
+  PLAYER_FOCUS_CHANGED = {focus = true, focustarget = true},
+  UNIT_TARGET = {target = {targettarget = true}, focus = {focustarget = true}},
+  UNIT_PET = {player = {pet = true}},
+  PLAYER_ENTERING_WORLD = {target = true, focus = true, pet = true, targettarget = true, focustarget = true},
+}
+local unitFrame = CreateFrame("Frame")
+for event in pairs(unitChangeEvents) do unitFrame:RegisterEvent(event) end
+unitFrame:SetScript("OnEvent", function(_, event, unit)
+  -- The editor keeps its sample states until it closes.
+  if ForeverAuras.IsOptionsOpen() then return end
+  local affected = unitChangeEvents[event]
+  if event == "UNIT_TARGET" or event == "UNIT_PET" then affected = unit and affected[unit] end
+  if not affected then return end
+  for id in pairs(loaded) do
+    local data = displays[id]
+    local changed = false
+    for index, entry in ipairs(data and data.triggers or {}) do
+      if entry.trigger.type == "secretAura" and affected[entry.trigger.unit] then
+        local state = ForeverAuras.GetTriggerStateForTrigger(id, index)[""]
+        local show = IsActive(data, index)
+        if state and state.show ~= show then
+          state.show, state.changed = show, true
+          changed = true
+        end
+      end
+    end
+    if changed then Private.UpdatedTriggerState(id) end
+  end
+end)
 
 function Trigger.UnloadDisplays(toUnload)
   for id in pairs(toUnload) do

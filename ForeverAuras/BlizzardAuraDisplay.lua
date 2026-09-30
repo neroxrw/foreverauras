@@ -1,4 +1,4 @@
--- Modified for ForeverAuras, 2026-09-29.
+-- Modified for ForeverAuras, 2026-09-30.
 if not ForeverAuras.IsLibsOK() then return end
 local _, Private = ...
 local SharedMedia = LibStub("LibSharedMedia-3.0")
@@ -235,8 +235,10 @@ function Display.Enabled(data)
 end
 
 local function Capacity(trigger)
-  -- The single-aura settings always watch exactly one unit token.
-  if Display.IsSingle and Display.IsSingle(trigger) then return 1 end
+  -- Missing and Always watch exactly one unit token. (Remaining Time on Icons
+  -- is validated to single units, which give 1 below; on other display
+  -- types it is a list.)
+  if Display.ShowOn and Display.ShowOn(trigger) ~= "showOnActive" then return 1 end
   local unit = trigger.unit
   if unit == "group" or unit == "raid" or unit == "nameplate" then return 40 end
   if unit == "party" or unit == "arena" then return 5 end
@@ -905,9 +907,9 @@ local function Layout(native, region, data)
   -- A Modern Aura Group measures a list by its container, so it uses the compact
   -- layout whose width is exactly the icons shown.
   local compact = not centered and (CompactUnits(data) or flowSpacing ~= nil)
-  -- The Total Duration gate stacks every candidate on the same spot: only one
-  -- with the right full duration is drawn, so the others must not take space.
-  if Display.DurationGate(data) then spacing = -(vertical and height or width) end
+  -- The Total Duration and Stack Count gates stack every candidate on the same
+  -- spot: only the one that passes is drawn, so the others must not take space.
+  if Display.UsesGate(data) then spacing = -(vertical and height or width) end
   -- Empty native containers are one pixel wide/high. Reserve that pixel after
   -- occupied content too, then subtract it in the anchor chain, without reading sizes.
   container:SetAuraGroupLayout("Auras", {
@@ -934,15 +936,13 @@ local function Create(region, data)
       local native = {container = container}
       native.button = button
       button:EnableMouse(false)
-      -- Total Duration gate: a clip created before any element, sized by
-      -- Blizzard's total-duration text (StyleDurationGate). It does not clip
-      -- while no gate is used.
-      if display.data.regionType == "icon" then
-        native.gateClip = CreateFrame("Frame", nil, button, "DisableUntrustedLayoutScriptsTemplate")
-        native.gateClip:SetClipsChildren(true)
-        native.gateClip:SetAllPoints(button)
-        native.gateText = button:CreateFontString(nil, "BACKGROUND")
-      end
+      -- Gate clip (Total Duration, Remaining Time, Stack Count): created before
+      -- any element on every display type (StyleDurationGate). It does not
+      -- clip while no gate is used.
+      native.gateClip = CreateFrame("Frame", nil, button, "DisableUntrustedLayoutScriptsTemplate")
+      native.gateClip:SetClipsChildren(true)
+      native.gateClip:SetAllPoints(button)
+      native.gateText = button:CreateFontString(nil, "BACKGROUND")
       for _, area in ipairs({"inner", "outer"}) do
         native[area] = CreateFrame("Frame", nil, button)
         native[area]:SetPoint("CENTER", button, "CENTER")
@@ -1031,6 +1031,8 @@ local function RefreshUnits(region, removedUnit, changedUnit)
   if not native or not native.active then return end
   local data = native.data
   local trigger = Display.GetTrigger(data)
+  -- No Aura (Modern) trigger drives the display right now: nothing to bind.
+  if not trigger then return end
   local settings = data.blizzardAuraDisplay
   local units = UnitTokens(trigger)
   local growth = Display.Growth(data)
@@ -1340,6 +1342,16 @@ function Display.SyncProgressSource(region, data)
       region.secretAuraProgressSourceIndex = key
       return
     end
+    -- The same Aura (Modern) trigger selected again after another trigger
+    -- supplied the information (its unit did not exist): the display is still
+    -- built, so it is only switched back on. This also works in combat, where
+    -- a rebuild waits for restrictions to end.
+    if native and not native.active and native.data == data and native.appliedTrigger
+      and native.appliedTrigger == Display.GetSavedTrigger(data) then
+      region.secretAuraProgressSourceIndex = key
+      Display.Activate(region, data)
+      return
+    end
     Display.Modify(region, data)
   end
 end
@@ -1455,7 +1467,8 @@ events:SetScript("OnEvent", function(_, event, unit)
   -- Modern Aura Groups re-anchor once after all their displays rebound units.
   Display.BeginFlowBatch()
   for region in pairs(activeRegions) do
-    local mode = Display.GetTrigger(region.blizzardAuraDisplay.data).unit
+    local trigger = Display.GetTrigger(region.blizzardAuraDisplay.data)
+    local mode = trigger and trigger.unit
     if event == "NAME_PLATE_UNIT_ADDED" or event == "NAME_PLATE_UNIT_REMOVED" then
       if Display.UsesNameplates(region.blizzardAuraDisplay.data) then
         if mode == "nameplate" then
@@ -1469,8 +1482,7 @@ events:SetScript("OnEvent", function(_, event, unit)
     elseif NeedsUnitRefresh(mode, event, unit) then
       RefreshUnits(region)
     end
-    local trigger = Display.GetTrigger(region.blizzardAuraDisplay.data)
-    if (event == "GROUP_ROSTER_UPDATE" or event == "PLAYER_ROLES_ASSIGNED"
+    if trigger and (event == "GROUP_ROSTER_UPDATE" or event == "PLAYER_ROLES_ASSIGNED"
       or (event == "UNIT_NAME_UPDATE" and trigger.useUnitNames)) and unitEvents.GROUP_ROSTER_UPDATE[mode] then
       SyncSounds(region)
     end

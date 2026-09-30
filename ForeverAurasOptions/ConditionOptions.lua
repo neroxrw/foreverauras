@@ -2282,7 +2282,8 @@ local function addControlsForIfLine(args, order, data, conditionVariable, totalA
           type = "select",
           width = ForeverAuras.normalWidth,
           order = order,
-          values = currentConditionTemplate.operator_types == "native_aura_dispel" and {["=="] = "="} or OptionsPrivate.Private.equality_operator_types,
+          -- Aura (Modern) type checks: = or != (every other type).
+          values = currentConditionTemplate.operator_types == "native_aura_dispel" and {["=="] = "=", ["~="] = "!="} or OptionsPrivate.Private.equality_operator_types,
           get = function()
             return check.op;
           end,

@@ -1,4 +1,4 @@
--- Modified for ForeverAuras, 2026-09-19.
+-- Modified for ForeverAuras, 2026-09-30.
 --[[ GenericTrigger.lua
 This file contains the generic trigger system. That is every trigger except the aura triggers.
 
@@ -3540,6 +3540,8 @@ function ForeverAuras.WatchUnitChange(unit)
     watchUnitChange = CreateFrame("Frame");
     watchUnitChange.trackedUnits = {}
     watchUnitChange.unitIdToGUID = {}
+    -- Units whose GUID is currently secret (see unitUpdate).
+    watchUnitChange.secretGUID = {}
     watchUnitChange.GUIDToUnitIds = {}
     watchUnitChange.unitExists = {}
     watchUnitChange.unitRoles = {}
@@ -3573,7 +3575,23 @@ function ForeverAuras.WatchUnitChange(unit)
       local oldGUID = watchUnitChange.unitIdToGUID[unitA]
       local newGUID = ForeverAuras.UnitExistsFixed(unitA) and UnitGUID(unitA)
       local unitExists = UnitExists(unitA) -- UnitExistsFixed check both UnitExists and UnitGUID, but in edge cases we are interested in UnitExists
-      if  hasanysecretvalues(newGUID, oldGUID) then
+      -- A secret GUID cannot be compared or used as a key. The event that led
+      -- here (a target, focus or group change) may have changed the unit, so
+      -- report a change and let the triggers evaluate the unit again. Only a
+      -- readable GUID is kept for the next comparison.
+      if hasanysecretvalues(newGUID, oldGUID, unitExists) then
+        eventsToSend["UNIT_CHANGED_" .. unitA] = unitA
+        if not issecretvalue(oldGUID) and oldGUID and watchUnitChange.GUIDToUnitIds[oldGUID] then
+          watchUnitChange.GUIDToUnitIds[oldGUID][unitA] = nil
+          if next(watchUnitChange.GUIDToUnitIds[oldGUID]) == nil then
+            watchUnitChange.GUIDToUnitIds[oldGUID] = nil
+          end
+        end
+        -- false keeps the unit listed for PLAYER_ENTERING_WORLD; secretGUID
+        -- remembers that it exists behind a secret GUID.
+        watchUnitChange.unitIdToGUID[unitA] = not issecretvalue(newGUID) and newGUID or false
+        watchUnitChange.secretGUID[unitA] = issecretvalue(newGUID) or nil
+        watchUnitChange.unitExists[unitA] = not issecretvalue(unitExists) and unitExists or nil
         return
       end
       if oldGUID ~= newGUID or oldUnitExists ~= unitExists then
@@ -3607,6 +3625,7 @@ function ForeverAuras.WatchUnitChange(unit)
         watchUnitChange.GUIDToUnitIds[newGUID][unitA] = true
       end
       watchUnitChange.unitIdToGUID[unitA] = newGUID
+      watchUnitChange.secretGUID[unitA] = nil
       watchUnitChange.unitExists[unitA] = unitExists
     end
 
@@ -3718,7 +3737,7 @@ function ForeverAuras.WatchUnitChange(unit)
         local inRaidChanged = inRaid ~= watchUnitChange.inRaid
         if inRaidChanged then
           for unit in pairs(Private.multiUnitUnits.group) do
-            if watchUnitChange.trackedUnits[unit] and watchUnitChange.unitIdToGUID[unit] then
+            if watchUnitChange.trackedUnits[unit] and (watchUnitChange.unitIdToGUID[unit] or watchUnitChange.secretGUID[unit]) then
               eventsToSend["UNIT_CHANGED_" .. unit] = unit
             end
           end
@@ -3744,8 +3763,13 @@ function ForeverAuras.WatchUnitChange(unit)
   end
   local guid = UnitGUID(unit)
   watchUnitChange.trackedUnits[unit] = true
-  watchUnitChange.unitIdToGUID[unit] = ForeverAuras.UnitExistsFixed(unit) and UnitGUID(unit)
-  watchUnitChange.unitExists[unit] = UnitExists(unit)
+  -- A secret GUID is not kept: later comparisons with it would stop every
+  -- change report for this unit (see unitUpdate).
+  local knownGUID = ForeverAuras.UnitExistsFixed(unit) and UnitGUID(unit)
+  watchUnitChange.unitIdToGUID[unit] = not issecretvalue(knownGUID) and knownGUID or false
+  watchUnitChange.secretGUID[unit] = issecretvalue(knownGUID) or nil
+  local exists = UnitExists(unit)
+  watchUnitChange.unitExists[unit] = not issecretvalue(exists) and exists or nil
 
   if guid and not issecretvalue(guid) then
     watchUnitChange.GUIDToUnitIds[guid] = watchUnitChange.GUIDToUnitIds[guid] or {}

@@ -81,7 +81,7 @@ function Editor.AddOptions(options, data, triggernum)
     -- Active Aura Filters; like Legacy, only with Show On: Aura(s) Found.
     local function RemainingHidden() return display.ShowOn(trigger) ~= "showOnActive" end
     options.useRem = {type = "toggle", name = "Remaining Time", order = 10.01, width = ForeverAuras.normalWidth,
-      desc = "Icon displays only. Shows your icon, its %p countdown and glow while the time left is in range; stacks, swipe and border are not shown.",
+      desc = "Only shows the aura while its time left is in range.\n\nIcons: shows the icon, its %p countdown and glow; stacks, swipe and border are not shown.\n\nBars, progress textures and texts: the whole display shows, but %p does not. Can't be combined with Total Duration = or >=, Stack Count or Approximate Match.",
       hidden = RemainingHidden,
       get = function() return trigger.secretUseRem or false end,
       set = function(_, value)
@@ -115,7 +115,7 @@ function Editor.AddOptions(options, data, triggernum)
     -- Total Duration: a standard filter on the aura's full duration, laid out
     -- like Remaining Time. "<=" works everywhere; "=" and ">=" on Icons.
     options.useTotal = {type = "toggle", name = "Total Duration", order = 10.05, width = ForeverAuras.normalWidth,
-      desc = "Only shows auras whose full duration matches.\n\n= and >= work on Icon displays only. If several auras match, they are drawn on top of each other.",
+      desc = "Only shows auras whose full duration matches.\n\nWith = and >=, if several auras match they are drawn on top of each other; on bars, progress textures and texts %p is not shown.",
       get = function() return trigger.secretUseTotal or false end,
       set = function(_, value)
         trigger.secretUseTotal = value or nil
@@ -134,6 +134,34 @@ function Editor.AddOptions(options, data, triggernum)
       set = function(_, value) trigger.secretTotal = Seconds(value); Save() end}
     options.useTotalSpace = {type = "description", name = "", order = 10.08, width = ForeverAuras.normalWidth,
       hidden = function() return trigger.secretUseTotal end}
+    -- Stack Count: laid out like Total Duration. Blizzard has no stack filter,
+    -- so it is drawn by a clip around the display (SecretAuraSingle.lua).
+    options.useStacks = {type = "toggle", name = "Stack Count", order = 10.085, width = ForeverAuras.normalWidth,
+      desc = "Only shows auras whose stack count matches. Auras that don't stack count as 0.\n\nWorks with Show On: Aura(s) Found. If several auras match, they are drawn on top of each other. Can't be combined with Total Duration = or >=, or Approximate Match.",
+      get = function() return trigger.secretUseStacks or false end,
+      set = function(_, value)
+        trigger.secretUseStacks = value or nil
+        if value and trigger.secretStacksOperator == nil then trigger.secretStacksOperator = ">=" end
+        Save()
+      end}
+    options.stacksOperator = {type = "select", name = "Operator", order = 10.086, width = ForeverAuras.halfWidth,
+      values = display.stackOperators, sorting = {"=", ">=", ">", "<=", "<"},
+      hidden = function() return not trigger.secretUseStacks end,
+      get = function() return trigger.secretStacksOperator or ">=" end,
+      set = function(_, value) trigger.secretStacksOperator = value; Save() end}
+    options.stacks = {type = "input", name = "Stack Count", order = 10.087, width = ForeverAuras.halfWidth,
+      hidden = function() return not trigger.secretUseStacks end,
+      validate = function(_, value)
+        local count = tonumber(value)
+        if not count or count ~= math.floor(count) or count < 0 or count > display.STACK_LIMIT then
+          return "Enter a whole number from 0 to " .. display.STACK_LIMIT .. "."
+        end
+        return true
+      end,
+      get = function() return trigger.secretStacks and tostring(trigger.secretStacks) or "" end,
+      set = function(_, value) trigger.secretStacks = tonumber(value); Save() end}
+    options.useStacksSpace = {type = "description", name = "", order = 10.088, width = ForeverAuras.normalWidth,
+      hidden = function() return trigger.secretUseStacks end}
     -- The glow's timing needs the aura's full duration; asked for only when a
     -- glow is timed and no Total Duration "=" already gives it.
     local function GlowDurationHidden()
@@ -171,24 +199,25 @@ function Editor.AddOptions(options, data, triggernum)
         trigger.secretShowOn = value ~= "showOnActive" and value or nil
         Save()
       end}
-    -- The Missing icon's look, next to the setting that shows it.
-    options.missingDesaturate = {type = "toggle", name = "Desaturate while missing", order = 71.2, width = ForeverAuras.normalWidth,
-      desc = "Show the icon in grey while the aura is missing.",
-      hidden = function() return display.ShowOn(trigger) == "showOnActive" end,
-      get = function() return data.blizzardAuraDisplay and data.blizzardAuraDisplay.missingDesaturate or false end,
-      set = function(_, value)
-        data.blizzardAuraDisplay = data.blizzardAuraDisplay or {}
-        data.blizzardAuraDisplay.missingDesaturate = value or nil
-        ForeverAuras.Add(data)
-        OptionsPrivate.QueueOptionsRefresh(data.id)
-      end}
+    -- The Missing icon's look is set with an "Aura Missing" condition
+    -- (SecretAuraConditions.lua); the former box here is migrated to one.
+    -- As in Aura (Legacy): the trigger is inactive while its target, focus or
+    -- pet does not exist (SecretAuraTrigger.lua), unless this is ticked.
+    options.unitExists = {type = "toggle", name = "Show If Unit Does Not Exist", order = 71.3, width = ForeverAuras.doubleWidth,
+      desc = "Keep this trigger active while there is no such unit. Otherwise it is inactive then, so other triggers can supply the display.",
+      hidden = function()
+        local unit = trigger.unit
+        return not (unit == "target" or unit == "focus" or unit == "pet" or unit == "targettarget" or unit == "focustarget")
+      end,
+      get = function() return trigger.unitExists or false end,
+      set = function(_, value) trigger.unitExists = value or nil; Save() end}
     options.showClones = {type = "toggle", name = "Auto-Clone (Show All Matches)", order = 72, width = "full",
       get = function() return trigger.showClones or false end, disabled = true}
     options.combineMode = {type = "select", name = "Preferred Match", order = 72.6, width = ForeverAuras.normalWidth,
       values = OptionsPrivate.Private.bufftrigger_2_preferred_match_types, get = function() return trigger.combineMode or "showLowest" end, disabled = true}
     options.nativeShowNotice = {type = "description", order = 73, width = "full", fontSize = "small",
       name = function()
-        if display.IsSingle(trigger) then
+        if display.IsSingle(trigger, data) then
           return "One aura is shown, chosen by Sort by under Aura (Modern) Settings in Display."
         end
         return "You cannot control clones with an Aura (Modern). Use the Aura (Modern) Settings under Display."

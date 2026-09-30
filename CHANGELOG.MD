@@ -1,6 +1,16 @@
 # Changelog
 
 ## Versions
+## 0.35.1
+- Added Stack Count, Remaining Time to Aura (Modern) for available triggers
+- Lua Error fixes
+- Condition improvements
+- Add "Show if Unit Doesnt Exist" for Aura (Modern) for Target/Focus/Target of Target/Target of Focus
+- Add new condition for Aura Missing for Aura (Modern) - Allows for desaturating
+- Added warning when trying to use any other text other than hardcoded, %p, %s and %n on an Aura (Modern)
+- Fix anchoring of Smart Group / Party / Raid for Modern Aura
+- Fix Player/Unit Info Target Trigger firing when Secret
+
 ## 0.28.1
 - Fix LUA error involving secretive text
 

@@ -56,6 +56,10 @@ local function ApplyMasqueCrop(native, group)
     native.masqueCoords = native.masqueCoords or {}
     local c = native.masqueCoords
     c[1], c[2], c[3], c[4], c[5], c[6], c[7], c[8] = native.icon:GetTexCoord()
+    -- A crop that cannot be read is not combined with the display's own.
+    for index = 1, 8 do
+      if issecretvalue(c[index]) then native.masqueCoords = nil; break end
+    end
   else
     -- A disabled group leaves the icon as the display draws it.
     native.masqueCoords = nil
@@ -68,7 +72,8 @@ end
 local function MasqueChanged(group)
   C_Timer.After(0, function()
     for native in pairs(masqueMembers[group] or {}) do
-      if native.masqueGroup == group then ApplyMasqueCrop(native, group) end
+      -- Like the restyle, a failure leaves the icon as it is.
+      if native.masqueGroup == group then pcall(ApplyMasqueCrop, native, group) end
     end
   end)
 end
@@ -109,7 +114,10 @@ end
 function Display.StyleMasque(native, data)
   if not MSQ then return end
   local base = native.elementFrames and native.elementFrames.sharedBase
-  if base and data.regionType == "icon" and native.icon:IsShown() and pcall(SkinWithMasque, native, data, base) then return end
+  -- Whether the icon is drawn comes from the settings: the shown state of a
+  -- texture on a Blizzard aura button can be secret and cannot be tested.
+  local drawsIcon = data.regionType == "icon" and not native.remainingHidesIcon
+  if base and drawsIcon and pcall(SkinWithMasque, native, data, base) then return end
   if base then
     pcall(ReleaseMasque, native)
     native.masqueGroup, native.masqueCoords, native.masqueData = nil, nil, nil
@@ -255,7 +263,8 @@ end
 local function BindText(button, text, value, config, prefix, data, baseColor, property, window)
   local kind = Display.TextKind(value)
   -- The trigger's Remaining Time limits every countdown of the display.
-  if not window and kind == "duration" and Display.RemainingWindow then
+  -- Icons only: other display types use the Remaining Time gate.
+  if not window and kind == "duration" and data.regionType == "icon" and Display.RemainingWindow then
     local op, x = Display.RemainingWindow(Display.GetTrigger(data))
     if op then window = {op, x} end
   end
@@ -399,6 +408,8 @@ function Display.StyleAppearance(native, data, ElementFrame, StyleText, StyleGlo
     Display.ClearElementGlow(entry)
   end
   if native.lateGlow then native.lateGlow.clip:Hide() end
+  -- Pandemic glows are registered again below when still configured.
+  Display.ResetPandemicGlows(native)
   native.sharedElements = native.sharedElements or {}
   local base = ElementFrame(native, "sharedBase")
   base:SetFrameLevel(button:GetFrameLevel() + 1); base:Show()
@@ -493,6 +504,9 @@ function Display.StyleAppearance(native, data, ElementFrame, StyleText, StyleGlo
         -- A glow tied to remaining time lives in a clip that Blizzard's timer
         -- opens (SecretAuraSingle.lua); false means its duration is not known yet.
         local holder = Display.TimedGlowHolder(native, data, index, frame)
+        -- A glow an "In Pandemic Window" condition turns on lives in a frame
+        -- Blizzard shows during the window (SecretAuraConditions.lua).
+        if holder == nil then holder = Display.PandemicGlowHolder(native, data, index, frame) end
         if holder == nil then
           Display.StyleElementGlow(entry, button, frame, entry.glowAnchor, element, entry.glowWidth, entry.glowHeight)
         elseif holder then

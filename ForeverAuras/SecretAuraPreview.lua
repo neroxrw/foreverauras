@@ -129,6 +129,10 @@ function Display.ShowPreview(region, data, StyleSample)
   local centered = growth == "CENTER_HORIZONTAL" or growth == "CENTER_VERTICAL"
   local anchor = growth == "LEFT" and "TOPRIGHT" or growth == "UP" and "BOTTOMLEFT" or "TOPLEFT"
   region.secretAuraSamples = region.secretAuraSamples or {}
+  -- In a Modern Aura Group on unit frames the editor box follows its first
+  -- sample; put it back first, as the samples are anchored to the box below
+  -- (ArrangeFlowPreview moves it again afterwards).
+  Display.RestorePreviewRegion(region)
   Display.HidePreview(region)
   region.secretAuraSamplesActive = true
   -- In a Modern Aura Group grouped by unit frame, one row per unit that has a

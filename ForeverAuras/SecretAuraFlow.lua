@@ -180,7 +180,8 @@ function Display.SetFlowEnd(region, data, presence)
   local showOn = Display.ShowOn(trigger)
   if showOn == "showOnMissing" and presence then
     flow.endFrame, flow.endPoint, flow.x, flow.y = presence, g.start, 0, 0
-  elseif showOn == "showOnActive" and not Display.DurationGate(data) and native.instances[1] then
+  -- A gate (Total Duration or Stack Count) keeps the candidates on one spot.
+  elseif showOn == "showOnActive" and not Display.UsesGate(data) and native.instances[1] then
     -- Several units are chained one after another; the last one ends the display.
     flow.endFrame, flow.endPoint = native.instances[#native.instances].container, g.listEnd
     flow.x, flow.y = g.pixel[1], g.pixel[2]
@@ -305,7 +306,8 @@ function Display.EnsureFlowShadows(region, data)
   local filter, candidates = Display.FilterString(trigger), Display.CandidateFilters(data)
   local showOn = Display.ShowOn(trigger)
   flow.shadowKind, flow.shadowList = "fixed", nil
-  if showOn == "showOnActive" and not Display.DurationGate(data) then
+  -- Gated lists (Total Duration, Stack Count) keep a fixed spot.
+  if showOn == "showOnActive" and not Display.UsesGate(data) then
     flow.shadowList = {}
     for _, instance in ipairs(native.instances) do
       instance.flowShadow = MeasureContainer(instance.flowShadow, region, data, sh, layout, Display.MaxAuras(data), filter, candidates)
@@ -388,7 +390,8 @@ local function MovePreviewRegion(region, button)
   if not (region.SetAnchor and region.SetOffset) then return end
   -- Anchored anywhere else, the anchor is the display's own (set again by
   -- the editor after a change), so it is the one to keep.
-  if region.relativeTo ~= button then
+  -- Only an anchor that is not one of the preview samples is the display's own.
+  if region.relativeTo ~= button and not (type(region.relativeTo) == "table" and region.relativeTo.bindings) then
     region.flowPreviewSaved = {region.anchorPoint, region.relativeTo, region.relativePoint,
       region.GetXOffset and region:GetXOffset() or 0, region.GetYOffset and region:GetYOffset() or 0}
   end

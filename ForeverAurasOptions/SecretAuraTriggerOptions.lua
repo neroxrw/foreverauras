@@ -1,4 +1,4 @@
--- Modified for ForeverAuras, 2026-09-29.
+-- Modified for ForeverAuras, 2026-09-30.
 if not ForeverAuras.IsLibsOK() then return end
 local _, OptionsPrivate = ...
 
@@ -36,9 +36,10 @@ local function GetOptions(data, triggernum)
     return values
   end
   local options = {
-    -- The trigger itself is always active; Blizzard shows the auras inside.
+    -- The trigger is active whenever its unit exists; Blizzard shows the auras
+    -- inside (SecretAuraTrigger.lua).
     alwaysActive = {type = "description", order = 1.95, width = "full", fontSize = "medium",
-      name = "|cffffffffNote: This trigger is always active. Blizzard shows or hides the auras inside the display.|r"},
+      name = "|cffffffffNote: This trigger is always active while its unit exists. Blizzard shows or hides the auras inside the display.|r"},
     -- Green/red status for this trigger's own selection (Display.TriggerStatus).
     help = {type = "description", order = 2, width = "full", fontSize = "small",
       name = function() return display.TriggerStatus(data, trigger) end},

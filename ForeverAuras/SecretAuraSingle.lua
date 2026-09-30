@@ -42,9 +42,13 @@ local function UsesRemaining(trigger)
   return type(trigger) == "table" and trigger.secretUseRem == true and Display.ShowOn(trigger) == "showOnActive"
 end
 
--- True when the settings need the single-aura drawing.
-function Display.IsSingle(trigger)
-  return Display.ShowOn(trigger) ~= "showOnActive" or UsesRemaining(trigger)
+-- True when the settings need the single-aura drawing. With data, Remaining
+-- Time counts only on Icons: bars, progress textures and texts stay a list
+-- and use the gate instead (Display.RemainingGateRange). Without data it
+-- counts for every display type, which the gate conflict checks rely on.
+function Display.IsSingle(trigger, data)
+  if Display.ShowOn(trigger) ~= "showOnActive" then return true end
+  return UsesRemaining(trigger) and not (data and data.regionType ~= "icon")
 end
 
 -- Returns op, seconds when a usable Remaining Time filter is configured.
@@ -74,7 +78,7 @@ end
 
 -- A single aura is one aura at the region's corner.
 local function DrawsOne(data)
-  return Display.IsSingle(Display.GetTrigger(data))
+  return Display.IsSingle(Display.GetTrigger(data), data)
 end
 Display.DrawsOne = DrawsOne
 
@@ -87,8 +91,9 @@ function Display.Growth(data)
 end
 
 function Display.MaxAuras(data)
-  -- The Total Duration gate stacks candidates: room for the right one among others.
-  if Display.DurationGate(data) then return 10 end
+  -- The Total Duration and Stack Count gates stack candidates: room for the
+  -- right one among others.
+  if Display.UsesGate(data) then return 10 end
   if DrawsOne(data) then return 1 end
   -- A Modern Aura Group sets the limit for all its displays.
   local limit = Display.FlowLimit(data)
@@ -255,6 +260,10 @@ end
 function Display.ValidateSingle(data, trigger)
   local totalProblem = Display.TotalFilterProblem(data, trigger)
   if totalProblem then return totalProblem end
+  local stackProblem = Display.StackFilterProblem(data, trigger)
+  if stackProblem then return stackProblem end
+  local remainingProblem = Display.RemainingGateProblem(data, trigger)
+  if remainingProblem then return remainingProblem end
   -- A "Remaining Time < X" glow condition is drawn on Icon displays only.
   if data.regionType ~= "icon" then
     for _, condition in ipairs(data.conditions or {}) do
@@ -266,7 +275,7 @@ function Display.ValidateSingle(data, trigger)
       end
     end
   end
-  if not Display.IsSingle(trigger) then return end
+  if not Display.IsSingle(trigger, data) then return end
   if not Display.singleUnits[trigger.unit] then
     return "Aura(s) Missing, Always and Remaining Time watch one unit: choose Player, Target, Focus, Pet, Target of Target or Target of Focus."
   end
@@ -320,18 +329,18 @@ local function MissingLayout(width, height, margin)
   return {elementWidth = width + 1 + 2 * margin, elementHeight = height}
 end
 
--- Conditions from other triggers restore the display's own desaturation;
--- the Missing option stays on top of them.
+-- Conditions from other triggers restore the display's own look; the Aura
+-- Missing conditions stay on top of them.
 function Display.KeepMissingDesaturated(native, data)
-  if native.icon and data.blizzardAuraDisplay and data.blizzardAuraDisplay.missingDesaturate then native.icon:SetDesaturated(true) end
+  Display.ApplyMissingConditions(native, data)
 end
 
 -- Draws the display's idle look on the static sample in the Missing clip.
 function Display.StyleMissingIcon(native, data)
-  local settings = data.blizzardAuraDisplay or {}
-  if native.icon then native.icon:SetDesaturated(settings.missingDesaturate == true or data.desaturate == true) end
-  -- Native condition highlights describe a present aura; none apply while it is missing.
-  for _, entry in ipairs(native.conditionPreview or {}) do entry.texture:Hide() end
+  if native.icon then native.icon:SetDesaturated(data.desaturate == true) end
+  -- Highlights describe a present aura, except those of Aura Missing conditions.
+  for _, entry in ipairs(native.conditionPreview or {}) do entry.texture:SetShown(entry.kind == "faAuraMissing") end
+  Display.ApplyMissingConditions(native, data)
   if native.cooldown then native.cooldown:Hide() end
   -- Dispel indicators describe the live aura's type, which an absent aura has not.
   for index, element in ipairs(data.subRegions or {}) do
@@ -842,10 +851,14 @@ end
 -- and other elements would show for the whole aura, so only the countdown and
 -- glows stay; the icon is drawn by the Remaining Time slot instead.
 function Display.StyleRemainingList(native, data)
+  native.remainingHidesIcon = nil
   if native.preview then return end
-  local limited = Display.RemainingWindow(Display.GetTrigger(data)) ~= nil
+  -- Icons only: other display types use the Remaining Time gate.
+  local limited = data.regionType == "icon" and Display.RemainingWindow(Display.GetTrigger(data)) ~= nil
   if native.conditionOverlay then native.conditionOverlay:SetShown(not limited) end
   if not limited then return end
+  -- Read by Display.StyleMasque: this button draws no icon to skin.
+  native.remainingHidesIcon = true
   native.button:ClearIcon(); native.icon:Hide()
   native.button:ClearDurationCooldown(); native.cooldown:Hide()
   native.button:ClearApplicationCount(); native.button:ClearSpellName()
@@ -1130,12 +1143,10 @@ end
 
 -- Why the gate cannot be drawn for this display, or nil.
 local function GateProblem(data, trigger)
-  if data.regionType ~= "icon" then
-    return "Total Duration = and >= only work on Icon displays. Use <= for bars, textures and text."
-  end
   if Display.FrameAnchorType(data) == "UNITFRAME" or Display.FrameAnchorType(data) == "NAMEPLATE" then
     return "Total Duration = and >= can't anchor to unit frames or nameplates."
   end
+  -- Without data: Remaining Time on any display type needs the clip too.
   if Display.IsSingle(trigger) then
     return "Total Duration = and >= only work with Show On: Aura(s) Found, without Remaining Time."
   end
@@ -1178,6 +1189,116 @@ function Display.TotalFilterProblem(data, trigger)
   if source == "filter" and problem then return problem end
 end
 
+---------------------------------------------------------------------------- stack count
+-- Blizzard's containers cannot filter by stacks. Each list button instead gets
+-- an invisible StatusBar that Blizzard fills by the aura's stack count
+-- (SetApplicationBar), and the Total Duration gate's clip is placed between a
+-- fixed point and the bar's fill edge, one icon width per stack. The clip only
+-- covers the icon on the chosen side of the threshold, so any other aura
+-- draws nothing. Like the Total Duration gate, candidates stack on one spot.
+-- "=" instead uses a hidden stack text sized by a formatter, like the Total
+-- Duration gate; it takes the button's one stack text, and %s then shows the
+-- known count as plain text (Display.StackTextFor).
+Display.stackOperators = {["="] = "=", [">="] = ">=", [">"] = ">", ["<="] = "<=", ["<"] = "<"}
+Display.STACK_LIMIT = 100
+
+-- The Stack Count filter as ("exactly" | "atLeast" | "atMost", n), "never"
+-- when nothing can match, or nil when it is off, empty or lets every aura through.
+function Display.StackFilter(trigger)
+  if type(trigger) ~= "table" or not trigger.secretUseStacks then return end
+  local op, x = trigger.secretStacksOperator or ">=", tonumber(trigger.secretStacks)
+  if not Display.stackOperators[op] or not x or x ~= math.floor(x) or x < 0 or x > Display.STACK_LIMIT then return end
+  if op == "=" then return "exactly", x end
+  -- Everything else becomes "at least n" or "at most n" whole stacks.
+  if op == ">" then op, x = ">=", x + 1 elseif op == "<" then op, x = "<=", x - 1 end
+  if op == ">=" then
+    if x <= 0 then return end
+    return "atLeast", x
+  end
+  if x < 0 then return "never" end
+  return "atMost", x
+end
+
+-- Why the Stack Count filter cannot be drawn, or nil.
+function Display.StackFilterProblem(data, trigger)
+  trigger = trigger or Display.GetTrigger(data)
+  if type(trigger) ~= "table" or not trigger.secretUseStacks then return end
+  local x = tonumber(trigger.secretStacks)
+  if not x or x ~= math.floor(x) or x < 0 or x > Display.STACK_LIMIT then
+    return "Stack Count needs a whole number from 0 to " .. Display.STACK_LIMIT .. "."
+  end
+  local kind = Display.StackFilter(trigger)
+  if kind == "never" then return "Stack Count < 0 never matches." end
+  if not kind then return end
+  if Display.FrameAnchorType(data) == "UNITFRAME" or Display.FrameAnchorType(data) == "NAMEPLATE" then
+    return "Stack Count can't anchor to unit frames or nameplates."
+  end
+  -- Without data: Remaining Time on any display type needs the clip too.
+  if Display.IsSingle(trigger) then
+    return "Stack Count only works with Show On: Aura(s) Found, without Remaining Time."
+  end
+  -- Both filters need the one clip around the button.
+  if Display.GateRange(data, trigger) then
+    return "Stack Count can't be combined with Total Duration = or >=, or with Approximate Match."
+  end
+  if not (C_AuraContainerUtil and C_AuraContainerUtil.ProcessCustomAuraButtonApplicationBarOptions) then
+    return "This client can't check Stack Count."
+  end
+end
+
+-- kind, n when the stack gate is drawn; nil otherwise.
+function Display.StackGate(data, trigger)
+  trigger = trigger or Display.GetTrigger(data)
+  local kind, n = Display.StackFilter(trigger)
+  if (kind == "exactly" or kind == "atLeast" or kind == "atMost") and not Display.StackFilterProblem(data, trigger) then return kind, n end
+end
+
+---------------------------------------------------------------------------- remaining time gate
+-- On Icons, Remaining Time draws the icon inside Blizzard's countdown text
+-- (a single display). Bars, progress textures and texts cannot be drawn as
+-- text, so they use the Total Duration gate on the time left instead: the
+-- hidden gate text is formatted from the remaining duration and the clip
+-- around the button is empty outside the range. The gate takes the button's
+-- one countdown text, so %p is not shown on these displays.
+
+-- Why Remaining Time cannot be drawn on a non-Icon display, or nil.
+function Display.RemainingGateProblem(data, trigger)
+  trigger = trigger or Display.GetTrigger(data)
+  if data.regionType == "icon" or not UsesRemaining(trigger) then return end
+  if not Display.RemainingWindow(trigger) then
+    return "Remaining Time needs a comparison and a number of seconds of 0 or more."
+  end
+  if Display.FrameAnchorType(data) == "UNITFRAME" or Display.FrameAnchorType(data) == "NAMEPLATE" then
+    return "Remaining Time can't anchor to unit frames or nameplates."
+  end
+  -- The Total Duration gate would need the same clip.
+  if Display.GateRange(data, trigger) then
+    return "On this display type, Remaining Time can't be combined with Total Duration = or >=, or with Approximate Match."
+  end
+  if not (Enum.DurationTextBindingProperty and Enum.DurationTextBindingProperty.RemainingDuration ~= nil
+    and C_StringUtil and C_StringUtil.CreateNumericRuleFormatter and Display.SupportsDurationColorCondition()) then
+    return "This client can't check Remaining Time on this display type."
+  end
+end
+
+-- The remaining-time range the gate lets through on a non-Icon display:
+-- lower, upper (nil for no upper limit); nil when there is no such gate.
+function Display.RemainingGateRange(data, trigger)
+  trigger = trigger or Display.GetTrigger(data)
+  if data.regionType == "icon" or not UsesRemaining(trigger) or Display.RemainingGateProblem(data, trigger) then return end
+  local op, x = Display.RemainingWindow(trigger)
+  if op == "<" then return 0, x - REMAIN_EPS
+  elseif op == "<=" then return 0, x
+  elseif op == ">" then return x + REMAIN_EPS end
+  return x
+end
+
+-- True when a gate (Total Duration, Remaining Time or Stack Count) picks among
+-- stacked candidates, so the list keeps a fixed spot instead of growing.
+function Display.UsesGate(data)
+  return Display.DurationGate(data) ~= nil or Display.RemainingGateRange(data) ~= nil or Display.StackGate(data) ~= nil
+end
+
 -- How far the gate clip reaches past the icon: room for the border, glows and
 -- outer texts. Kept modest because the gate text's font size grows with it.
 local function GateMargin(width, height)
@@ -1191,13 +1312,144 @@ local gateFormatters = {}
 local function GateFormatter(lower, upper, fill)
   local key = table.concat({lower, tostring(upper), fill}, "|")
   if gateFormatters[key] then return gateFormatters[key] end
-  local points = {{threshold = 0, format = ""}, {threshold = lower, format = fill}}
-  if upper then points[3] = {threshold = upper + REMAIN_EPS, format = ""} end
+  local points
+  if upper and upper < lower then
+    -- An empty range ("Remaining Time < 0"): never open.
+    points = {{threshold = 0, format = ""}}
+  elseif lower <= 0 then
+    -- Open from zero ("Remaining Time <" or "<=").
+    points = {{threshold = 0, format = fill}}
+  else
+    points = {{threshold = 0, format = ""}, {threshold = lower, format = fill}}
+  end
+  if upper and upper >= lower then points[#points + 1] = {threshold = upper + REMAIN_EPS, format = ""} end
   local formatter = C_StringUtil.CreateNumericRuleFormatter()
   local ok, err = pcall(formatter.SetBreakpoints, formatter, points)
   if not ok then return nil, err end
   gateFormatters[key] = formatter
   return formatter
+end
+
+-- The gate text covers the whole clip area: its font size gives the height
+-- and a run of wide characters the width. An empty text has no size, so the
+-- clip closes to nothing. Returns the font size and the text for "open".
+local function GateFill(width, height)
+  local margin = GateMargin(width, height)
+  local size = math.min(250, math.ceil(math.max(width, height) + 2 * margin))
+  local fill = string.rep("W", math.ceil((width + 2 * margin) / (size / 2)) + 1)
+  -- Displays taller than one line of the largest font (tall bars) get more
+  -- lines; smaller ones keep the single line.
+  local lines = math.ceil((height + 2 * margin) / size)
+  if lines > 1 then
+    local rows = {}
+    for row = 1, lines do rows[row] = fill end
+    fill = table.concat(rows, "\n")
+  end
+  return size, fill
+end
+
+-- Stack Count "=": the hidden stack text decides the clip, so every drawn
+-- aura has exactly n stacks. Returns true when drawn.
+local function StyleExactStackGate(native, data, n)
+  local button, clip = native.button, native.gateClip
+  local width, height = Display.Dimensions(data)
+  local size, fill = GateFill(width, height)
+  -- Open at exactly n; integers only, so the range n..n closes again at n + 1.
+  local formatter, err = GateFormatter(n, n, fill)
+  local text = native.stackGateText
+  if not text then
+    text = button:CreateFontString(nil, "BACKGROUND")
+    native.stackGateText = text
+  end
+  local ok = formatter ~= nil
+  if ok then
+    text:SetFont(STANDARD_TEXT_FONT, size, "")
+    text:SetWordWrap(false)
+    text:SetWidth(0)
+    text:ClearAllPoints()
+    text:SetPoint("CENTER", button, "CENTER")
+    -- Always invisible: only its size matters. Blizzard only sets its text.
+    text:SetTextColor(0, 0, 0, 0)
+    text:SetAlpha(0)
+    ok, err = pcall(button.SetApplicationCount, button, text, {formatter = formatter})
+  end
+  if not ok then
+    Warn(data, "Blizzard refused the Stack Count check: " .. tostring(err))
+    text:Hide()
+    return false
+  end
+  text:Show()
+  clip:SetClipsChildren(true)
+  clip:ClearAllPoints()
+  clip:SetPoint("TOPLEFT", text, "TOPLEFT")
+  clip:SetPoint("BOTTOMRIGHT", text, "BOTTOMRIGHT")
+  -- The %s text lost its binding to the gate. The count is known, so it is
+  -- written as plain text with the display's stack conditions applied.
+  for index, element in ipairs(data.subRegions or {}) do
+    if element.type == "subtext" and Display.TextKind(element.text_text) == "stack" then
+      local entry = native.sharedElements and native.sharedElements[index]
+      if entry and entry.text then entry.text:SetText(Display.StackTextFor(data, "sub." .. index .. ".text_color", n)) end
+    end
+  end
+  if native.mainText and data.regionType == "text" and Display.TextKind(data.displayText) == "stack" then
+    native.mainText:SetText(Display.StackTextFor(data, "color", n))
+  end
+  return true
+end
+
+-- Places the gate clip for a Stack Count filter. Returns true when it did;
+-- otherwise the stack bar is released and the caller resets the clip.
+local function StyleStackGate(native, data, trigger)
+  local button, clip = native.button, native.gateClip
+  local kind, n = Display.StackGate(data, trigger)
+  local bar = native.stackGate
+  -- Parts of the other Stack Count gate are released first.
+  if kind ~= "exactly" and native.stackGateText then native.stackGateText:Hide() end
+  if (not kind or kind == "exactly") and bar then
+    button:ClearApplicationBar()
+    bar:Hide()
+  end
+  if not kind then return false end
+  if kind == "exactly" then return StyleExactStackGate(native, data, n) end
+  if not bar then
+    bar = CreateFrame("StatusBar", nil, button)
+    bar:SetStatusBarTexture(WHITE)
+    bar:SetStatusBarColor(0, 0, 0, 0)
+    -- Invisible: only its fill edge serves as an anchor.
+    bar:SetAlpha(0)
+    native.stackGate = bar
+  end
+  local width, height = Display.Dimensions(data)
+  local margin = GateMargin(width, height)
+  -- One stack moves the fill edge by the clip's full width, so a single stack
+  -- short of the threshold already leaves the clip empty.
+  local k = width + 2 * margin
+  local max = kind == "atLeast" and n or n + 1
+  bar:ClearAllPoints()
+  bar:SetSize(max * k, height + 2 * margin)
+  clip:SetClipsChildren(true)
+  clip:ClearAllPoints()
+  if kind == "atLeast" then
+    -- The bar ends where the clip should end; its fill reaches there at n
+    -- stacks and Blizzard caps the value at n.
+    bar:SetPoint("LEFT", button, "LEFT", -margin - (n - 1) * k, 0)
+    clip:SetPoint("TOPLEFT", bar, "TOPLEFT", (n - 1) * k, 0)
+    clip:SetPoint("BOTTOMRIGHT", bar:GetStatusBarTexture(), "BOTTOMRIGHT")
+  else
+    -- The clip runs from the fill edge to the bar's end: it covers the icon
+    -- up to n stacks and closes once the bar is full at n + 1.
+    bar:SetPoint("RIGHT", button, "RIGHT", margin, 0)
+    clip:SetPoint("TOPLEFT", bar:GetStatusBarTexture(), "TOPRIGHT")
+    clip:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT")
+  end
+  bar:Show()
+  local ok, err = pcall(button.SetApplicationBar, button, bar, {maxApplications = max})
+  if not ok then
+    Warn(data, "Blizzard refused the Stack Count check: " .. tostring(err))
+    bar:Hide()
+    return false
+  end
+  return true
 end
 
 -- Called at the end of StyleAppearance for every live list button.
@@ -1207,22 +1459,30 @@ function Display.StyleDurationGate(native, data)
   local trigger = Display.GetTrigger(data)
   local width, height = Display.Dimensions(data)
   local lower, upper = Display.DurationGate(data, trigger)
+  -- Which time the gate text follows, and its name in warnings.
+  local property, label = "TotalDuration", "Total Duration"
   if not lower then
+    -- Remaining Time on bars, progress textures and texts: the same gate on
+    -- the time left.
+    local remainingLower, remainingUpper = Display.RemainingGateRange(data, trigger)
+    if remainingLower then lower, upper, property, label = remainingLower, remainingUpper, "RemainingDuration", "Remaining Time" end
+  end
+  if not lower then
+    gate:Hide()
+    native.cooldown:SetMinimumCountdownDuration(0)
+    native.cooldown:SetCountdownFormatter(nil)
+    -- A Stack Count filter uses the same clip.
+    if StyleStackGate(native, data, trigger) then return end
     -- No gate: the frame does not clip at all, as before the gate existed.
     clip:SetClipsChildren(false)
     clip:ClearAllPoints()
     clip:SetAllPoints(button)
-    gate:Hide()
-    native.cooldown:SetMinimumCountdownDuration(0)
-    native.cooldown:SetCountdownFormatter(nil)
     return
   end
-  local margin = GateMargin(width, height)
-  -- The gate text covers the whole clip area: its font size gives the height
-  -- and a run of wide characters the width. An empty text has no size, so
-  -- the clip closes to nothing.
-  local size = math.min(250, math.ceil(math.max(width, height) + 2 * margin))
-  local fill = string.rep("W", math.ceil((width + 2 * margin) / (size / 2)) + 1)
+  -- The time gate owns the clip; a stale stack bar is released.
+  StyleStackGate(native, data, nil)
+  -- Font size and "open" text shared with the Stack Count "=" gate.
+  local size, fill = GateFill(width, height)
   local formatter, err = GateFormatter(lower, upper, fill)
   local ok = formatter ~= nil
   if ok then
@@ -1239,12 +1499,12 @@ function Display.StyleDurationGate(native, data)
       invisibleCurve:AddPoint(0, CreateColor(0, 0, 0, 0))
     end
     ok, err = pcall(button.SetDurationText, button, gate, {
-      textFormat = {formatString = "{}", components = {{property = Enum.DurationTextBindingProperty.TotalDuration, formatter = formatter}}},
-      textColor = {curve = invisibleCurve, property = Enum.DurationTextBindingProperty.TotalDuration},
+      textFormat = {formatString = "{}", components = {{property = Enum.DurationTextBindingProperty[property], formatter = formatter}}},
+      textColor = {curve = invisibleCurve, property = Enum.DurationTextBindingProperty[property]},
     })
   end
   if not ok then
-    Warn(data, "Blizzard refused the Total Duration check: " .. tostring(err))
+    Warn(data, "Blizzard refused the " .. label .. " check: " .. tostring(err))
     return
   end
   gate:Show()
@@ -1252,7 +1512,12 @@ function Display.StyleDurationGate(native, data)
   clip:ClearAllPoints()
   clip:SetPoint("TOPLEFT", gate, "TOPLEFT")
   clip:SetPoint("BOTTOMRIGHT", gate, "BOTTOMRIGHT")
-  -- The %p text lost its binding to the gate; the swipe's numbers replace it.
+  -- The %p text lost its binding to the gate. A Text display's own %p text
+  -- is hidden; on Icons with the Total Duration gate the swipe's numbers
+  -- replace %p, other displays have no swipe to take it over.
+  if native.mainText and data.regionType == "text" and Display.TextKind(data.displayText) == "duration" then
+    native.mainText:Hide()
+  end
   local countdown
   for index, element in ipairs(data.subRegions or {}) do
     if element.type == "subtext" and Display.TextKind(element.text_text) == "duration" then
@@ -1261,7 +1526,7 @@ function Display.StyleDurationGate(native, data)
       if element.text_visible ~= false and not countdown then countdown = element end
     end
   end
-  if countdown then
+  if countdown and data.regionType == "icon" and property == "TotalDuration" then
     local cooldown = native.cooldown
     cooldown:Show()
     -- The numbers without a swipe when the icon's cooldown is turned off.
@@ -1308,7 +1573,7 @@ end
 function Display.ConfigureSingle(instance, region, data, index)
   local trigger = Display.GetTrigger(data)
   local valid = index == 1 and Display.ValidateSingle(data, trigger) == nil
-  local isSingle = valid and Display.IsSingle(trigger)
+  local isSingle = valid and Display.IsSingle(trigger, data)
   if valid then
     local lateX = Display.LateGlowSpec(data, trigger)
     Display.WatchAuraLearning(region, data, trigger, lateX)
@@ -1373,7 +1638,10 @@ function Display.RefreshSingle(instance, unit, shown)
   missing.clip:SetShown(shown)
   -- No unit (no target, focus or pet): nothing is missing. The display itself
   -- stays shown, since its frames may be protected in combat; only the Missing
-  -- look fades, through its alpha.
-  missing.clip:SetAlpha(Display.SingleUnitExists({unit = unit}) and 1 or 0)
+  -- look fades, through its alpha. With Show If Unit Does Not Exist ticked the
+  -- trigger stays active without the unit, and the Missing look stays too.
+  local trigger = instance.data and Display.GetTrigger(instance.data)
+  local keepWithoutUnit = trigger and trigger.unitExists
+  missing.clip:SetAlpha((keepWithoutUnit or Display.SingleUnitExists({unit = unit})) and 1 or 0)
   if shown then container:UpdateAllAuras() end
 end

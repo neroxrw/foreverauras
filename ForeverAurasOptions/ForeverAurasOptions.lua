@@ -1,4 +1,4 @@
--- Modified for ForeverAuras, 2026-09-29.
+-- Modified for ForeverAuras, 2026-09-30.
 if not ForeverAuras.IsLibsOK() then return end
 ---@type string
 local AddonName = ...
@@ -1793,10 +1793,22 @@ local function CDMTextCodes(trigger)
   }
 end
 
+-- Aura (Modern) texts are drawn by Blizzard's aura buttons, which only fill in
+-- the duration, stacks and name, each in its own text element
+-- (Display.ValidateAppearance). Other codes are not listed for those displays.
+local ModernTextCodes = {
+  {type = "mini", name = "p", desc = "Remaining time, drawn by Blizzard. Put it in its own text element."},
+  {type = "mini", name = "s", desc = "Stacks, drawn by Blizzard. Put it in its own text element."},
+  {type = "mini", name = "n", desc = "Aura name, drawn by Blizzard. Put it in its own text element."},
+  {type = "mini", name = "%", desc = L["% - To show a percent sign"]},
+}
+
 function OptionsPrivate.UpdateTextReplacements(frame, data)
   frame.scrollList:ReleaseChildren()
 
-  local props = OptionsPrivate.Private.GetAdditionalProperties(data)
+  local modern = OptionsPrivate.Private.BlizzardAuraDisplay.Enabled(data)
+  -- Other triggers' codes cannot be used in an Aura (Modern) display's texts.
+  local props = modern and {} or OptionsPrivate.Private.GetAdditionalProperties(data)
   local sortedProps = {}
 
   -- Add global header and markers
@@ -1808,8 +1820,12 @@ function OptionsPrivate.UpdateTextReplacements(frame, data)
   -- Add base dynamic text codes
   local globalProps = {}
   local singleTrigger = data.triggers and #data.triggers == 1 and data.triggers[1].trigger
-  tAppendAll(globalProps, CopyTable(CDMTextCodes(singleTrigger)))
-  tAppendAll(globalProps, CopyTable(BaseDynamicTextCodes.global))
+  if modern then
+    tAppendAll(globalProps, CopyTable(ModernTextCodes))
+  else
+    tAppendAll(globalProps, CopyTable(CDMTextCodes(singleTrigger)))
+    tAppendAll(globalProps, CopyTable(BaseDynamicTextCodes.global))
+  end
   for _, prop in ipairs(globalProps) do
     prop.widthFraction = #globalProps
     prop.triggerNum = 0
@@ -1817,7 +1833,7 @@ function OptionsPrivate.UpdateTextReplacements(frame, data)
   end
 
   for triggerNum, entry in ipairs(data.triggers or {}) do
-    if entry.trigger.type == "cdm" and entry.trigger.event == "Blizzard CDM Buff" then props[triggerNum] = props[triggerNum] or {} end
+    if not modern and entry.trigger.type == "cdm" and entry.trigger.event == "Blizzard CDM Buff" then props[triggerNum] = props[triggerNum] or {} end
   end
   -- Process each trigger's properties
   for triggerNum, triggerProps in pairs(props) do
@@ -1897,7 +1913,8 @@ function OptionsPrivate.UpdateTextReplacements(frame, data)
           tooltip:ClearLines()
           tooltip:AddLine(("%s%s"):format(propPrefix, prop.name))
           tooltip:AddLine(prop.desc, 1, 1, 1, true)
-          if prop.name ~= "c" and prop.name ~= "%" then
+          -- Aura (Modern) codes always come from Blizzard's aura button.
+          if prop.name ~= "c" and prop.name ~= "%" and not modern then
             tooltip:AddLine("\n")
             tooltip:AddLine(
               prop.triggerNum > 0
