@@ -8,6 +8,9 @@ local loaded = {}
 
 function Trigger.Add(data)
   Display.MigrateNativeConditions(data)
+  -- 0.38-0.40 kept "When Not Found, Show" on the trigger; it is now the
+  -- display's Trigger Combination fallback (SecretAuraSingle.lua).
+  Display.MigrateFallback(data)
   displays[data.id] = nil
   for _, entry in ipairs(data.triggers) do
     if entry.trigger.type == "secretAura" then displays[data.id] = data; break end
@@ -99,7 +102,15 @@ unitFrame:SetScript("OnEvent", function(_, event, unit)
       if entry.trigger.type == "secretAura" and affected[entry.trigger.unit] then
         local state = ForeverAuras.GetTriggerStateForTrigger(id, index)[""]
         local show = IsActive(data, index)
-        if state and state.show ~= show then
+        if not state then
+          -- The framework removes hidden states after each update
+          -- (Private.UpdatedTriggerState), so a trigger that started without
+          -- its unit has no state left to switch on: build it again.
+          if show then
+            Trigger.CreateFakeStates(id, index)
+            changed = true
+          end
+        elseif state.show ~= show then
           state.show, state.changed = show, true
           changed = true
         end

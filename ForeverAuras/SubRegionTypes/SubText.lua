@@ -510,10 +510,14 @@ local function modify(parent, region, parentData, data, first)
 
   local textDegrees = data.rotateText == "LEFT" and 90 or data.rotateText == "RIGHT" and -90 or 0;
 
-  -- Native text follows the same configured anchor without reading a FontString's live points.
+  -- Native text follows this subtext's own text (left empty while the native
+  -- countdown shows), point to point, without reading live points. The text
+  -- moves with whichever aura owns this pooled subtext, so the countdown never
+  -- stays on a previous aura when Blizzard locks it against re-anchoring in
+  -- combat (CDMAuraProgress.StyleText).
   region.AnchorNativeText = function(self, nativeText)
-    parent:AnchorSubRegion(nativeText, "point", data.anchor_point, selfPoint,
-      self.text_anchorXOffset or 0, self.text_anchorYOffset or 0)
+    nativeText:ClearAllPoints()
+    nativeText:SetPoint(selfPoint, text, selfPoint)
   end
 
   region.Anchor = function(self)

@@ -79,9 +79,8 @@ function Editor.AddOptions(options, data, triggernum)
     end
     -- Remaining Time heads the Aura Filters section, as it heads Legacy's
     -- Active Aura Filters; like Legacy, only with Show On: Aura(s) Found.
-    local function RemainingHidden() return display.ShowOn(trigger) ~= "showOnActive" end
+    local function RemainingHidden() return display.RawShowOn(trigger) ~= "showOnActive" end
     options.useRem = {type = "toggle", name = "Remaining Time", order = 10.01, width = ForeverAuras.normalWidth,
-      desc = "Only shows the aura while its time left is in range.\n\nIcons: shows the icon, its %p countdown and glow; stacks, swipe and border are not shown.\n\nBars, progress textures and texts: the whole display shows, but %p does not. Can't be combined with Total Duration = or >=, Stack Count or Approximate Match.",
       hidden = RemainingHidden,
       get = function() return trigger.secretUseRem or false end,
       set = function(_, value)
@@ -115,7 +114,6 @@ function Editor.AddOptions(options, data, triggernum)
     -- Total Duration: a standard filter on the aura's full duration, laid out
     -- like Remaining Time. "<=" works everywhere; "=" and ">=" on Icons.
     options.useTotal = {type = "toggle", name = "Total Duration", order = 10.05, width = ForeverAuras.normalWidth,
-      desc = "Only shows auras whose full duration matches.\n\nWith = and >=, if several auras match they are drawn on top of each other; on bars, progress textures and texts %p is not shown.",
       get = function() return trigger.secretUseTotal or false end,
       set = function(_, value)
         trigger.secretUseTotal = value or nil
@@ -137,7 +135,6 @@ function Editor.AddOptions(options, data, triggernum)
     -- Stack Count: laid out like Total Duration. Blizzard has no stack filter,
     -- so it is drawn by a clip around the display (SecretAuraSingle.lua).
     options.useStacks = {type = "toggle", name = "Stack Count", order = 10.085, width = ForeverAuras.normalWidth,
-      desc = "Only shows auras whose stack count matches. Auras that don't stack count as 0.\n\nWorks with Show On: Aura(s) Found. If several auras match, they are drawn on top of each other. Can't be combined with Total Duration = or >=, or Approximate Match.",
       get = function() return trigger.secretUseStacks or false end,
       set = function(_, value)
         trigger.secretUseStacks = value or nil
@@ -162,18 +159,8 @@ function Editor.AddOptions(options, data, triggernum)
       set = function(_, value) trigger.secretStacks = tonumber(value); Save() end}
     options.useStacksSpace = {type = "description", name = "", order = 10.088, width = ForeverAuras.normalWidth,
       hidden = function() return trigger.secretUseStacks end}
-    -- The glow's timing needs the aura's full duration; asked for only when a
-    -- glow is timed and no Total Duration "=" already gives it.
-    local function GlowDurationHidden()
-      return display.LateGlowSpec(data, trigger) == nil or display.TotalFilter(trigger) == "="
-    end
-    options.secretDuration = {type = "input", name = "Aura Duration (seconds)", order = 10.09, width = ForeverAuras.normalWidth,
-      desc = "The aura's full duration, used to time the glow. Leave empty to use the spell's tooltip.",
-      hidden = GlowDurationHidden,
-      validate = function(_, value) return value == "" or ValidSeconds(value) end,
-      get = function() return trigger.secretDuration and tostring(trigger.secretDuration) or "" end,
-      set = function(_, value) trigger.secretDuration = tonumber(Seconds(value)); Save() end}
-    options.secretDurationSpace = {type = "description", name = "", order = 10.1, width = ForeverAuras.normalWidth, hidden = GlowDurationHidden}
+    -- The timed glow's Aura Duration box was removed: the glow uses Total
+    -- Duration "=", else the duration learned or read from the tooltip.
     -- Debuffs on friendly units cannot be picked by spell ID in combat; this
     -- matches the entered spell by its known duration and type instead. Shown
     -- under Aura Type once a spell ID is entered.
@@ -193,7 +180,7 @@ function Editor.AddOptions(options, data, triggernum)
     options.matchesShowOn = {type = "select", name = "Show On", order = 71.1, width = ForeverAuras.normalWidth,
       values = display.showOnValues,
       sorting = {"showOnActive", "showOnMissing", "showAlways"},
-      get = function() return display.ShowOn(trigger) end,
+      get = function() return display.RawShowOn(trigger) end,
       set = function(_, value)
         if not display.showOnValues[value] then return end
         trigger.secretShowOn = value ~= "showOnActive" and value or nil

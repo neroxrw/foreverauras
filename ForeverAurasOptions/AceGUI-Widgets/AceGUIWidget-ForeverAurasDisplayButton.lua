@@ -90,7 +90,13 @@ end
 
 local function copyAuraPart(source, destination, part)
   local all = (part == "all");
-  if part == "display" and (NativeDisplayKind(destination) or NativeDisplayKind(source)) then
+  local sourceKind, destinationKind = NativeDisplayKind(source), NativeDisplayKind(destination)
+  -- Between two displays of the same type driven the same way (both Aura
+  -- (Modern), or both Cooldown Manager), every display setting is copied as
+  -- for ordinary displays: the source's elements and text codes are valid
+  -- for the destination too. The limited copy below is for mixed pairs.
+  local sameNative = sourceKind ~= nil and sourceKind == destinationKind and source.regionType == destination.regionType
+  if part == "display" and (destinationKind or sourceKind) and not sameNative then
     CopyNativeAppearance(source, destination)
     -- Between two Aura (Modern) displays, also their Aura (Modern) Settings
     -- (layout, swipe colour, Missing look, unit-frame glow) and sort order.
@@ -109,6 +115,13 @@ local function copyAuraPart(source, destination, part)
           destination[k] = v;
         end
       end
+    end
+    -- The sort order lives on the Aura (Modern) trigger but belongs to the
+    -- display, as in the limited copy above.
+    if part == "display" and sameNative and sourceKind == "aura" then
+      local Display = OptionsPrivate.Private.BlizzardAuraDisplay
+      local from, to = Display.GetSavedTrigger(source), Display.GetSavedTrigger(destination)
+      if from and to then to.sortMethod, to.sortReverse = from.sortMethod, from.sortReverse end
     end
   end
   if (part == "trigger" or all) and not IsRegionAGroup(source) then

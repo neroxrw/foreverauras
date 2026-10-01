@@ -381,6 +381,19 @@ local function ApplyCachedAura(state, identity, info, frame, exactID, buffSpellI
     local spellID = Number(frame.auraSpellID) or (aura and Number(aura.spellId))
     state.cdmAuraRenderUnit = unit
     state.cdmAuraRenderSpellIDs = spellID and {spellID} or buffSpellIDs
+    -- The viewer names one rank (usually the highest learned), but a lower
+    -- rank cast from the action bar applies its own aura ID. Unless exact IDs
+    -- were asked for, every rank of each ID is accepted; the filter only
+    -- matches the player's own debuffs (HARMFUL|PLAYER) on that unit.
+    if not exactID and Private.GetAuraSpellRanks and type(state.cdmAuraRenderSpellIDs) == "table" then
+      local ranks, seen = {}, {}
+      for _, id in ipairs(state.cdmAuraRenderSpellIDs) do
+        for _, rankID in ipairs(Private.GetAuraSpellRanks(id) or {id}) do
+          if not seen[rankID] then seen[rankID] = true; ranks[#ranks + 1] = rankID end
+        end
+      end
+      state.cdmAuraRenderSpellIDs = ranks
+    end
   end
   -- An active viewer can provide an instance/timer before (or without) its
   -- cached AuraData. Bind that timer independently of the optional cache;

@@ -37,9 +37,9 @@ local function GetOptions(data, triggernum)
   end
   local options = {
     -- The trigger is active whenever its unit exists; Blizzard shows the auras
-    -- inside (SecretAuraTrigger.lua).
+    -- inside (SecretAuraTrigger.lua). Kept short on request.
     alwaysActive = {type = "description", order = 1.95, width = "full", fontSize = "medium",
-      name = "|cffffffffNote: This trigger is always active while its unit exists. Blizzard shows or hides the auras inside the display.|r"},
+      name = "|cffffffffNote: Trigger Always Active|r"},
     -- Green/red status for this trigger's own selection (Display.TriggerStatus).
     help = {type = "description", order = 2, width = "full", fontSize = "small",
       name = function() return display.TriggerStatus(data, trigger) end},
@@ -222,7 +222,6 @@ local function GetOptions(data, triggernum)
     options[key] = {
       type = "multiselect", name = index == 1 and "Include dispel types" or "Exclude dispel types", order = 23 + index, width = "full",
       values = display.dispelTypes,
-      desc = "Select nothing to disable this filter. Include requires one of the selected types; exclude removes those types. Exclusions take precedence. This checks the category, not your dispel abilities.",
       get = function(_, name) return trigger[key] and trigger[key][name] or false end,
       set = function(_, name, value)
         local values = {}

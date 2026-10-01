@@ -32,10 +32,15 @@ local REMAIN_EPS = 0.001
 -- Inline texture coordinates are integers of this texture size.
 local TEXCOORD_UNITS = 1024
 
-function Display.ShowOn(trigger)
+-- Show On as selected in the trigger.
+function Display.RawShowOn(trigger)
   local value = type(trigger) == "table" and trigger.secretShowOn
   return Display.showOnValues[value] and value or "showOnActive"
 end
+
+-- Show On as selected. Aura(s) Found keeps its list behaviour; "When Not
+-- Found, Show" adds a Missing part beside the list (Display.FoundFollow).
+Display.ShowOn = Display.RawShowOn
 
 -- As in Aura (Legacy), Remaining Time applies with Show On: Aura(s) Found only.
 local function UsesRemaining(trigger)
@@ -70,6 +75,11 @@ end
 function Display.RemainingWindowPoints(_, x)
   return {x, x + REMAIN_EPS}
 end
+
+-- Display types that can draw the static Missing look (Show On: Aura(s)
+-- Missing or Always): the editor's sample frames support all of them.
+local missingTypes = {icon = true, aurabar = true, progresstexture = true, text = true}
+Display.missingTypes = missingTypes
 
 local function NeedsMissing(trigger)
   local showOn = Display.ShowOn(trigger)
@@ -264,6 +274,9 @@ function Display.ValidateSingle(data, trigger)
   if stackProblem then return stackProblem end
   local remainingProblem = Display.RemainingGateProblem(data, trigger)
   if remainingProblem then return remainingProblem end
+  -- A chosen fallback trigger that no longer exists is reported.
+  local fallbackProblem = Display.FallbackProblem(data)
+  if fallbackProblem then return fallbackProblem end
   -- A "Remaining Time < X" glow condition is drawn on Icon displays only.
   if data.regionType ~= "icon" then
     for _, condition in ipairs(data.conditions or {}) do
@@ -286,8 +299,14 @@ function Display.ValidateSingle(data, trigger)
   end
   if NeedsMissing(trigger) or op then
     local label = op and "Remaining Time" or ("Show On: " .. Display.showOnValues[showOn])
-    if data.regionType ~= "icon" then
+    -- Remaining Time draws its single icon inside countdown text, so it is
+    -- Icon-only here (other types use the gate). The Missing look is a static
+    -- sample of the display, drawn for every supported display type.
+    if op and data.regionType ~= "icon" then
       return label .. " is available for Icon displays. Use Show On: Aura(s) Found for other display types."
+    end
+    if not op and not missingTypes[data.regionType] then
+      return label .. " is available for Icon, Bar, Progress Texture and Text displays."
     end
     if Display.FrameAnchorType(data) == "UNITFRAME" or Display.FrameAnchorType(data) == "NAMEPLATE" then
       return label .. " cannot anchor to unit frames or nameplates. Anchor the aura to the screen or a frame."
@@ -366,6 +385,285 @@ end
 
 local function Warn(data, message)
   Private.AuraWarnings.UpdateWarning(data.uid, "blizzard_aura_single", message and "warning" or nil, message)
+end
+
+---------------------------------------------------------------------------- missing look follows a trigger
+-- Trigger Combination fallback (data.triggers.secretFallback): while the Aura
+-- (Modern) trigger's aura is not found, the Missing part shows another
+-- trigger's icon and timer. The other trigger's state is the framework's own
+-- (region.states); the timer is set on the sample's own Cooldown, bars and
+-- texts, never on a Blizzard aura frame.
+
+-- A trigger index that can be followed: it exists and is not Aura (Modern),
+-- whose state says nothing about its aura.
+local function Followable(data, index)
+  local entry = data.triggers and data.triggers[index]
+  return type(entry) == "table" and type(entry.trigger) == "table" and entry.trigger.type ~= "secretAura"
+end
+
+-- The index of the Aura (Modern) trigger that drives the display.
+local function DrivingIndex(data, trigger)
+  local saved = Display.GetSavedTrigger(data)
+  for index, entry in ipairs(data.triggers or {}) do
+    if type(entry) == "table" and entry.trigger == saved then return index end
+  end
+end
+
+-- Where the fallback can be drawn: one aura for one unit, on a display type
+-- with a Missing look, placed on the screen (not on unit frames, nameplates or
+-- in a Modern Aura Group), and not the Icon-only Remaining Time display.
+local function FallbackPossible(data, trigger)
+  return Display.singleUnits[trigger.unit] and missingTypes[data.regionType]
+    and not (Display.FlowGroup and Display.FlowGroup(data))
+    and Display.FrameAnchorType(data) ~= "UNITFRAME" and Display.FrameAnchorType(data) ~= "NAMEPLATE"
+    and not (Display.RawShowOn(trigger) == "showOnActive" and trigger.secretUseRem == true)
+end
+
+-- The display's choice under Trigger Combination: "next" (the default),
+-- "none", or a trigger index.
+function Display.FallbackChoice(data)
+  local value = data.triggers and data.triggers.secretFallback
+  if value == "none" then return "none" end
+  return tonumber(value) or "next"
+end
+
+-- "When Aura (Modern) Filters Are Not Met, Use": what the display shows while
+-- its Aura (Modern) trigger's aura is not found. "next" (the default) is the
+-- first other active trigger in trigger order, as Dynamic Information orders
+-- them; a trigger index is that trigger; nil is the trigger's own Show On
+-- (nothing for Found, the static look for Missing and Always).
+function Display.Fallback(data, trigger)
+  trigger = trigger or Display.GetTrigger(data)
+  if type(trigger) ~= "table" or not FallbackPossible(data, trigger) then return end
+  local m = DrivingIndex(data, trigger)
+  if not m then return end
+  local choice = Display.FallbackChoice(data)
+  if choice == "none" then return end
+  if choice ~= "next" then return choice ~= m and Followable(data, choice) and choice or nil end
+  for index in ipairs(data.triggers) do
+    if index ~= m and Followable(data, index) then return "next" end
+  end
+end
+
+-- Moves a per-trigger choice from 0.38-0.40 (trigger.secretMissingSource, a
+-- trigger index) to the display's fallback, unless one is already set.
+function Display.MigrateFallback(data)
+  for _, entry in ipairs(type(data.triggers) == "table" and data.triggers or {}) do
+    local trigger = type(entry) == "table" and entry.trigger
+    if type(trigger) == "table" and trigger.secretMissingSource ~= nil then
+      local index = tonumber(trigger.secretMissingSource)
+      if index and data.triggers.secretFallback == nil then data.triggers.secretFallback = index end
+      trigger.secretMissingSource = nil
+    end
+  end
+end
+
+-- A chosen trigger that cannot be followed is reported in the trigger.
+function Display.FallbackProblem(data)
+  local choice = Display.FallbackChoice(data)
+  if type(choice) == "number" and not Followable(data, choice) then
+    return "Trigger Combination: the trigger chosen for when Aura (Modern) filters are not met no longer exists or is an Aura (Modern) trigger."
+  end
+end
+
+-- Aura(s) Found with a fallback gets a Missing part beside its list.
+function Display.FoundFollow(data, trigger)
+  trigger = trigger or Display.GetTrigger(data)
+  if type(trigger) ~= "table" or Display.RawShowOn(trigger) ~= "showOnActive" then return end
+  return Display.Fallback(data, trigger)
+end
+
+-- What the Missing part follows: a trigger index, "next", or nil.
+function Display.MissingSource(data, trigger)
+  trigger = trigger or Display.GetTrigger(data)
+  if type(trigger) ~= "table" then return end
+  if Display.RawShowOn(trigger) ~= "showOnActive" and not NeedsMissing(trigger) then return end
+  return Display.Fallback(data, trigger)
+end
+
+-- The trigger index to show now: a chosen one, or for "next" the first other
+-- trigger, in trigger order, whose state is shown.
+local function ResolveSource(region, data, source)
+  if source ~= "next" then return source end
+  local m = DrivingIndex(data)
+  for index in ipairs(data.triggers or {}) do
+    local state = region.states and region.states[index]
+    if index ~= m and Followable(data, index) and type(state) == "table" and state.show then return index end
+  end
+end
+
+-- The %p texts of the sample; the cooldown's numbers stand in for them while
+-- another trigger is followed, as with the Total Duration gate.
+local function CountdownElement(native, data, hide)
+  local countdown
+  for index, element in ipairs(data.subRegions or {}) do
+    if element.type == "subtext" and Display.TextKind(element.text_text) == "duration" then
+      local entry = native.sharedElements and native.sharedElements[index]
+      if entry and entry.text then entry.text:SetShown(not hide and element.text_visible ~= false) end
+      if element.text_visible ~= false and not countdown then countdown = element end
+    end
+  end
+  return countdown
+end
+
+-- Applies the followed trigger's state to the Missing look, or puts the
+-- static look back when that trigger is not shown (or no longer followed).
+local function ApplyIconSource(region, missing, data, source)
+  local native = missing.native
+  local cooldown = native.cooldown
+  local state = source and region.states and region.states[source]
+  if not (type(state) == "table" and state.show) then
+    if missing.following then
+      missing.following = nil
+      native.icon:SetTexture(Display.SingleIcon(data))
+      cooldown:Clear(); cooldown:Hide()
+      CountdownElement(native, data, false)
+    end
+    return
+  end
+  missing.following = true
+  -- The followed trigger's icon; its own value may be secret, so set safely.
+  if state.icon == nil or not pcall(native.icon.SetTexture, native.icon, state.icon) then
+    native.icon:SetTexture(Display.SingleIcon(data))
+  end
+  local ok = false
+  if state.progressType == "durationObject" and state.durationObject and cooldown.SetCooldownFromDurationObject then
+    ok = pcall(cooldown.SetCooldownFromDurationObject, cooldown, state.durationObject, true)
+  elseif state.progressType == "timed" then
+    local duration, expiration = state.duration, state.expirationTime
+    if type(duration) == "number" and type(expiration) == "number" and not issecretvalue(duration)
+      and not issecretvalue(expiration) and duration > 0 and expiration ~= math.huge then
+      ok = pcall(cooldown.SetCooldown, cooldown, expiration - duration, duration)
+    end
+  end
+  if not ok then
+    cooldown:Clear(); cooldown:Hide()
+    CountdownElement(native, data, false)
+    return
+  end
+  -- The swipe follows the display's Cooldown settings; with the swipe off only
+  -- the numbers are drawn.
+  cooldown:SetDrawSwipe(data.cooldown ~= false and data.cooldownSwipe ~= false)
+  cooldown:SetDrawEdge(data.cooldown ~= false and data.cooldownEdge == true)
+  cooldown:SetReverse(data.inverse == true)
+  local countdown = CountdownElement(native, data, true)
+  if countdown then
+    cooldown:SetHideCountdownNumbers(false)
+    -- The numbers take the %p text's font, colour, position and time format.
+    local numbers = cooldown:GetCountdownFontString()
+    if numbers then Display.StyleText(numbers, native, Display.TextSettings(countdown), "text", 18, "CENTER", 0, 0) end
+    local prefix = "text_text_format_p_time_"
+    local format = countdown[prefix .. "format"]
+    cooldown:SetCountdownFormatter(nil)
+    if format ~= nil and format ~= -1 and Private.GetDurationTextFormatter then
+      pcall(cooldown.SetCountdownFormatter, cooldown, Private.GetDurationTextFormatter(countdown[prefix .. "legacy_floor"] and 0 or 99,
+        countdown[prefix .. "dynamic_threshold"] or 3, countdown[prefix .. "precision"] or 1, format == -2))
+    end
+  else
+    cooldown:SetHideCountdownNumbers(data.cooldownTextDisabled ~= false)
+  end
+  cooldown:Show()
+end
+
+-- The followed trigger's timer as a duration object: its own one, or one made
+-- from readable timed values (reused per Missing part).
+local function FollowDuration(missing, state)
+  if state.progressType == "durationObject" and state.durationObject then return state.durationObject end
+  if state.progressType ~= "timed" or not (C_DurationUtil and C_DurationUtil.CreateDuration) then return end
+  local duration, expiration = state.duration, state.expirationTime
+  if type(duration) ~= "number" or type(expiration) ~= "number" or issecretvalue(duration) or issecretvalue(expiration)
+    or duration <= 0 or expiration == math.huge then return end
+  missing.followDuration = missing.followDuration or C_DurationUtil.CreateDuration()
+  if pcall(missing.followDuration.SetTimeFromStart, missing.followDuration, expiration - duration, duration) then
+    return missing.followDuration
+  end
+end
+
+-- An empty timer: the static look's bars are empty (remaining-time direction).
+local zeroDuration
+local function ClearFollowBars(native)
+  if not zeroDuration and C_DurationUtil and C_DurationUtil.CreateDuration then zeroDuration = C_DurationUtil.CreateDuration() end
+  for _, entry in ipairs(native.button.bindings.DurationBar or {}) do
+    local bar = entry.widget
+    if zeroDuration and bar.SetTimerDuration then
+      pcall(bar.SetTimerDuration, bar, zeroDuration, Enum.StatusBarInterpolation.Immediate, Enum.StatusBarTimerDirection.RemainingTime)
+    end
+    bar:SetMinMaxValues(0, 6)
+    bar:SetValue(0)
+  end
+end
+
+-- Bars, progress textures and texts: the followed trigger's timer drives the
+-- sample's bars (Blizzard animates them) and its %p texts (refreshed here a
+-- few times a second while shown). Its icon replaces the static icon.
+local FOLLOW_TEXT_INTERVAL = 0.1
+local function ApplyTimerSource(region, missing, data, source)
+  local native = missing.native
+  local button = native.button
+  local state = source and region.states and region.states[source]
+  local duration = type(state) == "table" and state.show and FollowDuration(missing, state)
+  if not duration then
+    if missing.following then
+      missing.following = nil
+      button:SetScript("OnUpdate", nil)
+      ClearFollowBars(native)
+      for _, entry in ipairs(button.bindings.DurationText or {}) do entry.widget:SetText("") end
+      native.icon:SetTexture(Display.SingleIcon(data))
+    end
+    return
+  end
+  missing.following = true
+  if state.icon == nil or not pcall(native.icon.SetTexture, native.icon, state.icon) then
+    native.icon:SetTexture(Display.SingleIcon(data))
+  end
+  -- Same direction as the display's own live bar (StyleAppearance).
+  local direction = data.inverse and Enum.StatusBarTimerDirection.ElapsedTime or Enum.StatusBarTimerDirection.RemainingTime
+  for _, entry in ipairs(button.bindings.DurationBar or {}) do
+    local bar = entry.widget
+    if bar.SetTimerDuration then pcall(bar.SetTimerDuration, bar, duration, Enum.StatusBarInterpolation.Immediate, direction) end
+  end
+  local texts = button.bindings.DurationText or {}
+  if #texts == 0 then button:SetScript("OnUpdate", nil); return end
+  local modifier = Enum.DurationTimeModifier and Enum.DurationTimeModifier.RealTime
+  local fallback = Private.GetDurationTextFormatter and Private.GetDurationTextFormatter(99, 0, 0)
+  local elapsed = FOLLOW_TEXT_INTERVAL
+  button:SetScript("OnUpdate", function(_, delta)
+    elapsed = elapsed + delta
+    if elapsed < FOLLOW_TEXT_INTERVAL then return end
+    elapsed = 0
+    for _, entry in ipairs(texts) do
+      -- The text's own time format when it has one.
+      local formatter = entry.options and entry.options.textFormatter or fallback
+      local ok, text = pcall(duration.FormatRemainingDuration, duration, formatter, modifier)
+      entry.widget:SetText(ok and text or "")
+    end
+  end)
+end
+
+-- Icons use the sample's cooldown swipe; other display types its timer bars
+-- and texts.
+local function ApplyMissingSource(region, missing, data, source)
+  source = ResolveSource(region, data, source)
+  if data.regionType == "icon" then ApplyIconSource(region, missing, data, source)
+  else ApplyTimerSource(region, missing, data, source) end
+  -- Beside a Found list the Missing part has no static look: it shows only
+  -- while another trigger is followed.
+  missing.native.button:SetAlpha((not missing.foundMode or missing.following) and 1 or 0)
+end
+
+-- Called after the region is updated (Install in BlizzardAuraDisplay.lua):
+-- the followed trigger's state may have changed.
+function Display.UpdateMissingSource(region)
+  local native = region.blizzardAuraDisplay
+  if not native or not native.active then return end
+  local data = native.data
+  local source = Display.MissingSource(data)
+  for _, instance in ipairs(native.instances or {}) do
+    local missing = instance.single and instance.single.missing
+    if missing and missing.active and (source or missing.following) then
+      ApplyMissingSource(region, missing, data, source)
+    end
+  end
 end
 -- Cleared by Apply before styling; any part that fails sets it again.
 Display.ClearSingleWarning = function(data) Warn(data) end
@@ -488,6 +786,16 @@ local function EnsureMissing(single, region, data, trigger)
   missing.container:SetFrameLevel(region:GetFrameLevel() + 1)
   StyleMissing(missing, region, data)
   missing.active = true
+  -- StyleMissing drew the static look; a previous follow's text refresh and
+  -- bar timers are stopped, then another trigger is followed again if set.
+  missing.native.button:SetScript("OnUpdate", nil)
+  if missing.following then ClearFollowBars(missing.native) end
+  missing.following = nil
+  -- Beside a Found list (ConfigureSingle) the part shows only while following.
+  missing.foundMode = single.foundMode == true
+  missing.native.button:SetAlpha(1)
+  local source = Display.MissingSource(data, trigger)
+  if source or missing.foundMode then ApplyMissingSource(region, missing, data, source) end
 end
 
 local function DisableMissing(single)
@@ -774,12 +1082,10 @@ end
 
 -- The longest known total duration of the selected spells, and its source.
 function Display.LateGlowTotal(trigger)
-  -- A duration entered in the trigger wins over anything learned: Total
-  -- Duration "=", else the glow's own Aura Duration.
+  -- Total Duration "=" wins over anything learned. (The separate Aura Duration
+  -- box is gone; its saved value is cleared in MigrateTotal.)
   local op, total = Display.TotalFilter(trigger)
   if op == "=" then return total, "manual" end
-  local manual = tonumber(trigger.secretDuration)
-  if manual and manual > 0 and manual < math.huge then return manual, "manual" end
   local ids = Display.GetSpellIDs(trigger, true)
   local seen, best = SeenDurations(), nil
   for _, id in ipairs(ids) do
@@ -1332,7 +1638,8 @@ end
 
 -- The gate text covers the whole clip area: its font size gives the height
 -- and a run of wide characters the width. An empty text has no size, so the
--- clip closes to nothing. Returns the font size and the text for "open".
+-- clip closes to nothing. Returns the font size, the text for "open" and the
+-- margin around the display.
 local function GateFill(width, height)
   local margin = GateMargin(width, height)
   local size = math.min(250, math.ceil(math.max(width, height) + 2 * margin))
@@ -1345,7 +1652,17 @@ local function GateFill(width, height)
     for row = 1, lines do rows[row] = fill end
     fill = table.concat(rows, "\n")
   end
-  return size, fill
+  return size, fill, margin
+end
+
+-- Places a gate text so that it starts beyond the display's left edge and
+-- runs right over it. A closed (empty) gate leaves a zero-size clip, which
+-- can still let a pixel through after rounding; it then sits out there, not
+-- on the display.
+local function PlaceGateText(text, button, margin)
+  text:ClearAllPoints()
+  text:SetJustifyH("LEFT")
+  text:SetPoint("LEFT", button, "LEFT", -margin - 2, 0)
 end
 
 -- Stack Count "=": the hidden stack text decides the clip, so every drawn
@@ -1353,7 +1670,7 @@ end
 local function StyleExactStackGate(native, data, n)
   local button, clip = native.button, native.gateClip
   local width, height = Display.Dimensions(data)
-  local size, fill = GateFill(width, height)
+  local size, fill, margin = GateFill(width, height)
   -- Open at exactly n; integers only, so the range n..n closes again at n + 1.
   local formatter, err = GateFormatter(n, n, fill)
   local text = native.stackGateText
@@ -1366,8 +1683,7 @@ local function StyleExactStackGate(native, data, n)
     text:SetFont(STANDARD_TEXT_FONT, size, "")
     text:SetWordWrap(false)
     text:SetWidth(0)
-    text:ClearAllPoints()
-    text:SetPoint("CENTER", button, "CENTER")
+    PlaceGateText(text, button, margin)
     -- Always invisible: only its size matters. Blizzard only sets its text.
     text:SetTextColor(0, 0, 0, 0)
     text:SetAlpha(0)
@@ -1482,7 +1798,7 @@ function Display.StyleDurationGate(native, data)
   -- The time gate owns the clip; a stale stack bar is released.
   StyleStackGate(native, data, nil)
   -- Font size and "open" text shared with the Stack Count "=" gate.
-  local size, fill = GateFill(width, height)
+  local size, fill, margin = GateFill(width, height)
   local formatter, err = GateFormatter(lower, upper, fill)
   local ok = formatter ~= nil
   if ok then
@@ -1490,8 +1806,7 @@ function Display.StyleDurationGate(native, data)
     gate:SetWordWrap(false)
     -- No fixed width: the text's own width follows what the formatter writes.
     gate:SetWidth(0)
-    gate:ClearAllPoints()
-    gate:SetPoint("CENTER", button, "CENTER")
+    PlaceGateText(gate, button, margin)
     -- Always transparent: only its size matters.
     if not invisibleCurve then
       invisibleCurve = C_CurveUtil.CreateColorCurve()
@@ -1565,6 +1880,9 @@ function Display.MigrateTotal(trigger)
   end
   trigger.maxDuration = nil
   trigger.secretExactDuration = nil
+  -- The timed glow's Aura Duration box was removed; drop its saved value so
+  -- no hidden setting keeps timing the glow.
+  trigger.secretDuration = nil
 end
 
 -- Called from Display.Apply for every instance at safe time, after the list is
@@ -1580,11 +1898,15 @@ function Display.ConfigureSingle(instance, region, data, index)
   elseif index == 1 then
     Display.ReleaseAuraLearning(region)
   end
-  if not isSingle and not instance.single then return end
+  -- Aura(s) Found with something to show while not found gets a Missing part
+  -- beside its list (Display.FoundFollow); the list itself is unchanged.
+  local foundFollow = valid and not isSingle and Display.FoundFollow(data, trigger) ~= nil
+  if not isSingle and not foundFollow and not instance.single then return end
   local single = instance.single or {}
   instance.single = single
   for _, slot in pairs(single.slots or {}) do slot.used = false end
-  if isSingle and NeedsMissing(trigger) then EnsureMissing(single, region, data, trigger) else DisableMissing(single) end
+  single.foundMode = foundFollow
+  if (isSingle and NeedsMissing(trigger)) or foundFollow then EnsureMissing(single, region, data, trigger) else DisableMissing(single) end
   local op, x = Display.RemainingWindow(trigger)
   if isSingle and op then EnsureRemaining(single, instance, region, data, trigger, op, x) end
   -- Parts no longer configured stop matching auras.

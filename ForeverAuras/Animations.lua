@@ -90,7 +90,8 @@ local function RunAnimation(key, anim, elapsed, time)
     if (ok) then
       if(anim.region.Scale) then
         anim.region:Scale(scaleX, scaleY)
-      else
+      elseif anim.startWidth then
+        -- No size recorded (secret size): skip.
         anim.region:SetWidth(anim.startWidth * scaleX)
         anim.region:SetHeight(anim.startHeight * scaleY)
       end
@@ -245,6 +246,12 @@ function Private.Animate(namespace, uid, type, anim, region, inverse, onFinished
       anim.scalex = anim.scalex or 1;
       anim.scaley = anim.scaley or 1;
       startWidth, startHeight = region:GetWidth(), region:GetHeight();
+      -- A region sized by secret content (for example a text showing a
+      -- secret value) reports a secret size, which SetWidth/SetHeight reject.
+      -- Without a size there is nothing to restore; zoom then leaves it alone.
+      if issecretvalue(startWidth) or issecretvalue(startHeight) then
+        startWidth, startHeight = nil, nil
+      end
       anim.rotate = anim.rotate or 0;
       anim.colorR = anim.colorR or 1;
       anim.colorG = anim.colorG or 1;
@@ -430,7 +437,8 @@ function Private.CancelAnimation(region, resetPos, resetAlpha, resetScale, reset
     if(resetScale) then
       if(anim.region.Scale) then
         anim.region:Scale(1, 1);
-      else
+      elseif anim.startWidth then
+        -- No size recorded (secret size): nothing to restore.
         anim.region:SetWidth(anim.startWidth);
         anim.region:SetHeight(anim.startHeight);
       end

@@ -41,6 +41,14 @@ local nativeVariables = {faAuraPandemic = true, faAuraStealable = true, faAuraNo
   -- it styles our own static icon, never a live aura (Display.MissingDesaturated).
   faAuraMissing = true}
 for key in pairs(durationVariables) do nativeVariables[key] = true end
+-- What an "Aura Missing" condition may change on the static Missing look of
+-- each display type (ApplyProperty supports each on sample frames).
+Display.missingRootProperties = {
+  icon = {desaturate = true, color = true, zoom = true},
+  aurabar = {barColor = true, backgroundColor = true, icon_color = true, desaturate = true},
+  progresstexture = {foregroundColor = true, backgroundColor = true, desaturateForeground = true},
+  text = {color = true},
+}
 local indicatorProperties = {faAuraHighlightColor = true, faAuraHighlightStyle = true, faAuraHighlightSize = true, faAuraHighlightTexture = true, faAuraHighlightPulse = true}
 function Display.IsNativeDurationCondition(check) return check and durationVariables[check.variable] ~= nil end
 function Display.NativeConditionKind(data, check)
@@ -141,11 +149,12 @@ function Display.NativeConditionAllowsProperty(data, check, property)
     return target ~= nil and channel ~= "text"
   end
   if kind == "faAuraApplications" then return TextProperty(data, property, "stack") ~= nil end
-  -- Aura Missing styles the static Missing icon: anything drawn on it shows
+  -- Aura Missing styles the static Missing look: anything drawn on it shows
   -- only while the aura is missing (its clip hides it otherwise).
   if kind == "faAuraMissing" then
-    if data.regionType ~= "icon" then return false end
-    if indicatorProperties[property] or property == "desaturate" or property == "color" or property == "zoom" then return true end
+    local allowed = Display.missingRootProperties[data.regionType]
+    if not allowed then return false end
+    if indicatorProperties[property] or allowed[property] then return true end
     local index, key = (property or ""):match("^sub%.(%d+)%.(.+)$")
     local element = index and data.subRegions and data.subRegions[tonumber(index)]
     if not element or Display.IsDetachedElement(data, element) then return false end
@@ -483,8 +492,12 @@ function Display.ValidateConditions(data)
       end
       if kind == "faAuraMissing" then
         local showOn = Display.ShowOn(Display.GetTrigger(data))
-        if data.regionType ~= "icon" or (showOn ~= "showOnMissing" and showOn ~= "showAlways") then
-          return "Aura Missing needs an Icon with Show On: Aura(s) Missing or Always."
+        -- Two separate messages: the display type and the trigger setting.
+        if not Display.missingRootProperties[data.regionType] then
+          return "Aura Missing works on Icon, Bar, Progress Texture and Text displays."
+        end
+        if showOn ~= "showOnMissing" and showOn ~= "showAlways" then
+          return "Aura Missing needs the trigger's Show On set to Aura(s) Missing or Always."
         end
       end
       for _, change in ipairs(condition.changes or {}) do

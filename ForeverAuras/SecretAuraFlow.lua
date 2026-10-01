@@ -55,10 +55,32 @@ function Display.FlowGroup(data)
   if parent and parent.regionType == "group" and parent.blizzardFlow then return parent end
 end
 
+-- The growth the group draws with. Grouped by unit frame or nameplate, the
+-- group's Anchor point also sets where a centred row sits along its growth,
+-- as for a Dynamic Group: a left anchor starts the row at the frame point and
+-- grows right, a right anchor grows left from it (top: down, bottom: up). A
+-- middle anchor keeps the row centred. On the screen the group's own frame
+-- is anchored, so the growth is used as chosen.
+local function GrowthKey(group)
+  local growth = GROWTH[group.blizzardFlowGrowth] and group.blizzardFlowGrowth or "RIGHT"
+  local mode = group.blizzardFlowFrames
+  if mode ~= "UNITFRAME" and mode ~= "NAMEPLATE" then return growth end
+  local selfPoint = group.selfPoint or "CENTER"
+  if growth == "CENTER_HORIZONTAL" then
+    if selfPoint:find("LEFT") then return "RIGHT" end
+    if selfPoint:find("RIGHT") then return "LEFT" end
+  elseif growth == "CENTER_VERTICAL" then
+    if selfPoint:find("TOP") then return "DOWN" end
+    if selfPoint:find("BOTTOM") then return "UP" end
+  end
+  return growth
+end
+Display.FlowGrowthKey = GrowthKey
+
 function Display.FlowGrowth(data)
   local group = Display.FlowGroup(data)
   if not group then return end
-  return GROWTH[group.blizzardFlowGrowth] and group.blizzardFlowGrowth or "RIGHT", tonumber(group.blizzardFlowSpacing) or 2
+  return GrowthKey(group), tonumber(group.blizzardFlowSpacing) or 2
 end
 
 Display.flowFrameModes = {SCREEN = "Screen", UNITFRAME = "Unit Frames", NAMEPLATE = "Nameplates"}
@@ -503,7 +525,8 @@ function Display.RelinkFlowUnits(group)
   local mode = group and group.blizzardFlowFrames
   if mode ~= "UNITFRAME" and mode ~= "NAMEPLATE" then return end
   if batch then batch[group] = true; return end
-  local g = GROWTH[group.blizzardFlowGrowth] or GROWTH.RIGHT
+  -- Anchor-adjusted growth (GrowthKey).
+  local g = GROWTH[GrowthKey(group)]
   -- The group's own Position and Size settings, relative to each frame.
   local point, frameX, frameY = FramePosition(group)
   local cx, cy = CrossOffset(group, g, GroupCross(group, g))
@@ -619,7 +642,8 @@ function Display.ArrangeFlowPreview(group)
   local mode = group.blizzardFlowFrames
   local framed = mode == "UNITFRAME" or mode == "NAMEPLATE"
   if mode ~= "NAMEPLATE" then Display.ReleaseNameplatePreview(group) end
-  local g = GROWTH[group.blizzardFlowGrowth] or GROWTH.RIGHT
+  -- Anchor-adjusted growth when grouped by frame (GrowthKey).
+  local g = GROWTH[GrowthKey(group)]
   local spacing = tonumber(group.blizzardFlowSpacing) or 2
   local along = g.sign[1] ~= 0
   local point, frameX, frameY = FramePosition(group)
@@ -698,10 +722,36 @@ function Display.ArrangeFlowPreview(group)
   end
 end
 
+-- True when a child of a group grouped by frame was built for a growth other
+-- than the group's current one (GrowthKey); pending rebuilds by child ID.
+local staleRebuilds = {}
+local function StaleGrowth(group, childID)
+  local entry = Private.regions[childID]
+  local native = entry and entry.region and entry.region.blizzardAuraDisplay
+  return native and native.active and native.flow and native.flow.growth
+    and native.flow.growth ~= GROWTH[GrowthKey(group)] or false
+end
+
 -- Re-anchors every child of a Modern Aura Group in the group's child order.
 function Display.RechainFlow(group)
   if not group then return end
   if group.blizzardFlowFrames == "UNITFRAME" or group.blizzardFlowFrames == "NAMEPLATE" then
+    -- The group's Anchor can change the growth (GrowthKey) without its
+    -- children being saved again; those built for the old growth are rebuilt
+    -- on the next frame, out of combat. A rebuilt child matches and stops.
+    if not InCombatLockdown() then
+      for _, childID in ipairs(group.controlledChildren or {}) do
+        if StaleGrowth(group, childID) and not staleRebuilds[childID] then
+          staleRebuilds[childID] = true
+          C_Timer.After(0, function()
+            staleRebuilds[childID] = nil
+            -- Checked again: saving the group usually rebuilds them already.
+            local child = ForeverAuras.GetData(childID)
+            if child and not InCombatLockdown() and StaleGrowth(group, childID) then ForeverAuras.Add(child) end
+          end)
+        end
+      end
+    end
     Display.RelinkFlowUnits(group)
     return
   end

@@ -217,7 +217,9 @@ local function Button_OnEnter(frame)
 	if self.enabletooltips then
 		GameTooltip:SetOwner(frame, "ANCHOR_NONE")
 		GameTooltip:SetPoint("LEFT",frame,"RIGHT")
-		GameTooltip:SetText(frame.text:GetText() or "", 1, .82, 0, true)
+		-- SetText takes (text, r, g, b, alpha, wrap); the client rejects the
+		-- wrap flag in the alpha slot, so alpha is passed explicitly.
+		GameTooltip:SetText(frame.text:GetText() or "", 1, .82, 0, 1, true)
 
 		GameTooltip:Show()
 	end

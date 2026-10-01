@@ -87,7 +87,12 @@ local function CreateSample(region)
   -- Loop sample progress just as the framework renews expired OPTIONS timers.
   -- Only shown samples receive OnUpdate; keep text and bars in step with the swipe.
   button:SetScript("OnUpdate", function(self, elapsed)
-    if not ForeverAuras.IsOptionsOpen() then Display.HidePreview(region); return end
+    if not ForeverAuras.IsOptionsOpen() then
+      Display.HidePreview(region)
+      -- Containers still waiting from the editor are finished now.
+      if Display.FlushInstanceQueue then Display.FlushInstanceQueue(region) end
+      return
+    end
     -- A Missing sample stands for an absent aura and has no countdown.
     if self.staticSample then return end
     self.elapsed = (self.elapsed or 0) + elapsed

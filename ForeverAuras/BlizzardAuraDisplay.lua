@@ -648,6 +648,8 @@ function Display.Release(region)
   local native = region.blizzardAuraDisplay
   if native then
     native.active = false
+    -- Deferred editor work is dropped; the next Apply starts afresh.
+    native.instanceQueue = nil
     for _, instance in ipairs(native.instances) do
       instance.container:SetEnabled(false)
       instance.container:Hide()
@@ -1029,6 +1031,8 @@ end
 local function RefreshUnits(region, removedUnit, changedUnit)
   local native = region.blizzardAuraDisplay
   if not native or not native.active then return end
+  -- Outside the editor, containers deferred while editing are finished first.
+  if native.instanceQueue and not IsPreview() and Display.FlushInstanceQueue then Display.FlushInstanceQueue(region) end
   local data = native.data
   local trigger = Display.GetTrigger(data)
   -- No Aura (Modern) trigger drives the display right now: nothing to bind.
@@ -1175,11 +1179,77 @@ end
 
 -- The display's frames stay shown (their contents cannot be known in combat),
 -- so a Dynamic Group keeps its place even when no aura is there.
-Display.dynamicGroupWarning = "Aura (Modern) in a Dynamic Group: it keeps its position even when no aura is shown. Recommended: use a Modern Aura Group, or the Aura (Modern) Settings under Display to grow and sort auras."
+Display.dynamicGroupWarning = "Aura (Modern) in a Dynamic Group: It keeps its position even when no aura is shown. Use a Modern Aura Group with other Modern Aura triggers to keep dynamic behaviour."
 local function DynamicGroupWarning(data)
   local inGroup = Display.Enabled(data) and Display.InDynamicGroup(data)
   Private.AuraWarnings.UpdateWarning(data.uid, "blizzard_aura_dynamicgroup", inGroup and "warning" or nil,
     inGroup and Display.dynamicGroupWarning or nil)
+end
+
+-- Configures one reserved container (one unit's aura area) for data.
+local function ApplyInstance(region, data, index, instance)
+  instance.data = data
+  -- Apply the complete configuration before Blizzard refreshes visible auras.
+  instance.container:SetEnabled(false)
+  for _, button in ipairs(instance.buttons) do Style(button, data, region) end
+  Layout(instance, region, data)
+  local trigger = Display.GetTrigger(data)
+  ConfigureProcessing(instance.container, trigger)
+  instance.container:SetAuraGroupSortMethod("Auras", Display.SortOrder(data, trigger))
+  instance.container:SetAuraGroupFilterString("Auras", FilterString(trigger))
+  instance.container:SetAuraGroupCandidateFilters("Auras", CandidateFilters(data))
+  ConfigureUnitGlow(instance, region, data)
+  -- Builds or retires the Missing and Remaining Time parts before units are bound.
+  Display.ConfigureSingle(instance, region, data, index)
+end
+
+-- In the editor a display with many reserved containers (nameplates: 40)
+-- styles its first few at once and the rest a few per frame: while editing,
+-- the live containers are hidden behind the preview, and restyling all of them
+-- on every change made editing lag. Unfinished work is completed before the
+-- display is used live (FlushInstanceQueue); in combat it waits as pending.
+local EDITOR_INSTANCES_NOW, EDITOR_INSTANCES_PER_FRAME = 2, 4
+local instanceQueues = {}
+local instanceDraining = false
+local function DrainInstanceQueues()
+  instanceDraining = false
+  local more = false
+  for region in pairs(instanceQueues) do
+    local native = region.blizzardAuraDisplay
+    local queue = native and native.instanceQueue
+    if not queue or not native.active or native.data ~= queue.data then
+      instanceQueues[region] = nil
+    elseif Restricted() then
+      -- Finished by the normal rebuild once restrictions end.
+      native.instanceQueue, instanceQueues[region] = nil, nil
+      pending[region] = queue.data
+    else
+      local last = math.min(queue.nextIndex + EDITOR_INSTANCES_PER_FRAME - 1, #native.instances)
+      for index = queue.nextIndex, last do ApplyInstance(region, queue.data, index, native.instances[index]) end
+      queue.nextIndex = last + 1
+      if queue.nextIndex > #native.instances then
+        native.instanceQueue, instanceQueues[region] = nil, nil
+        RefreshUnits(region)
+      else
+        more = true
+      end
+    end
+  end
+  if more and not instanceDraining then
+    instanceDraining = true
+    C_Timer.After(0, DrainInstanceQueues)
+  end
+end
+
+-- Completes a display's deferred containers at once (leaving the editor).
+function Display.FlushInstanceQueue(region)
+  local native = region.blizzardAuraDisplay
+  local queue = native and native.instanceQueue
+  if not queue then return end
+  native.instanceQueue, instanceQueues[region] = nil, nil
+  if Restricted() then pending[region] = queue.data; return end
+  if native.data ~= queue.data then return end
+  for index = queue.nextIndex, #native.instances do ApplyInstance(region, queue.data, index, native.instances[index]) end
 end
 
 function Display.Apply(region, data)
@@ -1257,21 +1327,15 @@ function Display.Apply(region, data)
     if not native.instances[index] then native.instances[index] = Create(region, data) end
   end
   Display.ClearSingleWarning(data)
-  for index, instance in ipairs(native.instances) do
-    instance.data = data
-    -- Apply the complete configuration before Blizzard refreshes visible auras.
-    instance.container:SetEnabled(false)
-    for _, button in ipairs(instance.buttons) do Style(button, data, region) end
-    Layout(instance, region, data)
-    local trigger = Display.GetTrigger(data)
-    ConfigureProcessing(instance.container, trigger)
-    instance.container:SetAuraGroupSortMethod("Auras", Display.SortOrder(data, trigger))
-    instance.container:SetAuraGroupFilterString("Auras", FilterString(trigger))
-    instance.container:SetAuraGroupCandidateFilters("Auras", CandidateFilters(data))
-    ConfigureUnitGlow(instance, region, data)
-    -- Builds or retires the Missing and Remaining Time parts before units are bound.
-    Display.ConfigureSingle(instance, region, data, index)
+  -- In the editor, many containers are finished over the next frames.
+  native.instanceQueue, instanceQueues[region] = nil, nil
+  local now = #native.instances
+  if IsPreview() and now > EDITOR_INSTANCES_NOW then
+    now = EDITOR_INSTANCES_NOW
+    native.instanceQueue = {data = data, nextIndex = now + 1}
+    instanceQueues[region] = true
   end
+  for index = 1, now do ApplyInstance(region, data, index, native.instances[index]) end
   native.active = true
   native.appliedTrigger = Display.GetSavedTrigger(data)
   activeRegions[region] = true
@@ -1284,6 +1348,11 @@ function Display.Apply(region, data)
   pending[region] = nil
   SyncSounds(region)
   Warn(data)
+  -- The rest of the containers, from the next frame (see above).
+  if native.instanceQueue and not instanceDraining then
+    instanceDraining = true
+    C_Timer.After(0, DrainInstanceQueues)
+  end
 end
 
 -- Shared with SecretAuraSingle.lua.
@@ -1299,6 +1368,8 @@ local function Install(region)
     region.Update = function(self, ...)
       if update then update(self, ...) end
       Suppress(self)
+      -- A Missing look that follows another trigger (SecretAuraSingle.lua).
+      if Display.UpdateMissingSource then Display.UpdateMissingSource(self) end
     end
   end
   if not region.blizzardOriginalPreShow then
@@ -1313,6 +1384,8 @@ function Display.Activate(region, data)
   Install(region)
   local native = region.blizzardAuraDisplay
   if native and native.data == data and not pending[region] and Display.Validate(data) == nil then
+    -- Containers left from the editor are finished before going live.
+    Display.FlushInstanceQueue(region)
     -- Reloading an existing display must restore its learning subscription too.
     local trigger = Display.GetTrigger(data)
     Display.WatchAuraLearning(region, data, trigger, Display.LateGlowSpec(data, trigger))

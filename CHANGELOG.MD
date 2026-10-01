@@ -1,6 +1,19 @@
 # Changelog
 
 ## Versions
+## 0.41.8
+- Model fix for Tooltip
+- Model fixes
+- Nameplate edit optimizations
+- Small wording improvements
+- Added the ability to fallback to other Triggers for display and dynamic information purposes, when the filters for your Modern Aura are not met. This is big and re-enables many WeakAuras magic!
+- Lots of fixes to Progress Bars, Textures
+- Fix Stack Count Leak
+- Enable Aura (Modern) on Text & Textures
+- Fix Blizzard CDM Text _sometimes_ appearing at a strange anchored point.
+- Fix Multi Rank Support for CDM
+- Aura (Modern) fixes
+
 ## 0.35.1
 - Added Stack Count, Remaining Time to Aura (Modern) for available triggers
 - Lua Error fixes
