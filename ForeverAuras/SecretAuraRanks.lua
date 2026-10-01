@@ -2,6 +2,7 @@
 -- Source: https://talentsforever.com/data.json, generated 2026-09-24.
 -- Adapted under CC BY 4.0: beta IDs grouped by class, spell, and rank; named variants kept separate.
 -- See SpellRankData-LICENSE.txt for attribution and license.
+-- The Food and Drink groups at the end come from the client spell table instead.
 if not ForeverAuras.IsLibsOK() then return end
 local _, Private = ...
 local families = {
@@ -527,6 +528,21 @@ local families = {
   {6343, 8198, 8204, 8205, 11580, 11581}, -- Warrior / Thunder Clap
   {402927}, -- Warrior / Victory Rush
   {1680}, -- Warrior / Whirlwind
+  -- Food and Drink: every spell named Food / Nutritious Food or Drink /
+  -- Nutritious Drink in the Forever 1.60.1.70124 client spell table (read via
+  -- github.com/alcaras/forever-ref). Each item tier has its own ID, so one
+  -- entered ID now tracks every tier.
+  {433, 434, 435, 1127, 1129, 1131, 2639, 5004, 5005, 5006, 5007, 6410, 7737, 10256, 10257, 18229, 18230,
+    18231, 18232, 18233, 18234, 22731, 24005, 24707, 24800, 24869, 25660, 25695, 25700, 25702, 25886, 25888,
+    26260, 26401, 26472, 26474, 28616, 29008, 29073, 446713, 470362, 470369, 1225769, 1225771, 1225772,
+    1225774, 1226808, 1248377, 1248378, 1248379, 1248380, 1248381, 1248382, 1248383, 1248384, 1248386,
+    1248387, 1248388, 1248389, 1248390, 1248391, 1248392, 1248393, 1248394, 1248395, 1248396, 1248397,
+    1248398, 1248399, 1248400, 1248401, 1248687, 1249500, 1249501, 1249502, 1249503, 1249504, 1249505,
+    1249506, 1249507, 1249508, 1249509, 1249510, 1249511, 1249512, 1249513, 1249514, 1249515, 1249516,
+    1249517, 1249522, 1255415, 1294006, 1302066, 1319311}, -- Consumable / Food / Food and Nutritious Food
+  {430, 431, 432, 1133, 1135, 1137, 10250, 22734, 24355, 25696, 26261, 26402, 26473, 26475, 29007, 446714,
+    468767, 1249906, 1249914, 1249915, 1249916, 1249917, 1249918, 1249919, 1249920, 1249921, 1249922,
+    1249923, 1249924, 1249925}, -- Consumable / Drink / Drink and Nutritious Drink
 }
 
 -- Index only bundled IDs. Unknown selections remain exact instead of probing client data.

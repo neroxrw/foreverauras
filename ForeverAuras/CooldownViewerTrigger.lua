@@ -29,6 +29,17 @@ local function IsAvailable()
   return C_CooldownViewer and C_CooldownViewer.GetCooldownViewerCategorySet and C_CooldownViewer.GetCooldownViewerCooldownInfo and Enum and Enum.CooldownViewerCategory and C_Spell and C_Spell.GetSpellCooldownDuration
 end
 
+-- GetTime() of the last catalog build.
+local catalogTime
+
+-- Whether a scan for this event rebuilds the catalog. OPTIONS rebuilds at most
+-- once per frame: opening the options previews every CDM display in the same
+-- frame, and one fresh catalog serves them all (with its resolve cache).
+local function CatalogRefresh(event)
+  if refreshEvents[event] then return true end
+  return event == "OPTIONS" and not (catalog and catalogTime == GetTime())
+end
+
 local function GetCatalog(refresh)
   local batch = Private.cdmScanBatch
   if batch and batch.catalog then return batch.catalog end
@@ -37,6 +48,7 @@ local function GetCatalog(refresh)
     return catalog
   end
   catalog = IsAvailable() and Private.CDMCatalog() or {}
+  catalogTime = GetTime()
   if batch then batch.catalog = catalog end
   return catalog
 end
@@ -127,7 +139,7 @@ end
 function Private.ResolveCDMSpell(trigger, event)
   if trigger.type == "cdm" then trigger.cdmSource = trigger.event == "Blizzard CDM Buff" and "buff" or "cooldown" end
   if refreshEvents[event] then Private.CDMResetIdentities() end
-  local entries = GetCatalog(refreshEvents[event] or event == "OPTIONS")
+  local entries = GetCatalog(CatalogRefresh(event))
   local query = tostring(trigger.cdmSpell or ""):match("^%s*(.-)%s*$")
   if trigger.event == "Blizzard CDM Item" then
     -- Equipment and category-source identities can change without a catalog change.
@@ -203,19 +215,55 @@ function Private.ResolveCDMSpell(trigger, event)
     if spell and spell.name:lower() == name then seen[spellID] = true; buffSpellIDs[#buffSpellIDs + 1] = spellID end
   end
   local best, bestRank, bestScore
+  -- OPTIONS previews every CDM display in one frame, and its catalog (with
+  -- this cache) lasts one frame (CatalogRefresh). Entry info, identities and
+  -- spell names cannot change within a frame, so each query in that frame
+  -- reuses them instead of asking the client again for every entry.
+  local memo = event == "OPTIONS" and resolved
+  if memo and not memo.entryInfo then memo.entryInfo, memo.identities, memo.spellNames = {}, {}, {} end
+  local function EntryInfo(entryID)
+    if not memo then return C_CooldownViewer.GetCooldownViewerCooldownInfo(entryID) end
+    local cached = memo.entryInfo[entryID]
+    if cached == nil then
+      cached = C_CooldownViewer.GetCooldownViewerCooldownInfo(entryID) or false
+      memo.entryInfo[entryID] = cached
+    end
+    return cached or nil
+  end
+  local function Identity(entryID, entry, info)
+    if not memo then return Private.CDMIdentity(entryID, entry, info) end
+    local cached = memo.identities[entryID]
+    if not cached then
+      cached = Private.CDMIdentity(entryID, entry, info)
+      memo.identities[entryID] = cached
+    end
+    return cached
+  end
+  local function SpellNameLower(spellID)
+    if not memo then
+      local spellInfo = C_Spell.GetSpellInfo(spellID)
+      return spellInfo and spellInfo.name:lower()
+    end
+    local cached = memo.spellNames[spellID]
+    if cached == nil then
+      local spellInfo = C_Spell.GetSpellInfo(spellID)
+      cached = spellInfo and spellInfo.name:lower() or false
+      memo.spellNames[spellID] = cached
+    end
+    return cached or nil
+  end
   for entryID, entry in pairs(entries) do
     if (event == "OPTIONS" or entry.known or exact or anyBuffRank or trigger.use_ignoreSpellKnown) and Private.CDMIsBuff(entry.category) == (trigger.cdmSource == "buff") then
-      local info = C_CooldownViewer.GetCooldownViewerCooldownInfo(entryID)
+      local info = EntryInfo(entryID)
       if info and (trigger.cdmSelection ~= "spell" or Private.CDMEntryMatches(trigger, entry, info, event == "OPTIONS")) then
-        local identity = Private.CDMIdentity(entryID, entry, info)
+        local identity = Identity(entryID, entry, info)
         local score = exact and ExactMatch(info, id) or 1
         local matches = exact and score > 0 or not exact and identity.name:lower() == name
         local auraSpellIDs = anyBuffRank and Private.CDMAuraSpellIDs(info)
         -- A CDM entry can display a linked effect with a different name from its base aura.
         if anyBuffRank and not matches then
           for _, spellID in ipairs(auraSpellIDs) do
-            local spellInfo = C_Spell.GetSpellInfo(spellID)
-            if spellInfo and spellInfo.name:lower() == name then matches = true; break end
+            if SpellNameLower(spellID) == name then matches = true; break end
           end
         end
         if matches and anyBuffRank then
@@ -233,8 +281,10 @@ function Private.ResolveCDMSpell(trigger, event)
     end
   end
   -- Keep configured spell samples visible even without a usable CDM entry.
+  -- Cached like a found entry: the OPTIONS cache lasts one frame (see memo above).
   if event == "OPTIONS" and not best then
-    return {previewSpell = spell or {name = query, iconID = 134400, spellID = id}, singleClone = true}
+    resolved[key] = {previewSpell = spell or {name = query, iconID = 134400, spellID = id}, singleClone = true}
+    return resolved[key]
   end
   resolved[key] = best and {best} or {}
   if anyBuffRank then
@@ -274,7 +324,7 @@ end
 
 function Private.GetCDMPickerSelections(trigger, event)
   local selected = {buffSpellIDsByEntry = {}}
-  local entries = GetCatalog(refreshEvents[event] or event == "OPTIONS")
+  local entries = GetCatalog(CatalogRefresh(event))
   for key, enabled in pairs(trigger.cdmSpells and trigger.cdmSpells.multi or {}) do
     local id = tonumber(key)
     local entry = id and entries[id]
@@ -374,7 +424,7 @@ end
 
 local function BuildCooldownViewerStates(allstates, selected, event, showGCD, track, hideGCDText, showMode, exactID, requireTarget, ignoreSpellKnown)
   if event == "PLAYER_SPECIALIZATION_CHANGED" or event == "PLAYER_EQUIPMENT_CHANGED" or event == "PLAYER_ENTERING_WORLD" then Private.CDMResetIdentities() end
-  local available = GetCatalog(refreshEvents[event] or event == "OPTIONS")
+  local available = GetCatalog(CatalogRefresh(event))
   local frames = Private.CDMFrames()
   for _, state in pairs(allstates) do
     state.show = false

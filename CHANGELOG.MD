@@ -1,6 +1,9 @@
 # Changelog
 
 ## Versions
+## 0.41.11
+- Performance optimizations for CDM / Modern Aura triggers
+
 ## 0.41.8
 - Model fix for Tooltip
 - Model fixes
