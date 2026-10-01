@@ -560,8 +560,12 @@ local methods = {
       elseif(IsShiftKeyDown()) then
         local editbox = GetCurrentKeyBoardFocus();
         if(editbox) then
-          if C_ChatInfo.AreOutgoingAddonChatMessagesRestricted() then
-            print("ForeverAuras: This realm blocks aura transfers through chat. Use Export to string and share the export outside the game instead.")
+          -- Chat links share the aura's URL (Information tab); clicking one
+          -- offers the URL to copy (Transmission.lua). Auras without one are
+          -- not linked, as this realm cannot transfer them through chat.
+          local url = type(self.data.url) == "string" and self.data.url:match("^%s*(%S+)%s*$")
+          if not url then
+            print("ForeverAuras: Add a URL to Information to share the link to the Aura.")
             return
           end
           if (not fullName) then
@@ -574,11 +578,7 @@ local methods = {
           end
 
           if not (GetCurrentRegion() == 5 or GetLocale() == "zhCN") then -- China region (5), and chinese locale profanity filter doesn't allow links in chat
-            local url = ""
-            if self.data.url then
-              url = " ".. self.data.url
-            end
-            editbox:Insert("[ForeverAuras: "..fullName.." - "..self.data.id.."]"..url)
+            editbox:Insert("[ForeverAuras: "..fullName.." - "..self.data.id.."] "..url)
           else
             editbox:Insert("[ForeverAuras: "..fullName.." - "..self.data.id.."]")
           end
@@ -1130,11 +1130,7 @@ local methods = {
     if not(data.controlledChildren) then
       tinsert(namestable, {" ", "|cFF00FFFF"..L["Control-click to select multiple displays"]});
     end
-    if C_ChatInfo.AreOutgoingAddonChatMessagesRestricted() then
-      tinsert(namestable, {" ", "|cFF00FFFFChat sharing unavailable on this realm. Use Export to string."});
-    else
-      tinsert(namestable, {" ", "|cFF00FFFF"..L["Shift-click to create chat link"]});
-    end
+    tinsert(namestable, {" ", "|cFF00FFFF"..L["Shift-click to create chat link"]});
     local regionData = OptionsPrivate.Private.regionOptions[data.regionType or ""]
     local displayName = regionData and regionData.displayName or "";
     -- A Modern Aura Group is a Group with its own name.
@@ -1636,11 +1632,15 @@ local methods = {
   end,
   ["Pick"] = function(self)
     self.frame:LockHighlight();
+    self.frame.picked:Show()
+    self.frame.pickedBar:Show()
     self:PriorityShow(1);
     self:RecheckParentVisibility()
   end,
   ["ClearPick"] = function(self, noHide)
     self.frame:UnlockHighlight();
+    self.frame.picked:Hide()
+    self.frame.pickedBar:Hide()
     if not noHide then
       self:PriorityHide(1);
       self:RecheckParentVisibility()
@@ -1777,6 +1777,9 @@ local methods = {
   end,
   ["OnRelease"] = function(self)
     self:ReleaseThumbnail()
+    -- A pooled row must not keep the picked look for its next display.
+    self.frame.picked:Hide()
+    self.frame.pickedBar:Hide()
     self:Enable();
     self:SetGroup();
     self.renamebox:Hide();
@@ -1858,6 +1861,8 @@ local methods = {
       end
     else
       self.iconRegion = icon;
+      -- Thumbnails show the aura's own fonts, not the interface font.
+      icon.faKeepFont = true
       icon:SetAllPoints(self.icon);
       icon:SetParent(self.frame);
       icon:Show()
@@ -1899,13 +1904,49 @@ local function Constructor()
 
   local background = button:CreateTexture(nil, "BACKGROUND");
   button.background = background;
-  background:SetTexture("Interface\\BUTTONS\\UI-Listbox-Highlight2.blp");
-  background:SetBlendMode("ADD");
-  background:SetVertexColor(0.5, 0.5, 0.5, 0.25);
-  background:SetPoint("TOP", button, "TOP");
-  background:SetPoint("BOTTOM", button, "BOTTOM");
+  -- Flat row: a faint fill, a soft hover, and an accent bar on picked rows.
+  local Theme = OptionsPrivate.Theme
+  local modern = Theme.IsModern()
+  if modern then
+    background:SetTexture(Theme.WHITE);
+    background:SetVertexColor(1, 1, 1, 0.035);
+    background:SetPoint("TOP", button, "TOP", 0, -1);
+    background:SetPoint("BOTTOM", button, "BOTTOM", 0, 1);
+  else
+    -- Classic window style keeps the original list look.
+    background:SetTexture("Interface\\BUTTONS\\UI-Listbox-Highlight2.blp");
+    background:SetBlendMode("ADD");
+    background:SetVertexColor(0.5, 0.5, 0.5, 0.25);
+    background:SetPoint("TOP", button, "TOP");
+    background:SetPoint("BOTTOM", button, "BOTTOM");
+  end
   background:SetPoint("LEFT", button, "LEFT")
   background:SetPoint("RIGHT", button, "RIGHT");
+  if modern then
+    button:SetHighlightTexture(Theme.WHITE)
+    local highlight = button:GetHighlightTexture()
+    highlight:SetBlendMode("BLEND")
+    highlight:ClearAllPoints()
+    highlight:SetAllPoints(background)
+    highlight:SetVertexColor(1, 1, 1, 0.06)
+  end
+  local picked = button:CreateTexture(nil, "BACKGROUND", nil, 1)
+  picked:SetTexture(Theme.WHITE)
+  -- A light neutral tint keeps the gold names readable; the bar carries the accent.
+  -- (Texture:SetAlpha would replace the tint's alpha, so classic clears the texture.)
+  picked:SetVertexColor(1, 1, 1, 0.06)
+  picked:SetAllPoints(background)
+  picked:Hide()
+  if not modern then picked:SetTexture(nil) end
+  local pickedBar = button:CreateTexture(nil, "OVERLAY", nil, 7)
+  pickedBar:SetTexture(Theme.WHITE)
+  pickedBar:SetVertexColor(unpack(Theme.colors.accent))
+  pickedBar:SetPoint("TOPLEFT", background, "TOPLEFT")
+  pickedBar:SetPoint("BOTTOMLEFT", background, "BOTTOMLEFT")
+  pickedBar:SetWidth(2)
+  pickedBar:Hide()
+  if not modern then pickedBar:SetTexture(nil) end
+  button.picked, button.pickedBar = picked, pickedBar
 
   local icon = button:CreateTexture(nil, "OVERLAY");
   button.icon = icon;

@@ -3285,6 +3285,10 @@ LSM:Register("font", "Fira Sans Condensed Medium", "Interface\\Addons\\ForeverAu
 LSM:Register("font", "Fira Sans Medium", "Interface\\Addons\\ForeverAuras\\Media\\Fonts\\FiraSans-Medium.ttf", LSM.LOCALE_BIT_western + LSM.LOCALE_BIT_ruRU)
 LSM:Register("font", "PT Sans Narrow Regular", "Interface\\Addons\\ForeverAuras\\Media\\Fonts\\PTSansNarrow-Regular.ttf", LSM.LOCALE_BIT_western + LSM.LOCALE_BIT_ruRU)
 LSM:Register("font", "PT Sans Narrow Bold", "Interface\\Addons\\ForeverAuras\\Media\\Fonts\\PTSansNarrow-Bold.ttf", LSM.LOCALE_BIT_western + LSM.LOCALE_BIT_ruRU)
+-- Inter (SIL OFL 1.1, see Media/Inter License.txt): the options interface font.
+LSM:Register("font", "Inter", "Interface\\Addons\\ForeverAuras\\Media\\Fonts\\Inter-Regular.ttf", LSM.LOCALE_BIT_western + LSM.LOCALE_BIT_ruRU)
+LSM:Register("font", "Inter Medium", "Interface\\Addons\\ForeverAuras\\Media\\Fonts\\Inter-Medium.ttf", LSM.LOCALE_BIT_western + LSM.LOCALE_BIT_ruRU)
+LSM:Register("font", "Inter SemiBold", "Interface\\Addons\\ForeverAuras\\Media\\Fonts\\Inter-SemiBold.ttf", LSM.LOCALE_BIT_western + LSM.LOCALE_BIT_ruRU)
 
 -- register plain white border
 LSM:Register("border", "Square Full White", [[Interface\AddOns\ForeverAuras\Media\Textures\Square_FullWhite.tga]])

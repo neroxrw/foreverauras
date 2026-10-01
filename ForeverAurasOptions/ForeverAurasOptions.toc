@@ -2,7 +2,7 @@
 ## Interface: 16001
 ## Title: ForeverAuras Options
 ## Author: m33shoq, WeakAuras contributors
-## Version: 0.41.11-BETA.1
+## Version: 0.42.11-BETA.1
 ## IconTexture: Interface\AddOns\ForeverAuras\Media\Textures\foreverauras_logo.tga
 ## Notes: Options for ForeverAuras
 ## Notes-esES: Opciones para ForeverAuras
@@ -22,6 +22,7 @@ locales.xml
 
 VersionCheck.lua
 ForAllIndentsAndPurposes.lua
+Theme.lua
 
 RegionOptions\Empty.lua
 RegionOptions\AuraBar.lua
@@ -110,6 +111,7 @@ AceGUI-Widgets\AceGUIWidget-ForeverAurasSnippetButton.lua
 AceGUI-Widgets\AceGUIWidget-ForeverAurasAnchorButtons.lua
 AceGUI-Widgets\AceGUIContainer-ForeverAurasTreeGroup.lua
 AceGUI-Widgets\AceGUIContainer-ForeverAurasInlineGroup.lua
+AceGUI-Widgets\AceGUIContainer-ForeverAurasTabGroup.lua
 AceGUI-Widgets\AceGUIWidget-ForeverAurasExpandAnchor.lua
 AceGUI-Widgets\AceGUIWidget-ForeverAurasSpacer.lua
 AceGUI-Widgets\AceGuiWidget-ForeverAurasProgressBar.lua

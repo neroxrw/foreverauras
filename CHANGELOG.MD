@@ -1,6 +1,11 @@
 # Changelog
 
 ## Versions
+## 0.42.11
+- Fixed centered horizontal anchoring for Auras that are not the same size
+- Added Layout / Font settings to the top right, allowing you to change
+- Linking Auras in Chat now reads the Information tab, takes the URL, and creates a shareable HREF with it. If no URL is present in Information, sharing is not possible.
+
 ## 0.41.11
 - Performance optimizations for CDM / Modern Aura triggers
 

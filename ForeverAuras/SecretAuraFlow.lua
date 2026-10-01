@@ -493,17 +493,25 @@ local function CrossOffset(group, g, cross)
   return -cross / 2, 0
 end
 
--- The largest icon across the growth among the group's displays.
-local function GroupCross(group, g)
-  local cross = 0
-  for _, childID in ipairs(group.controlledChildren or {}) do
-    local child = ForeverAuras.GetData(childID)
-    if child and Display.Enabled(child) then
-      local width, height = Display.Dimensions(child)
-      cross = math.max(cross, g.sign[1] ~= 0 and height or width)
-    end
+-- Grouped by frame, the anchor point also aligns displays of different icon
+-- sizes across the growth, as a Dynamic Group does: each display is attached
+-- to the previous one at the top, middle or bottom edge (left, middle or right
+-- for vertical growth), so smaller icons line up on that edge instead of always
+-- hanging from the top. Returns g's start, list end and far points, aligned.
+local function AlignedPoints(group, g)
+  local selfPoint = group.selfPoint or "CENTER"
+  local horizontal = g.sign[1] ~= 0
+  local cross
+  if horizontal then
+    cross = selfPoint:find("TOP") and "TOP" or selfPoint:find("BOTTOM") and "BOTTOM" or ""
+  else
+    cross = selfPoint:find("LEFT") and "LEFT" or selfPoint:find("RIGHT") and "RIGHT" or ""
   end
-  return cross
+  local function Align(point)
+    if horizontal then return cross .. (point:find("LEFT") and "LEFT" or "RIGHT") end
+    return (point:find("TOP") and "TOP" or "BOTTOM") .. cross
+  end
+  return Align(g.start), Align(g.listEnd), Align(g.far)
 end
 
 local function UnitAnchor(mode, unit)
@@ -528,13 +536,15 @@ function Display.RelinkFlowUnits(group)
   -- Anchor-adjusted growth (GrowthKey).
   local g = GROWTH[GrowthKey(group)]
   -- The group's own Position and Size settings, relative to each frame.
+  -- The aligned points place the row on the frame point directly.
   local point, frameX, frameY = FramePosition(group)
-  local cx, cy = CrossOffset(group, g, GroupCross(group, g))
-  frameX, frameY = frameX + cx, frameY + cy
+  local start, listEnd = AlignedPoints(group, g)
   local spacing = tonumber(group.blizzardFlowSpacing) or 2
   -- Centred: per unit, the shadows run backwards from the frame point first.
   local lastShadow = {}
   local sh = g.shadow
+  local shStart, shEnd
+  if sh then shStart, shEnd = AlignedPoints(group, sh) end
   if sh then
     for _, childID in ipairs(group.controlledChildren or {}) do
       local entry = Private.regions[childID]
@@ -545,9 +555,9 @@ function Display.RelinkFlowUnits(group)
           local shadow = unit and instance.flowShadowActive and instance.flowShadow
           if shadow then
             shadow:ClearAllPoints()
-            local linked = lastShadow[unit] and pcall(shadow.SetPoint, shadow, sh.start, lastShadow[unit], sh.listEnd, sh.pixel[1], sh.pixel[2])
+            local linked = lastShadow[unit] and pcall(shadow.SetPoint, shadow, shStart, lastShadow[unit], shEnd, sh.pixel[1], sh.pixel[2])
             local frame = not linked and UnitAnchor(mode, unit)
-            if frame then shadow:SetPoint(sh.start, frame, point, frameX, frameY) end
+            if frame then shadow:SetPoint(shStart, frame, point, frameX, frameY) end
             lastShadow[unit] = shadow
           end
         end
@@ -564,17 +574,17 @@ function Display.RelinkFlowUnits(group)
         if unit then
           local container = instance.container
           container:ClearAllPoints()
-          local linked = last[unit] and pcall(container.SetPoint, container, g.start, last[unit], g.listEnd, g.pixel[1], g.pixel[2])
+          local linked = last[unit] and pcall(container.SetPoint, container, start, last[unit], listEnd, g.pixel[1], g.pixel[2])
           if not linked and lastShadow[unit] then
             -- Centred: start where the shadows end, half a spacing on.
-            linked = pcall(container.SetPoint, container, g.start, lastShadow[unit], sh.listEnd,
+            linked = pcall(container.SetPoint, container, start, lastShadow[unit], shEnd,
               sh.pixel[1] + g.sign[1] * spacing / 2, sh.pixel[2] + g.sign[2] * spacing / 2)
           end
           if not linked then
             local frame = UnitAnchor(mode, unit)
             if frame then
               container:ClearAllPoints()
-              container:SetPoint(g.start, frame, point, frameX, frameY)
+              container:SetPoint(start, frame, point, frameX, frameY)
             end
           end
           last[unit] = container
@@ -686,15 +696,17 @@ function Display.ArrangeFlowPreview(group)
           local ox, oy = Offset(key)
           -- The group's anchor point only places the row on a frame; on the
           -- screen the row sits on the first display's box, as the live auras do.
-          if frame then
-            local cx, cy = CrossOffset(group, g, cross[key] or 0)
-            ox, oy = ox + cx, oy + cy
+          -- On a frame, samples line up on the anchor's edge (AlignedPoints).
+          local start, far = g.start, g.far
+          if framed then
+            local alignedStart, _, alignedFar = AlignedPoints(group, g)
+            start, far = alignedStart, alignedFar
           end
           button:ClearAllPoints()
           if previous[key] then
-            button:SetPoint(g.start, previous[key], g.far, g.sign[1] * spacing, g.sign[2] * spacing)
+            button:SetPoint(start, previous[key], far, g.sign[1] * spacing, g.sign[2] * spacing)
           elseif frame then
-            button:SetPoint(g.start, frame, point, frameX + ox, frameY + oy)
+            button:SetPoint(start, frame, point, frameX + ox, frameY + oy)
           elseif g.shadow then
             button:SetPoint(g.start, region, g.centerPoint, ox, oy)
           else

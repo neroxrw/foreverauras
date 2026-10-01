@@ -102,10 +102,58 @@ function OptionsPrivate.CreateFrame()
   local odb = OptionsPrivate.savedVars.odb
 
   frame = CreateFrame("Frame", "ForeverAurasOptions", UIParent, "PortraitFrameTemplate")
-  local color = CreateColorFromHexString("ff191a1e") -- PANEL_BACKGROUND_COLOR
-  local r, g, b = color:GetRGB()
-  frame.Bg:SetColorTexture(r, g, b, 0.94)
-  frame.Bg.colorTexture = {r, g, b, 0.94}
+  local Theme = OptionsPrivate.Theme
+  local modern = Theme.IsModern()
+  if not modern then
+    -- Classic style: Blizzard's frame art, as skin addons expect.
+    local color = CreateColorFromHexString("ff191a1e") -- PANEL_BACKGROUND_COLOR
+    local cr, cg, cb = color:GetRGB()
+    frame.Bg:SetColorTexture(cr, cg, cb, 0.94)
+    frame.Bg.colorTexture = {cr, cg, cb, 0.94}
+  else
+  -- Flat window: the template keeps its scripts and named parts, but its art
+  -- (portrait, nine-slice border, title strip) is hidden behind a flat skin.
+  local r, g, b, a = unpack(Theme.colors.window)
+  frame.Bg:ClearAllPoints()
+  frame.Bg:SetAllPoints(frame)
+  frame.Bg:SetColorTexture(r, g, b, a)
+  frame.Bg.colorTexture = {r, g, b, a}
+  for i = 1, select("#", frame:GetRegions()) do
+    local region = select(i, frame:GetRegions())
+    if region:IsObjectType("Texture") and region ~= frame.Bg then
+      region:SetAlpha(0)
+    end
+  end
+  for _, key in ipairs({"NineSlice", "PortraitContainer", "TopTileStreaks", "TitleBg"}) do
+    if frame[key] and frame[key].SetAlpha then frame[key]:SetAlpha(0) end
+  end
+  Theme.Flat(frame, {0, 0, 0, 0}, Theme.colors.border)
+  frame.faTitleBar = CreateFrame("Frame", nil, frame)
+  frame.faTitleBar:SetPoint("TOPLEFT", 1, -1)
+  frame.faTitleBar:SetPoint("TOPRIGHT", -1, -1)
+  frame.faTitleBar:SetHeight(30)
+  Theme.Solid(frame.faTitleBar, "BACKGROUND", Theme.colors.titleBar):SetAllPoints()
+  local titleLine = Theme.Solid(frame.faTitleBar, "BORDER", Theme.colors.border)
+  titleLine:SetPoint("BOTTOMLEFT")
+  titleLine:SetPoint("BOTTOMRIGHT")
+  titleLine:SetHeight(1)
+  local titleAccent = Theme.Solid(frame.faTitleBar, "ARTWORK", Theme.colors.accent)
+  titleAccent:SetPoint("BOTTOMLEFT", 48, 0)
+  titleAccent:SetSize(56, 1)
+  -- The logo as a badge over the top-left corner, like the Classic portrait:
+  -- its own frame above the window so it can overhang the edges.
+  -- One baked badge: the logo zoomed past its notched outer ring, a thin gold
+  -- ring, and a round socket (window colours, border ring, soft shadow) that
+  -- covers the corner so it looks set into the frame.
+  local badge = CreateFrame("Frame", nil, frame)
+  badge:SetSize(66, 66)
+  badge:SetPoint("TOPLEFT", frame, "TOPLEFT", -16, 17)
+  badge:SetFrameLevel(frame.faTitleBar:GetFrameLevel() + 5)
+  local titleLogo = badge:CreateTexture(nil, "ARTWORK")
+  titleLogo:SetTexture([[Interface\AddOns\ForeverAuras\Media\Textures\UI\badge.tga]])
+  titleLogo:SetAllPoints()
+  frame.faTitleLogo = titleLogo
+  end
 
   function OptionsPrivate.SetTitle(title)
     -- The semantic version already includes the BETA prerelease label.
@@ -222,7 +270,19 @@ function OptionsPrivate.CreateFrame()
 
   if not frame.TitleContainer then
     frame.TitleContainer = CreateFrame("Frame", nil, frame)
-    frame.TitleContainer:SetAllPoints(frame.TitleBg)
+    if not modern then frame.TitleContainer:SetAllPoints(frame.TitleBg) end
+  end
+  if modern then
+    -- The flat title bar is the drag handle; the title sits after the logo.
+    frame.TitleContainer:ClearAllPoints()
+    frame.TitleContainer:SetAllPoints(frame.faTitleBar)
+    frame.TitleContainer:SetFrameLevel(frame.faTitleBar:GetFrameLevel() + 1)
+    ForeverAurasOptionsTitleText:ClearAllPoints()
+    ForeverAurasOptionsTitleText:SetPoint("LEFT", frame.faTitleBar, "LEFT", 50, 0)
+    ForeverAurasOptionsTitleText:SetPoint("RIGHT", frame.faTitleBar, "RIGHT", -160, 0)
+    ForeverAurasOptionsTitleText:SetJustifyH("LEFT")
+    ForeverAurasOptionsTitleText:SetFont(STANDARD_TEXT_FONT, 13, "")
+    ForeverAurasOptionsTitleText:SetTextColor(unpack(Theme.colors.text))
   end
 
   frame.TitleContainer:SetScript("OnMouseDown", function()
@@ -327,9 +387,44 @@ function OptionsPrivate.CreateFrame()
 
 
 
+  if modern then
+    -- Close button: the template's button and scripts with a flat glyph.
+    frame.CloseButton:ClearAllPoints()
+    frame.CloseButton:SetPoint("RIGHT", frame.faTitleBar, "RIGHT", -4, 0)
+    frame.CloseButton:SetSize(22, 22)
+    frame.CloseButton:SetFrameLevel(frame.TitleContainer:GetFrameLevel() + 1)
+    Theme.SkinGlyphButton(frame.CloseButton, "close", {1, 0.42, 0.42, 1})
+  end
+
+  -- Modern style: the taller title bar pushes the content down a little.
+  frame.faTopGap = modern and 8 or 0
+
   local minimizebutton = CreateFrame("Button", nil, frame, "MaximizeMinimizeButtonFrameTemplate")
   minimizebutton:SetFrameLevel(frame.TitleContainer:GetFrameLevel() + 1)
   minimizebutton:SetPoint("RIGHT", frame.CloseButton, "LEFT", 0, 0)
+  if modern then
+    minimizebutton:SetSize(22, 22)
+    for key, glyph in pairs({MinimizeButton = "minimize", MaximizeButton = "maximize"}) do
+      local button = minimizebutton[key]
+      if button then
+        button:ClearAllPoints()
+        button:SetAllPoints(minimizebutton)
+        Theme.SkinGlyphButton(button, glyph)
+      end
+    end
+  end
+
+  -- Font menu, and the Layout menu (Classic or Modern window) beside it.
+  local fontButton = Theme.TextButton(frame, "Font")
+  fontButton:SetFrameLevel(frame.TitleContainer:GetFrameLevel() + 1)
+  fontButton:SetPoint("RIGHT", minimizebutton, "LEFT", -4, 0)
+  fontButton:SetScript("OnClick", function(self) Theme.ShowFontMenu(self) end)
+  frame.fontButton = fontButton
+  local layoutButton = Theme.TextButton(frame, "Layout")
+  layoutButton:SetFrameLevel(frame.TitleContainer:GetFrameLevel() + 1)
+  layoutButton:SetPoint("RIGHT", fontButton, "LEFT", -2, 0)
+  layoutButton:SetScript("OnClick", function(self) Theme.ShowLayoutMenu(self) end)
+  frame.layoutButton = layoutButton
   minimizebutton:SetOnMaximizedCallback(function()
     frame.minimized = false
     local right, top = frame:GetRight(), frame:GetTop()
@@ -518,7 +613,7 @@ function OptionsPrivate.CreateFrame()
   local container = AceGUI:Create("InlineGroup")
   container.frame:SetParent(frame)
   container.frame:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -17, 10)
-  container.frame:SetPoint("TOPLEFT", frame, "TOPRIGHT", -63 - ForeverAuras.normalWidth * 340, 0)
+  container.frame:SetPoint("TOPLEFT", frame, "TOPRIGHT", -63 - ForeverAuras.normalWidth * 340, -frame.faTopGap)
   container.frame:Show()
   container.frame:SetClipsChildren(true)
   container.titletext:Hide()
@@ -536,7 +631,7 @@ function OptionsPrivate.CreateFrame()
     OptionsPrivate.SortDisplayButtons(filterInput:GetText())
   end)
   filterInput:SetHeight(15)
-  filterInput:SetPoint("TOP", frame, "TOP", 0, -65)
+  filterInput:SetPoint("TOP", frame, "TOP", 0, -65 - frame.faTopGap)
   filterInput:SetPoint("LEFT", frame, "LEFT", 24, 0)
   filterInput:SetPoint("RIGHT", container.frame, "LEFT", -2, 0)
   filterInput:SetFont(STANDARD_TEXT_FONT, 10, "")
@@ -546,9 +641,15 @@ function OptionsPrivate.CreateFrame()
   -- Left Side Container
   local buttonsContainer = AceGUI:Create("InlineGroup")
   buttonsContainer:SetWidth(170)
+  -- This InlineGroup lives as long as the window, so its border is replaced
+  -- by the flat panel for good.
+  if modern then
+    buttonsContainer.content:GetParent():SetBackdrop(nil)
+    Theme.Flat(buttonsContainer.content:GetParent(), Theme.colors.panel, Theme.colors.border)
+  end
   buttonsContainer.frame:SetParent(frame)
   buttonsContainer.frame:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 17, 12)
-  buttonsContainer.frame:SetPoint("TOP", frame, "TOP", 0, -67)
+  buttonsContainer.frame:SetPoint("TOP", frame, "TOP", 0, -67 - frame.faTopGap)
   buttonsContainer.frame:SetPoint("RIGHT", container.frame, "LEFT", -17)
   buttonsContainer.frame:Show()
   frame.buttonsContainer = buttonsContainer
@@ -1172,10 +1273,10 @@ function OptionsPrivate.CreateFrame()
 
     local tabsWidget
 
-    container.frame:SetPoint("TOPLEFT", frame, "TOPRIGHT", -63 - ForeverAuras.normalWidth * 340, -10)
+    container.frame:SetPoint("TOPLEFT", frame, "TOPRIGHT", -63 - ForeverAuras.normalWidth * 340, -10 - frame.faTopGap)
     container:ReleaseChildren()
     container:SetLayout("Fill")
-    tabsWidget = AceGUI:Create("TabGroup")
+    tabsWidget = AceGUI:Create(Theme.IsModern() and "ForeverAurasTabGroup" or "TabGroup")
 
     local tabs = {
       { value = "region", text = L["Display"]},
@@ -1319,7 +1420,7 @@ function OptionsPrivate.CreateFrame()
     self.pickedOption = "New"
 
     container:ReleaseChildren()
-    container.frame:SetPoint("TOPLEFT", frame, "TOPRIGHT", -63 - ForeverAuras.normalWidth * 340, 0)
+    container.frame:SetPoint("TOPLEFT", frame, "TOPRIGHT", -63 - ForeverAuras.normalWidth * 340, -frame.faTopGap)
     container:SetLayout("fill")
     local border = AceGUI:Create("InlineGroup")
     border:SetLayout("Fill")
@@ -1600,6 +1701,22 @@ function OptionsPrivate.CreateFrame()
   local w, h = frame:GetSize()
   local left, right, top, bottom = w/2,-w/2, 0, h-25
   frame:SetClampRectInsets(left, right, top, bottom)
+
+  -- Interface font: the whole window when shown, and the display list each
+  -- time it is rebuilt or filtered (the options tree hooks AceConfigDialog).
+  frame:HookScript("OnShow", function() Theme.ApplyFont(frame) end)
+  -- Menus opened from the window (Font, Layout, aura right-click) close with
+  -- it; menus other addons opened from the shared library are left alone.
+  frame:HookScript("OnHide", function()
+    if _G.L_UIDROPDOWNMENU_OPEN_MENU == ForeverAuras_DropDownMenu then LibDD:CloseDropDownMenus() end
+  end)
+  -- Rows are walked once; a re-sort or filter only reaches new rows.
+  hooksecurefunc(OptionsPrivate, "SortDisplayButtons", function()
+    if not frame:IsShown() then return end
+    for _, child in ipairs(frame.buttonsScroll.children or {}) do
+      Theme.ApplyFontOnce(child.frame)
+    end
+  end)
 
   return frame
 end

@@ -6,6 +6,14 @@ Graphical Button.
 -------------------------------------------------------------------------------]]
 local Type, Version = "ForeverAurasToolbarButton", 7
 local AceGUI = LibStub and LibStub("AceGUI-3.0", true)
+local OptionsPrivate = select(2, ...)
+-- Themed colours: light text, a soft hover and an accent fill when toggled on.
+-- Classic window style keeps the original gold text and white highlights.
+local function Modern() return OptionsPrivate.Theme.IsModern() end
+local function TextColor()
+  if not Modern() then return GameFontNormal:GetTextColor() end
+  return unpack(OptionsPrivate.Theme.colors.text)
+end
 if not AceGUI or (AceGUI:GetWidgetVersion(Type) or 0) >= Version then return end
 
 -- Lua APIs
@@ -50,9 +58,9 @@ local methods = {
 		self:SetWidth(16)
 		self:SetDisabled(false)
 		self:SetText()
-		self.hTex:SetVertexColor(1, 1, 1, 0.1)
+		self.hTex:SetVertexColor(1, 1, 1, Modern() and 0.06 or 0.1)
 		self:SetSmallFont(false)
-		self.text:SetTextColor(GameFontNormal:GetTextColor())
+		self.text:SetTextColor(TextColor())
 	end,
 
 	-- ["OnRelease"] = nil,
@@ -77,11 +85,7 @@ local methods = {
       self.text:SetTextColor(0.5, 0.5, 0.5)
 		else
 			self.frame:Enable()
-			if self.smallFont then
-				self.text:SetTextColor(GameFontNormalSmall:GetTextColor())
-			else
-				self.text:SetTextColor(GameFontNormal:GetTextColor())
-			end
+			self.text:SetTextColor(TextColor())
 		end
 	end,
 
@@ -95,10 +99,13 @@ local methods = {
 		self.frame:UnlockHighlight()
 	end,
 	["SetStrongHighlight"] = function(self, enable)
-		if enable then
-			self.hTex:SetVertexColor(1, 1, 1, 0.3)
+		local accent = OptionsPrivate.Theme.colors.accent
+		if not Modern() then
+			self.hTex:SetVertexColor(1, 1, 1, enable and 0.3 or 0.1)
+		elseif enable then
+			self.hTex:SetVertexColor(accent[1], accent[2], accent[3], 0.14)
 		else
-			self.hTex:SetVertexColor(1, 1, 1, 0.1)
+			self.hTex:SetVertexColor(1, 1, 1, 0.06)
 		end
 	end,
 	["SetSmallFont"] = function(self, small)
@@ -108,6 +115,7 @@ local methods = {
 		else
 			self.text:SetFontObject("GameFontNormal")
 		end
+		if not self.disabled then self.text:SetTextColor(TextColor()) end
 	end
 
 }
@@ -146,6 +154,11 @@ local function Constructor()
 
 	hTex:SetAllPoints()
 	frame:SetHighlightTexture(hTex)
+
+	-- The interface font can change the text width; keep the button fitted.
+	frame.faOnFontChanged = function()
+		if (text:GetText() or "") ~= "" then frame:SetWidth(text:GetStringWidth() + 24) end
+	end
 
 	local pTex = frame:CreateTexture()
 	pTex:SetTexture("Interface\\AddOns\\ForeverAuras\\Media\\Textures\\Square_FullWhite")
