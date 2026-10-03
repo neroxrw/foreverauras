@@ -21,7 +21,8 @@ Theme.colors = {
   hover    = {1, 1, 1, 0.04},
   pressed  = {1, 1, 1, 0.08},
   selected = {1, 1, 1, 0.06},
-  text     = {0.918, 0.925, 0.945, 1},
+  text     = {0.96, 0.97, 0.99, 1},
+  tabText  = {0.88, 0.90, 0.94, 1},
   muted    = {0.600, 0.627, 0.678, 1},
 }
 
@@ -29,7 +30,9 @@ Theme.WHITE = "Interface\\Buttons\\WHITE8X8"
 Theme.mediaPath = "Interface\\AddOns\\ForeverAuras\\Media\\Textures\\UI\\"
 
 local function SetOnePixel(region, axis)
-  if PixelUtil and PixelUtil.SetHeight then
+  if Theme.Pixel then
+    if axis == "height" then region:SetHeight(Theme.Pixel(region)) else region:SetWidth(Theme.Pixel(region)) end
+  elseif PixelUtil and PixelUtil.SetHeight then
     if axis == "height" then PixelUtil.SetHeight(region, 1) else PixelUtil.SetWidth(region, 1) end
   elseif axis == "height" then
     region:SetHeight(1)
@@ -45,6 +48,38 @@ function Theme.Solid(parent, layer, color, sublevel)
   return texture
 end
 
+Theme.flatFrames = setmetatable({}, {__mode = "k"})
+
+function Theme.RefreshBorder(frame)
+  local skin = frame.faSkin
+  if not skin then return end
+  local pixel = Theme.Pixel and Theme.Pixel(frame) or 1
+  local left, right, top, bottom = frame:GetLeft(), frame:GetRight(), frame:GetTop(), frame:GetBottom()
+  local inset = frame.faBorderInset and pixel or 0
+  local dx1, dx2, dy1, dy2 = inset, -inset, -inset, inset
+  if left and right and top and bottom then
+    dx1 = math.ceil(left / pixel - 0.00001) * pixel - left + inset
+    dx2 = math.floor(right / pixel + 0.00001) * pixel - right - inset
+    dy1 = math.floor(top / pixel + 0.00001) * pixel - top - inset
+    dy2 = math.ceil(bottom / pixel - 0.00001) * pixel - bottom + inset
+  end
+  for index, side in ipairs({"TOP", "BOTTOM", "LEFT", "RIGHT"}) do
+    local edge = skin.edges[index]
+    edge:ClearAllPoints()
+    if side == "TOP" or side == "BOTTOM" then
+      local y = side == "TOP" and dy1 or dy2
+      edge:SetPoint(side .. "LEFT", frame, side .. "LEFT", dx1, y)
+      edge:SetPoint(side .. "RIGHT", frame, side .. "RIGHT", dx2, y)
+      edge:SetHeight(pixel)
+    else
+      local x = side == "LEFT" and dx1 or dx2
+      edge:SetPoint("TOP" .. side, frame, "TOP" .. side, x, dy1)
+      edge:SetPoint("BOTTOM" .. side, frame, "BOTTOM" .. side, x, dy2)
+      edge:SetWidth(pixel)
+    end
+  end
+end
+
 function Theme.Flat(frame, background, border)
   local skin = frame.faSkin
   if not skin then
@@ -54,7 +89,9 @@ function Theme.Flat(frame, background, border)
     skin.bg:SetAllPoints()
     for _, side in ipairs({"TOP", "BOTTOM", "LEFT", "RIGHT"}) do
       local edge = frame:CreateTexture(nil, "BORDER", nil, -8)
-      edge:SetTexture(Theme.WHITE)
+      edge:SetColorTexture(1, 1, 1, 1)
+      if edge.SetSnapToPixelGrid then edge:SetSnapToPixelGrid(false) end
+      if edge.SetTexelSnappingBias then edge:SetTexelSnappingBias(0) end
       if side == "TOP" or side == "BOTTOM" then
         edge:SetPoint(side .. "LEFT")
         edge:SetPoint(side .. "RIGHT")
@@ -67,8 +104,12 @@ function Theme.Flat(frame, background, border)
       skin.edges[#skin.edges + 1] = edge
     end
     frame.faSkin = skin
+    Theme.flatFrames[frame] = true
+    frame:HookScript("OnSizeChanged", function() Theme.RefreshBorder(frame) end)
   end
+  skin.bg:Show()
   skin.bg:SetVertexColor(unpack(background))
+  Theme.RefreshBorder(frame)
   for _, edge in ipairs(skin.edges) do
     edge:SetShown(border ~= nil)
     if border then edge:SetVertexColor(unpack(border)) end
@@ -281,22 +322,39 @@ local function RevertButton(button)
 end
 
 local function Walk(frame, path, revert)
-  if frame:IsForbidden() or (frame.faKeepFont and not revert) then return end
+  if frame:IsForbidden() or frame.faThemeOwned or (frame.faKeepFont and not revert) then return end
+  if revert then
+    if Theme.RestoreSkin then Theme.RestoreSkin(frame) end
+  elseif Theme.SkinFrame then
+    Theme.SkinFrame(frame)
+  end
   if revert then
     touched[frame] = nil
   else
     touched[frame] = true
   end
   if frame:IsObjectType("Button") then
-    if revert then RevertButton(frame) else ApplyButton(frame, path) end
+    if revert then RevertButton(frame) elseif path then ApplyButton(frame, path) end
   elseif frame:IsObjectType("EditBox") then
-    if revert then RevertText(frame) else ApplyText(frame, path) end
+    if revert then
+      if Theme.RestoreReadable then Theme.RestoreReadable(frame) end
+      RevertText(frame)
+    else
+      if path then ApplyText(frame, path) end
+      if Theme.Readable then Theme.Readable(frame) end
+    end
   end
   local regions = {frame:GetRegions()}
   for i = 1, #regions do
     local region = regions[i]
     if region:IsObjectType("FontString") then
-      if revert then RevertText(region) else ApplyText(region, path) end
+      if revert then
+        if Theme.RestoreReadable then Theme.RestoreReadable(region) end
+        RevertText(region)
+      else
+        if path then ApplyText(region, path) end
+        if Theme.Readable then Theme.Readable(region) end
+      end
     end
   end
   local children = {frame:GetChildren()}
@@ -308,7 +366,10 @@ end
 
 function Theme.ApplyFont(frame)
   local path = frame and Theme.GetFontPath()
-  if path then Walk(frame, path, false) end
+  if frame and (path or Theme.IsModern()) then
+    Walk(frame, path, false)
+    if Theme.QueueGeometry then Theme.QueueGeometry() end
+  end
 end
 
 function Theme.RevertFont(frame)

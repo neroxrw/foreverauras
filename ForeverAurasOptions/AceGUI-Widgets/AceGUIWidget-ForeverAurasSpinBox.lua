@@ -2,7 +2,7 @@
 --[[-----------------------------------------------------------------------------
 Spin Box Widget
 -------------------------------------------------------------------------------]]
-local Type, Version = "ForeverAurasSpinBox", 5
+local Type, Version = "ForeverAurasSpinBox", 6
 local AceGUI = LibStub and LibStub("AceGUI-3.0", true)
 if not AceGUI or (AceGUI:GetWidgetVersion(Type) or 0) >= Version then
   return
@@ -35,8 +35,8 @@ end
 
 local function UpdateButtons(self)
   local value = self:GetValue() or 0
-  self.leftbutton:SetEnabled(value > self.min)
-  self.rightbutton:SetEnabled(value < self.max)
+  self.leftbutton:SetEnabled(not self.disabled and value > self.min)
+  self.rightbutton:SetEnabled(not self.disabled and value < self.max)
 end
 
 local function UpdateProgressBar(self)
@@ -48,13 +48,16 @@ local function UpdateProgressBar(self)
     end
   end
   p = Clamp(p, 0, 1)
-  local w = p * (self.frame:GetWidth() - 45 + progressExtraWidth)
+  local width = self.modern and self.editbox:GetWidth() or self.frame:GetWidth() - 45 + progressExtraWidth
+  local w = p * width
   self.progressBar:SetWidth(max(w, 1))
   self.progressBar:SetTexCoord(0, p , 0, 1)
 end
 
 local function UpdateHandleColor(self)
-  if self.progressBarHandle.mouseDown then
+  if self.modern then
+    self.progressBarHandleTexture:SetColorTexture(0.886, 0.714, 0.341, self.progressBarHandle.mouseDown and 1 or self.progressBarHandle:IsMouseOver() and 0.8 or 0.45)
+  elseif self.progressBarHandle.mouseDown then
     self.progressBarHandleTexture:SetColorTexture(0.6, 0.6, 0, 1)
   elseif self.progressBarHandle:IsMouseOver() then
     self.progressBarHandleTexture:SetColorTexture(0.8, 0.8, 0, 1)
@@ -64,7 +67,7 @@ local function UpdateHandleColor(self)
 end
 
 local function UpdateHandleVisibility(self)
-  if self.frame:IsMouseOver() then
+  if self.frame:IsMouseOver() and not self.editbox:HasFocus() and not self.disabled then
     self.progressBarHandle:Show()
     UpdateHandleColor(self)
   else
@@ -104,14 +107,15 @@ local function EditBox_OnEnterPressed(frame)
   local value = frame:GetText()
   if self.ispercent then
     value = value:gsub("%%", "")
-    value = tonumber(value) / 100
+    value = tonumber(value)
+    value = value and value / 100
   else
     value = tonumber(value)
   end
 
   if value then
     PlaySound(856) -- SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON
-    self:SetValue(value, true)
+    self:SetValue(Clamp(value, self.min, self.max), true)
   end
   frame:ClearFocus()
 end
@@ -149,7 +153,8 @@ local function ProgressBarHandle_OnUpdate(frame, elapsed)
       local deltaX = currentX - frame.startX
       deltaX = deltaX / frame.obj.editbox:GetEffectiveScale()
 
-      local p = deltaX / (frame.obj.frame:GetWidth() - 45 + progressExtraWidth)
+      local width = frame.obj.modern and frame.obj.editbox:GetWidth() or frame.obj.frame:GetWidth() - 45 + progressExtraWidth
+      local p = deltaX / math_max(width, 1)
       local delta =  p * (frame.obj.max - frame.obj.min)
       local step = frame.obj.step
       local v = frame.originalValue + delta
@@ -208,6 +213,7 @@ local methods = {
       self.label:SetTextColor(1, 0.82, 0)
       self.editbox:SetTextColor(1, 1, 1)
       self.editbox:EnableMouse(true)
+      if self.min and self.max then UpdateButtons(self) end
     end
   end,
 

@@ -302,8 +302,7 @@ local function createThumbnail()
 end
 
 local function modifyThumbnail(parent, frame, data)
-  local texWidth = 0.25 * data.zoom;
-  frame.icon:SetTexCoord(texWidth, 1 - texWidth, texWidth, 1 - texWidth);
+  local texWidth = 0.25 * (OptionsPrivate.Theme.IsModern() and 0.25 or data.zoom);
   frame:SetParent(parent)
 
   function frame:SetIcon(path)
@@ -318,6 +317,7 @@ local function modifyThumbnail(parent, frame, data)
     else
       OptionsPrivate.Private.SetTextureOrAtlas(self.icon, "Interface\\Icons\\INV_Misc_QuestionMark")
     end
+    self.icon:SetTexCoord(texWidth, 1 - texWidth, texWidth, 1 - texWidth)
   end
 
   if data then

@@ -46,6 +46,7 @@ local methods = {
   ["SetIcon"] = function(self, icon)
     if(type(icon) == "string" or type(icon) == "number") then
       self.icon:SetTexture(icon);
+      OptionsPrivate.Theme.ZoomIcon(self.icon)
       self.icon:Show();
       if(self.iconRegion and self.iconRegion.Hide) then
         self.iconRegion:Hide();
@@ -55,6 +56,7 @@ local methods = {
       self.iconRegion = icon;
       icon:SetAllPoints(self.icon);
       icon:SetParent(self.frame);
+      OptionsPrivate.Theme.ZoomThumbnail(icon)
       icon:Show()
       self.icon:Hide();
     end

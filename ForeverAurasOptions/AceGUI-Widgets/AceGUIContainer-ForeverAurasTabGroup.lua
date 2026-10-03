@@ -27,7 +27,7 @@ local function UpdateTabLook(tab)
     tab.bg:SetVertexColor(unpack(colors.selected))
     tab.underline:Show()
   else
-    text:SetTextColor(unpack(tab.hovered and colors.text or colors.muted))
+    text:SetTextColor(unpack(tab.hovered and colors.text or colors.tabText))
     tab.bg:SetVertexColor(unpack(tab.hovered and colors.hover or {0, 0, 0, 0}))
     tab.underline:Hide()
   end
@@ -104,9 +104,9 @@ local methods = {
     tab.underline:SetVertexColor(unpack(colors.accent))
     tab.underline:SetPoint("BOTTOMLEFT", tab.bg)
     tab.underline:SetPoint("BOTTOMRIGHT", tab.bg)
-    tab.underline:SetHeight(2)
+    Theme().PixelHeight(tab.underline, 2)
 
-    tab.text = tab:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    tab.text = tab:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     tab.text:SetPoint("LEFT", tab.bg, "LEFT", 4, 0)
     tab.text:SetPoint("RIGHT", tab.bg, "RIGHT", -4, 0)
     tab.text:SetJustifyH("CENTER")

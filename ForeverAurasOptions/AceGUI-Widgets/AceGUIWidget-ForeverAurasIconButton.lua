@@ -1,7 +1,8 @@
 -- Modified for ForeverAuras, 2026-09-18.
 if not ForeverAuras.IsLibsOK() then return end
 
-local Type, Version = "ForeverAurasIconButton", 22
+local _, OptionsPrivate = ...
+local Type, Version = "ForeverAurasIconButton", 23
 local AceGUI = LibStub and LibStub("AceGUI-3.0", true)
 if not AceGUI or (AceGUI:GetWidgetVersion(Type) or 0) >= Version then return end
 
@@ -25,10 +26,19 @@ local methods = {
   ["OnAcquire"] = function(self)
     self:SetWidth(52);
     self:SetHeight(52);
+    if OptionsPrivate.Theme.IsModern() then
+      local highlight = self.frame:GetHighlightTexture()
+      highlight:SetTexture(OptionsPrivate.Theme.WHITE)
+      highlight:SetTexCoord(0, 1, 0, 1)
+      highlight:SetBlendMode("BLEND")
+      highlight:SetVertexColor(0.35, 0.62, 0.90, 0.28)
+      highlight:SetAllPoints(self.frame)
+    end
   end,
   ["OnRelease"] = function(self)
     self:ClearPick();
     self.texture:SetTexture();
+    self.texture:SetTexCoord(0, 1, 0, 1)
   end,
   ["SetName"] = function(self, name)
     self.texture.name = name;
@@ -42,6 +52,7 @@ local methods = {
     if not(success) then
       self.texture:SetTexture("Interface\\BUTTONS\\UI-Quickslot-Depress.blp");
     end
+    OptionsPrivate.Theme.ZoomIcon(self.texture)
     return success;
   end,
   ["GetTexturePath"] = function(self)
