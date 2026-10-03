@@ -25,47 +25,14 @@ local L = ForeverAuras.L
 
 local textEditor
 
-local editor_themes = {
-  ["Standard"] = {
-    ["Table"] = "|c00ff3333",
-    ["Arithmetic"] = "|c00ff3333",
-    ["Relational"] = "|c00ff3333",
-    ["Logical"] = "|c004444ff",
-    ["Special"] = "|c00ff3333",
-    ["Keyword"] = "|c004444ff",
-    ["Comment"] = "|c0000aa00",
-    ["Number"] = "|c00ff9900",
-    ["String"] = "|c00999999"
-  },
-  ["Monokai"] = {
-    ["Table"] = "|c00ffffff",
-    ["Arithmetic"] = "|c00f92672",
-    ["Relational"] = "|c00ff3333",
-    ["Logical"] = "|c00f92672",
-    ["Special"] = "|c0066d9ef",
-    ["Keyword"] = "|c00f92672",
-    ["Comment"] = "|c0075715e",
-    ["Number"] = "|c00ae81ff",
-    ["String"] = "|c00e6db74"
-  },
-  ["Obsidian"] = {
-    ["Table"] = "|c00AFC0E5",
-    ["Arithmetic"] = "|c00E0E2E4",
-    ["Relational"] = "|c00B3B689",
-    ["Logical"] = "|c0093C763",
-    ["Special"] = "|c00AFC0E5",
-    ["Keyword"] = "|c0093C763",
-    ["Comment"] = "|c0066747B",
-    ["Number"] = "|c00FFCD22",
-    ["String"] = "|c00EC7600"
-  }
-}
+local EditorTools = OptionsPrivate.EditorTools
+local editor_themes = EditorTools.themes
 
 if not ForeverAurasSaved.editor_tab_spaces then ForeverAurasSaved.editor_tab_spaces = 4 end
 if not ForeverAurasSaved.editor_font_size then ForeverAurasSaved.editor_font_size = 12 end -- set default font size if missing
 local color_scheme = {[0] = "|r"}
 local function set_scheme()
-  if not ForeverAurasSaved.editor_theme then
+  if not editor_themes[ForeverAurasSaved.editor_theme] then
     ForeverAurasSaved.editor_theme = "Monokai"
   end
   local theme = editor_themes[ForeverAurasSaved.editor_theme]
@@ -165,6 +132,7 @@ local function ConstructTextEditor(frame)
 
   local editor = AceGUI:Create("MultiLineEditBox")
   editor.editBox.group = group
+  editor.editBox.faKeepFont = true
   editor:SetFullWidth(true)
   editor:SetFullHeight(true)
   editor:DisableButton(true)
@@ -194,6 +162,7 @@ local function ConstructTextEditor(frame)
   set_scheme()
   LAAC:enable(editor.editBox)
   IndentationLib.enable(editor.editBox, color_scheme, ForeverAurasSaved.editor_tab_spaces)
+  EditorTools.ApplyTheme(editor)
 
   local cancel = CreateFrame("Button", nil, group.frame, "UIPanelButtonTemplate")
   cancel:SetScript(
@@ -240,21 +209,7 @@ local function ConstructTextEditor(frame)
 
   local function settings_dropdown_initialize(frame, level, menu)
     if level == 1 then
-      for k, v in pairs(editor_themes) do
-        local item = {
-          text = k,
-          isNotRadio = false,
-          checked = function()
-            return ForeverAurasSaved.editor_theme == k
-          end,
-          func = function()
-            ForeverAurasSaved.editor_theme = k
-            set_scheme()
-            editor.editBox:SetText(editor.editBox:GetText())
-          end
-        }
-        LibDD:UIDropDownMenu_AddButton(item, level)
-      end
+      LibDD:UIDropDownMenu_AddButton({text = EditorTools.labels.theme .. ": " .. ForeverAurasSaved.editor_theme, hasArrow = true, notCheckable = true, menuList = "themes"}, level)
       LibDD:UIDropDownMenu_AddButton(
         {
           text = L["Bracket Matching"],
@@ -283,8 +238,23 @@ local function ConstructTextEditor(frame)
           menuList = "sizes"
         },
       level)
+    elseif menu == "themes" then
+      for _, name in ipairs(EditorTools.themeOrder) do
+        local selected = name
+        LibDD:UIDropDownMenu_AddButton({
+          text = selected,
+          isNotRadio = false,
+          checked = function() return ForeverAurasSaved.editor_theme == selected end,
+          func = function()
+            ForeverAurasSaved.editor_theme = selected
+            set_scheme()
+            EditorTools.ApplyTheme(editor)
+            EditorTools.Recolor(editor, originalGetText)
+          end,
+        }, level)
+      end
     elseif menu == "spaces" then
-      local spaces = {2,4}
+      local spaces = {2, 4, 8}
       for _, i in pairs(spaces) do
         LibDD:UIDropDownMenu_AddButton(
           {
@@ -296,14 +266,13 @@ local function ConstructTextEditor(frame)
             func = function()
               ForeverAurasSaved.editor_tab_spaces = i
               IndentationLib.enable(editor.editBox, color_scheme, ForeverAurasSaved.editor_tab_spaces)
-              editor.editBox:SetText(editor.editBox:GetText().."\n")
-              IndentationLib.indentEditbox(editor.editBox)
+              EditorTools.Recolor(editor, originalGetText)
             end
           },
         level)
       end
     elseif menu == "sizes" then
-      local sizes = {10, 12, 14, 16}
+      local sizes = {10, 12, 14, 16, 18, 20, 24}
       for _, i in pairs(sizes) do
         LibDD:UIDropDownMenu_AddButton(
           {
@@ -425,6 +394,7 @@ local function ConstructTextEditor(frame)
       )
       frame:AddChild(button)
     end
+    OptionsPrivate.Theme.ApplyFont(frame.frame)
   end
 
   local apiSearchFrame
@@ -432,6 +402,8 @@ local function ConstructTextEditor(frame)
   -- Make sidebar for snippets
   local snippetsFrame = CreateFrame("Frame", "ForeverAurasSnippets", group.frame, "PortraitFrameTemplate")
   ButtonFrameTemplate_HidePortrait(snippetsFrame)
+  snippetsFrame.faModernPanel = true
+  snippetsFrame:HookScript("OnShow", function() OptionsPrivate.Theme.ApplyFont(snippetsFrame) end)
   snippetsFrame:SetPoint("TOPLEFT", group.frame, "TOPRIGHT", 20, 0)
   snippetsFrame:SetPoint("BOTTOMLEFT", group.frame, "BOTTOMRIGHT", 20, 0)
   snippetsFrame:SetWidth(250)
@@ -522,6 +494,8 @@ local function ConstructTextEditor(frame)
   -- Make sidebar for apiSearch
   apiSearchFrame = CreateFrame("Frame", "ForeverAurasAPISearchFrame", group.frame, "PortraitFrameTemplate")
   ButtonFrameTemplate_HidePortrait(apiSearchFrame)
+  apiSearchFrame.faModernPanel = true
+  apiSearchFrame:HookScript("OnShow", function() OptionsPrivate.Theme.ApplyFont(apiSearchFrame) end)
   apiSearchFrame:SetWidth(350)
   if apiSearchFrame.Bg then
     local color = CreateColorFromHexString("ff1f1e21") -- PANEL_BACKGROUND_COLOR
@@ -535,6 +509,7 @@ local function ConstructTextEditor(frame)
 
   -- filter line
   local filterInput = CreateFrame("EditBox", "ForeverAurasAPISearchFilterInput", apiSearchFrame, "SearchBoxTemplate")
+  filterInput.faModernInput, filterInput.faModernSearch = true, true
   filterInput:SetScript("OnTextChanged", function(self)
     SearchBoxTemplate_OnTextChanged(self)
     if APISearchCTimer then
@@ -557,7 +532,7 @@ local function ConstructTextEditor(frame)
   apiSearchScrollContainer:SetFullHeight(true)
   apiSearchScrollContainer:SetLayout("Fill")
   apiSearchScrollContainer.frame:SetParent(apiSearchFrame)
-  apiSearchScrollContainer.frame:SetPoint("TOPLEFT", apiSearchFrame, "TOPLEFT", 17, -50)
+  apiSearchScrollContainer.frame:SetPoint("TOPLEFT", apiSearchFrame, "TOPLEFT", 17, OptionsPrivate.Theme.IsModern() and -62 or -50)
   apiSearchScrollContainer.frame:SetPoint("BOTTOMRIGHT", apiSearchFrame, "BOTTOMRIGHT", -10, 10)
 
   local apiSearchScroll = AceGUI:Create("ScrollFrame")
@@ -698,6 +673,7 @@ local function ConstructTextEditor(frame)
         apiSearchScroll:AddChild(button)
       end
     end
+    OptionsPrivate.Theme.ApplyFont(apiSearchFrame)
   end
 
   apiSearchFrame:Hide()
@@ -843,6 +819,7 @@ local function ConstructTextEditor(frame)
   editorLine:SetNumeric(true)
   editorLine:SetTextInsets(0, 5, 0, 0)
   editorLine:SetAutoFocus(false)
+  editorLine.faModernInput = true
 
   local editorLineText = group.frame:CreateFontString(nil, "OVERLAY")
   editorLineText:SetFont(STANDARD_TEXT_FONT, 10)
@@ -887,7 +864,10 @@ local function ConstructTextEditor(frame)
     end
   )
 
+  local codeSearch = EditorTools.CreateSearch(group, editor, originalGetText)
+
   function group.Open(self, data, path, enclose, multipath, reloadOptions, setOnParent, url, validator)
+    codeSearch:Reset()
     self.data = data
     self.path = path
     self.multipath = multipath
@@ -972,6 +952,7 @@ local function ConstructTextEditor(frame)
       end
     end
     editor:SetFocus()
+    EditorTools.ApplyTheme(editor)
   end
 
   function group.CancelClose(self)

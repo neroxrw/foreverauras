@@ -1842,6 +1842,7 @@ local methods = {
     self.orgIcon = icon;
     if(type(icon) == "string" or type(icon) == "number") then
       self.icon:SetTexture(icon);
+      OptionsPrivate.Theme.ZoomIcon(self.icon)
       self.icon:Show();
       if(self.iconRegion and self.iconRegion.Hide) then
         self.iconRegion:Hide();
@@ -1851,6 +1852,7 @@ local methods = {
       icon.faKeepFont = true
       icon:SetAllPoints(self.icon);
       icon:SetParent(self.frame);
+      OptionsPrivate.Theme.ZoomThumbnail(icon)
       icon:Show()
       self.iconRegion:Show();
       self.icon:Hide();
@@ -1858,6 +1860,7 @@ local methods = {
   end,
   ["OverrideIcon"] = function(self)
     self.icon:SetTexture("Interface\\Addons\\ForeverAuras\\Media\\Textures\\foreverauras_logo.tga")
+    self.icon:SetTexCoord(0, 1, 0, 1)
     self.icon:Show()
     if(self.iconRegion and self.iconRegion.Hide) then
       self.iconRegion:Hide();

@@ -23,6 +23,7 @@ locales.xml
 VersionCheck.lua
 ForAllIndentsAndPurposes.lua
 Theme.lua
+ModernControls.lua
 
 RegionOptions\Empty.lua
 RegionOptions\AuraBar.lua
@@ -81,6 +82,7 @@ OptionsFrames\CodeReview.lua
 OptionsFrames\IconPicker.lua
 OptionsFrames\ImportExport.lua
 OptionsFrames\ModelPicker.lua
+OptionsFrames\EditorTools.lua
 OptionsFrames\TextEditor.lua
 OptionsFrames\TexturePicker.lua
 OptionsFrames\Update.lua

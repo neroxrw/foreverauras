@@ -101,6 +101,7 @@ function OptionsPrivate.CreateFrame()
 
   frame = CreateFrame("Frame", "ForeverAurasOptions", UIParent, "PortraitFrameTemplate")
   local Theme = OptionsPrivate.Theme
+  frame.faModernScope = true
   local modern = Theme.IsModern()
   if not modern then
     local color = CreateColorFromHexString("ff191a1e")
@@ -143,6 +144,7 @@ function OptionsPrivate.CreateFrame()
   titleLogo:SetTexture([[Interface\AddOns\ForeverAuras\Media\Textures\UI\badge.tga]])
   titleLogo:SetAllPoints()
   frame.faTitleLogo = titleLogo
+  Theme.AnimateLogo(badge, titleLogo)
   end
 
   function OptionsPrivate.SetTitle(title)
@@ -458,6 +460,7 @@ function OptionsPrivate.CreateFrame()
   --tipPopup:SetHeight(100)
   tipPopup:Hide()
   frame.tipPopup = tipPopup
+  tipPopup.faModernTooltip = true
 
   local tipPopupTitle = tipPopup:CreateFontString(nil, "BACKGROUND", "GameFontNormalLarge")
   tipPopupTitle:SetPoint("TOPLEFT", tipPopup, "TOPLEFT", 10, -10)
@@ -490,6 +493,7 @@ function OptionsPrivate.CreateFrame()
   tipPopupLabelK:SetJustifyV("TOP")
 
   local urlWidget = CreateFrame("EditBox", nil, tipPopup, "InputBoxTemplate")
+  urlWidget.faModernInput = true
   urlWidget:SetFont(STANDARD_TEXT_FONT, 12, "")
   urlWidget:SetPoint("TOPLEFT", tipPopupLabelK, "BOTTOMLEFT", 6, 0)
   urlWidget:SetPoint("TOPRIGHT", tipPopupLabelK, "BOTTOMRIGHT", 0, 0)
@@ -1676,6 +1680,9 @@ function OptionsPrivate.CreateFrame()
   frame:SetClampRectInsets(left, right, top, bottom)
 
   frame:HookScript("OnShow", function() Theme.ApplyFont(frame) end)
+  for _, method in ipairs({"FillOptions", "NewAura", "UpdateFrameVisible"}) do
+    hooksecurefunc(frame, method, function() Theme.ApplyFont(frame) end)
+  end
   frame:HookScript("OnHide", function()
     if _G.L_UIDROPDOWNMENU_OPEN_MENU == ForeverAuras_DropDownMenu then LibDD:CloseDropDownMenus() end
   end)

@@ -2029,7 +2029,7 @@ local function update_specs()
         tinsert(ForeverAuras.spec_types_specific[classFileName], "|T"..(icon or "error")..":0|t "..(tabName or "error"));
         local classColor = WA_GetClassColor(classFileName)
         Private.spec_types_all[specId] = CreateAtlasMarkup(GetClassAtlas(classFileName:lower()))
-        .. "|T"..(icon or "error")..":0|t "..(WrapTextInColorCode(tabName, classColor) or "error");
+        .. " " .. (WrapTextInColorCode(tabName, classColor) or "error");
         tinsert(Private.specs_sorted, specId)
       end
     end
