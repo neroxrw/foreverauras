@@ -147,6 +147,18 @@ local function GetOptions(data, triggernum)
       get = function() return trigger.includePets or "PlayersAndPets" end,
       set = function(_, value) Save("includePets", value) end,
     },
+    ignoreDead = {
+      type = "toggle", name = "Ignore Dead", order = 4.47, width = width,
+      desc = "Hide this unit's part of the display while it is dead or a ghost.",
+      get = function() return trigger.ignoreDead or false end,
+      set = function(_, value) Save("ignoreDead", value or nil) end,
+    },
+    ignoreDisconnected = {
+      type = "toggle", name = "Ignore Disconnected", order = 4.48, width = width,
+      desc = "Hide this unit's part of the display while it is offline.",
+      get = function() return trigger.ignoreDisconnected or false end,
+      set = function(_, value) Save("ignoreDisconnected", value or nil) end,
+    },
     filtersHeader = {type = "header", name = "Aura Filters", order = 10},
     -- Maximum Duration is now Total Duration "<=" (AuraTriggerOptions.lua).
     includeNameplateOnly = {

@@ -1246,21 +1246,41 @@ function Private.CurveCombatReport(data, triggernum)
 
   local trigger = data.triggers[triggernum].trigger
   local prototype = Private.event_prototypes[trigger.event]
-  local filters = {}
+  local friendly = {player = true, pet = true, group = true, party = true, raid = true}
+  local works, outOfCombat, never = {}, {}, {}
   for _, arg in ipairs(prototype and prototype.args or {}) do
-    local name = arg.secretCurve and not arg.hidden and arg.name
-    if name and trigger["use_" .. name] and (type(arg.enable) ~= "function" or arg.enable(trigger)) then
-      local values, operators = trigger[name], trigger[name .. "_operator"]
-      if type(values) ~= "table" then values, operators = {values}, {operators} end
-      for i, value in ipairs(values) do
-        if tonumber(value) then
-          filters[#filters + 1] = ("%s %s %s"):format(arg.display, type(operators) == "table" and operators[i] or "==", value)
+    local name = arg.name
+    local selected = name and trigger["use_" .. name]
+    local enabled = arg.enable == nil or arg.enable == true or (type(arg.enable) == "function" and arg.enable(trigger))
+    if name and arg.display and not arg.hidden and arg.test ~= "true" and arg.type ~= "description" and arg.type ~= "header"
+      and enabled and selected ~= nil and (selected ~= false or arg.type == "tristate") then
+      local label = arg.display
+      if arg.type == "number" and arg.multiEntry and type(trigger[name]) == "table" then
+        local parts = {}
+        for i, value in ipairs(trigger[name]) do
+          local op = type(trigger[name .. "_operator"]) == "table" and trigger[name .. "_operator"][i] or "=="
+          parts[#parts + 1] = ("%s %s %s"):format(arg.display, op, tostring(value))
         end
+        if #parts > 0 then label = table.concat(parts, ", ") end
+      end
+      if arg.combat == "never" then
+        never[#never + 1] = label
+      elseif arg.secretCurve or arg.combat == "secret" then
+        outOfCombat[#outOfCombat + 1] = label
+      elseif (name == "namerealm" or name == "npcId") and not friendly[trigger.unit] then
+        outOfCombat[#outOfCombat + 1] = label .. " (enemies in instances)"
+      else
+        works[#works + 1] = label
       end
     end
   end
-  if #filters > 0 then
-    report.fails[#report.fails + 1] = table.concat(filters, ", ") .. " on the trigger (use a Condition for combat)"
+  if #works > 0 then report.works[#report.works + 1] = table.concat(works, ", ") end
+  if #outOfCombat > 0 then
+    report.notes[#report.notes + 1] = "Out of combat only: " .. table.concat(outOfCombat, ", ")
+      .. ". Use a Condition to change Alpha or Color in combat."
+  end
+  if #never > 0 then
+    report.fails[#report.fails + 1] = table.concat(never, ", ") .. " on the trigger (always hidden; use a Condition)"
   end
 
   for conditionNumber, condition in ipairs(data.conditions or {}) do

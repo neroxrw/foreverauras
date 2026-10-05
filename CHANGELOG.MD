@@ -1,6 +1,13 @@
 # Changelog
 
 ## Versions
+## 0.59.1
+- Fixed spells sharing cooldown updating slow
+- Aura (Modern) now has Ignore Dead and Ignore Disconnected
+- Health trigger has all its options back: Health, Health (%), Deficit, Max Health, Absorbs, Incoming Heal and the unit filters
+- Health and Power triggers now show color-coded text for what you've selected: green works in combat, orange only out of combat (use a Condition), red never works on the trigger
+- Health, Health (%) and Health Deficit can be used in Conditions to change Alpha and Color in combat
+
 ## 0.57.0
 - Power and Health (%) can now be used in Conditions in combat, to change Alpha and Color.
 

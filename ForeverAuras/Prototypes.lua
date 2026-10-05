@@ -3208,16 +3208,25 @@ Private.event_prototypes = {
     displayOnlyProgress = true,
     includePets = "true",
     events = function(trigger)
+      local unit = trigger.unit
       local result = {}
-      AddUnitEventForEvents(result, trigger.unit, "UNIT_HEALTH")
-      AddUnitEventForEvents(result, trigger.unit, "UNIT_MAXHEALTH")
-      AddUnitEventForEvents(result, trigger.unit, "UNIT_NAME_UPDATE")
+      AddUnitEventForEvents(result, unit, "UNIT_HEALTH")
+      AddUnitEventForEvents(result, unit, "UNIT_MAXHEALTH")
+      AddUnitEventForEvents(result, unit, "UNIT_NAME_UPDATE")
+      if trigger.use_showAbsorb then AddUnitEventForEvents(result, unit, "UNIT_ABSORB_AMOUNT_CHANGED") end
+      if trigger.use_showHealAbsorb then AddUnitEventForEvents(result, unit, "UNIT_HEAL_ABSORB_AMOUNT_CHANGED") end
+      if trigger.use_showIncomingHeal then AddUnitEventForEvents(result, unit, "UNIT_HEAL_PREDICTION") end
+      if trigger.use_ignoreDead or trigger.use_ignoreDisconnected then AddUnitEventForEvents(result, unit, "UNIT_FLAGS") end
       return result
     end,
     internal_events = function(trigger)
       local result = {}
       local includePets = trigger.use_includePets == true and trigger.includePets or nil
       AddUnitChangeInternalEvents(trigger.unit, result, includePets)
+      if includePets ~= "PetsOnly" then
+        AddUnitRoleChangeInternalEvents(trigger.unit, result)
+      end
+      AddUnitSpecChangeInternalEvents(trigger.unit, result)
       return result
     end,
     loadFunc = function(trigger)
@@ -3247,35 +3256,274 @@ Private.event_prototypes = {
         test = "true", store = true,
       },
       {
-        name = "includePets", display = L["Include Pets"], type = "select",
-        values = "include_pets_types", test = "true",
-        enable = function(trigger)
-          return trigger.unit == "group" or trigger.unit == "raid" or trigger.unit == "party"
-        end,
-      },
-      {
-        name = "health", display = L["Health"], type = "number", hidden = true,
-        init = "UnitHealth(unit)", store = true, test = "true", formatter = "BigNumber",
+        name = "health", display = L["Health"], type = "number", secretCurve = true,
+        init = "UnitHealth(unit)", store = true, conditionType = "number",
+        multiEntry = {operator = "and", limit = 2}, progressTotal = "maxhealth", formatter = "BigNumber",
       },
       { name = "value", hidden = true, init = "health", store = true, test = "true" },
       { name = "total", hidden = true, init = "UnitHealthMax(unit)", store = true, test = "true" },
       { name = "progressType", hidden = true, init = "'static'", store = true, test = "true" },
       {
-        name = "maxhealth", display = L["Max Health"], type = "number", hidden = true,
-        init = "total", store = true, test = "true", formatter = "BigNumber",
+        name = "percenthealth", display = L["Health (%)"], type = "number", secretCurve = true, combat = "never",
+        init = "UnitHealthPercent(unit, true, CurveConstants.ScaleTo100)", store = true, conditionType = "number",
+        multiEntry = {operator = "and", limit = 2}, formatter = "Number",
       },
       {
-        name = "percenthealth", display = L["Health (%)"], type = "number", secretCurve = true, hidden = true, test = "true",
-        init = "UnitHealthPercent(unit, true, CurveConstants.ScaleTo100)", store = true, formatter = "Number",
-        conditionType = "number",
+        name = "deficit", display = L["Health Deficit"], type = "number", secretCurve = true,
+        init = "UnitHealthMissing(unit)", store = true, conditionType = "number",
+        multiEntry = {operator = "and", limit = 2}, progressTotal = "total", formatter = "BigNumber",
       },
       {
-        name = "deficit", display = L["Health Deficit"], type = "number", hidden = true,
-        init = "UnitHealthMissing(unit)", store = true, test = "true", formatter = "BigNumber",
+        name = "maxhealth", display = L["Max Health"], type = "number", combat = "secret",
+        init = "total", store = true, conditionType = "number",
+        multiEntry = {operator = "and", limit = 2}, formatter = "BigNumber",
       },
-      { name = "name", display = L["Unit Name"], type = "string", hidden = true, store = true, test = "true" },
-      { name = "realm", display = L["Realm"], type = "string", hidden = true, store = true, test = "true" },
+      {
+        type = "header", name = "absorbAndHealingHeader", display = L["Absorb and Healing"],
+      },
+      {
+        name = "showAbsorb", display = L["Fetch Absorb"], type = "toggle", test = "true", reloadOptions = true,
+        enable = UnitGetTotalAbsorbs ~= nil, hidden = UnitGetTotalAbsorbs == nil,
+      },
+      {
+        name = "absorbMode", display = L["Absorb Overlay"], type = "select", test = "true", values = "absorb_modes", required = true,
+        enable = function(trigger) return trigger.use_showAbsorb end, hidden = UnitGetTotalAbsorbs == nil,
+      },
+      {
+        name = "showHealAbsorb", display = L["Fetch Heal Absorb"], type = "toggle", test = "true", reloadOptions = true,
+        enable = UnitGetTotalHealAbsorbs ~= nil, hidden = UnitGetTotalHealAbsorbs == nil,
+      },
+      {
+        name = "absorbHealMode", display = L["Absorb Heal Overlay"], type = "select", test = "true", values = "absorb_modes", required = true,
+        enable = function(trigger) return trigger.use_showHealAbsorb end, hidden = UnitGetTotalHealAbsorbs == nil,
+      },
+      {
+        name = "absorb", type = "number", display = L["Absorb"], combat = "secret",
+        init = "UnitGetTotalAbsorbs(unit)", store = true, conditionType = "number",
+        enable = function(trigger) return trigger.use_showAbsorb end, hidden = UnitGetTotalAbsorbs == nil,
+        multiEntry = {operator = "and", limit = 2}, progressTotal = "total",
+      },
+      {
+        name = "healabsorb", type = "number", display = L["Heal Absorb"], combat = "secret",
+        init = "UnitGetTotalHealAbsorbs(unit)", store = true, conditionType = "number",
+        enable = function(trigger) return trigger.use_showHealAbsorb end, hidden = UnitGetTotalHealAbsorbs == nil,
+        multiEntry = {operator = "and", limit = 2},
+      },
+      {
+        name = "showIncomingHeal", display = L["Show Incoming Heal"], type = "toggle", test = "true", reloadOptions = true,
+        enable = UnitGetIncomingHeals ~= nil, hidden = UnitGetIncomingHeals == nil,
+      },
+      {
+        name = "healprediction", type = "number", display = L["Incoming Heal"], combat = "secret",
+        init = "UnitGetIncomingHeals(unit)", store = true, conditionType = "number",
+        enable = function(trigger) return trigger.use_showIncomingHeal end, hidden = UnitGetIncomingHeals == nil,
+        multiEntry = {operator = "and", limit = 2},
+      },
+      {
+        name = "name",
+        display = L["Unit Name"],
+        type = "string",
+        store = true,
+        hidden = true,
+        test = "true"
+      },
+      {
+        name = "realm",
+        display = L["Realm"],
+        type = "string",
+        store = true,
+        hidden = true,
+        test = "true"
+      },
+      {
+        type = "header",
+        name = "unitCharacteristicsHeader",
+        display = L["Unit Characteristics"],
+      },
+      {
+        name = "namerealm",
+        display = L["Unit Name/Realm"],
+        type = "string",
+        multiline = true,
+        preamble = "local nameRealmChecker = Private.ExecEnv.ParseNameCheck(%q)",
+        test = "nameRealmChecker:Check(name, realm)",
+        conditionType = "string",
+        conditionPreamble = function(input)
+          return Private.ExecEnv.ParseNameCheck(input)
+        end,
+        conditionTest = function(state, needle, op, preamble)
+          return preamble:Check(state.name, state.realm)
+        end,
+        operator_types = "none",
+        desc = constants.nameRealmFilterDesc,
+      },
+      {
+        name = "npcId",
+        display = L["Npc ID"],
+        type = "string",
+        multiline = true,
+        store = true,
+        init = "not issecretvalue(UnitGUID(unit)) and select(6, strsplit('-', UnitGUID(unit) or ''))",
+        conditionType = "string",
+        preamble = "local npcIdChecker = Private.ExecEnv.ParseStringCheck(%q)",
+        test = "npcIdChecker:Check(npcId)",
+        conditionPreamble = function(input)
+          return Private.ExecEnv.ParseStringCheck(input)
+        end,
+        conditionTest = function(state, needle, op, preamble)
+          return preamble:Check(state.npcId)
+        end,
+        operator_types = "none",
+        desc = L["Supports multiple entries, separated by commas. Prefix with '-' for negation."]
+      },
+      {
+        name = "class",
+        display = L["Class"],
+        type = "select",
+        init = "select(2, UnitClass(unit))",
+        values = "class_types",
+        store = true,
+        conditionType = "select"
+      },
+      {
+        name = "specId",
+        display = L["Specialization"],
+        type = "multiselect",
+        init = "WeakAuras.SpecForUnit(unit)",
+        values = "spec_types_all",
+        store = true,
+        conditionType = "select",
+        enable = function(trigger)
+          return (trigger.unit == "group" or trigger.unit == "raid" or trigger.unit == "party")
+        end,
+        desc = L["Requires syncing the specialization via LibSpecialization."],
+        sorted = true,
+        sortOrder = Private.specs_sorted,
+      },
+      {
+        name = "role",
+        display = L["Assigned Role"],
+        type = "select",
+        init = "UnitGroupRolesAssigned(unit)",
+        values = "role_types",
+        store = true,
+        conditionType = "select",
+        enable = function(trigger)
+          return trigger.unit == "group" or trigger.unit == "raid" or trigger.unit == "party"
+        end
+      },
+      {
+        name = "raid_role",
+        display = L["Raid Role"],
+        type = "select",
+        init = "WeakAuras.UnitRaidRole(unit)",
+        values = "raid_role_types",
+        store = true,
+        conditionType = "select",
+        enable = function(trigger)
+          return false
+        end
+      },
+      {
+        type = "header",
+        name = "miscellaneousHeader",
+        display = L["Miscellaneous"],
+        enable = function(trigger)
+          return trigger.unit == "nameplate" or trigger.unit == "group" or trigger.unit == "raid" or trigger.unit == "party"
+        end,
+      },
+      {
+        name = "includePets",
+        display = L["Include Pets"],
+        type = "select",
+        values = "include_pets_types",
+        width = WeakAuras.normalWidth,
+        test = "true",
+        enable = function(trigger)
+          return trigger.unit == "group" or trigger.unit == "raid" or trigger.unit == "party"
+        end
+      },
+      {
+        name = "ignoreSelf",
+        display = L["Ignore Self"],
+        type = "toggle",
+        width = WeakAuras.doubleWidth,
+        enable = function(trigger)
+          return trigger.unit == "nameplate" or trigger.unit == "group" or trigger.unit == "raid" or trigger.unit == "party"
+        end,
+        init = "not Private.ExecEnv.UnitIsUnit(\"player\", unit)"
+      },
+      {
+        name = "ignoreDead",
+        display = L["Ignore Dead"],
+        type = "toggle",
+        width = WeakAuras.doubleWidth,
+        enable = function(trigger)
+          return trigger.unit == "group" or trigger.unit == "raid" or trigger.unit == "party"
+        end,
+        init = "not UnitIsDeadOrGhost(unit)"
+      },
+      {
+        name = "ignoreDisconnected",
+        display = L["Ignore Disconnected"],
+        type = "toggle",
+        width = WeakAuras.doubleWidth,
+        enable = function(trigger)
+          return trigger.unit == "group" or trigger.unit == "raid" or trigger.unit == "party"
+        end,
+        init = "UnitIsConnected(unit)"
+      },
+      {
+        name = "nameplateType",
+        display = L["Hostility"],
+        type = "select",
+        init = "WeakAuras.GetPlayerReaction(unit)",
+        values = "hostility_types",
+        store = true,
+        conditionType = "select",
+      },
       { hidden = true, test = "WeakAuras.UnitExistsFixed(unit, smart) and specificUnitCheck" },
+    },
+    overlayFuncs = {
+      {
+        name = L["Absorb"],
+        func = function(trigger, state)
+          local absorb, total = state.absorb, state.total
+          if not absorb or hasanysecretvalues(absorb, total) then return end
+          if trigger.absorbMode == "OVERLAY_FROM_START" then
+            return 0, absorb
+          elseif trigger.absorbMode == "OVERLAY_FROM_END" then
+            return "forward", absorb
+          end
+          if not total then return end
+          return total - absorb, total
+        end,
+        enable = function(trigger) return trigger.use_showAbsorb end
+      },
+      {
+        name = L["Heal Absorb"],
+        func = function(trigger, state)
+          local healabsorb, total = state.healabsorb, state.total
+          if not healabsorb or hasanysecretvalues(healabsorb, total) then return end
+          if trigger.absorbHealMode == "OVERLAY_FROM_START" then
+            return 0, healabsorb
+          elseif trigger.absorbHealMode == "OVERLAY_FROM_END" then
+            return "forward", healabsorb
+          end
+          if not total then return end
+          return total - healabsorb, total
+        end,
+        enable = function(trigger) return trigger.use_showHealAbsorb end
+      },
+      {
+        name = L["Incoming Heal"],
+        func = function(trigger, state)
+          local heal = state.healprediction
+          if heal == nil or issecretvalue(heal) then return end
+          return "forward", heal
+        end,
+        enable = function(trigger) return trigger.use_showIncomingHeal end
+      },
     },
     automaticrequired = true,
   },
@@ -3587,6 +3835,7 @@ Private.event_prototypes = {
         name = "maxpower",
         display = WeakAuras.newFeatureString .. L["Max Power"],
         type = "number",
+        combat = "secret",
         init = "total",
         store = true,
         conditionType = "number",

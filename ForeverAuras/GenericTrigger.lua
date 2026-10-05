@@ -2823,6 +2823,9 @@ do
         if spellId then
           SpellDetails.quietSecretCheck = true
           SpellDetails:CheckSecretCooldownsOnGCD(spellId)
+          -- Spells sharing its cooldown (Earth and Flame Shock) get no event of
+          -- their own: check every spell once, on the next frame.
+          mark_ACTIONBAR_UPDATE_COOLDOWN = true
         end
         SpellDetails.quietSecretCheck = nil
       elseif(event == "SPELLS_CHANGED") then

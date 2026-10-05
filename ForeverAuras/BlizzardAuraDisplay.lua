@@ -1156,6 +1156,26 @@ function Display.UpdateDetachedFrameLevels(region)
   end
 end
 
+-- Ignore Dead / Ignore Disconnected: that unit's part of the display is hidden.
+local function UnitIgnored(trigger, unit)
+  if not unit or not trigger then return false end
+  if trigger.ignoreDisconnected then
+    local ok, connected = pcall(UnitIsConnected, unit)
+    if ok and not issecretvalue(connected) and connected == false then return true end
+  end
+  if trigger.ignoreDead then
+    local ok, dead = pcall(UnitIsDeadOrGhost, unit)
+    if ok and not issecretvalue(dead) and dead == true then return true end
+  end
+  return false
+end
+
+local function ApplyUnitStatus(instance, trigger)
+  local hidden = UnitIgnored(trigger, instance.visible and instance.boundUnit)
+  instance.statusHidden = hidden or nil
+  instance.container:SetAlpha(hidden and 0 or instance.baseAlpha or 1)
+end
+
 local function RefreshUnits(region, removedUnit, changedUnit)
   local native = region.blizzardAuraDisplay
   if not native or not native.active then return end
@@ -1204,7 +1224,7 @@ local function RefreshUnits(region, removedUnit, changedUnit)
         instance.boundUnit = unit
         if container:GetParent() ~= parent then container:SetParent(parent) end
       end
-      container:SetAlpha(parent == region and 1 or data.alpha or 1)
+      instance.baseAlpha = parent == region and 1 or data.alpha or 1
       -- Strata and level are set only when they change: each change walks
       -- every button of the container.
       local strata = (data.frameStrata == nil or data.frameStrata == 1) and parent:GetFrameStrata() or region:GetFrameStrata()
@@ -1260,6 +1280,7 @@ local function RefreshUnits(region, removedUnit, changedUnit)
         end
       end
       instance.visible = shown
+      ApplyUnitStatus(instance, trigger)
       container:SetShown(shown)
       container:SetEnabled(shown)
       if shown then container:UpdateAllAuras() end
@@ -1717,6 +1738,28 @@ events:RegisterEvent("DISPLAY_SIZE_CHANGED")
 for _, event in ipairs({"PLAYER_ENTERING_WORLD", "GROUP_ROSTER_UPDATE", "PLAYER_TARGET_CHANGED", "PLAYER_FOCUS_CHANGED",
   "UPDATE_MOUSEOVER_UNIT", "UNIT_TARGET", "UNIT_PET", "INSTANCE_ENCOUNTER_ENGAGE_UNIT", "ARENA_OPPONENT_UPDATE",
   "NAME_PLATE_UNIT_ADDED", "NAME_PLATE_UNIT_REMOVED", "UNIT_NAME_UPDATE", "PLAYER_ROLES_ASSIGNED"}) do events:RegisterEvent(event) end
+-- Deaths, releases and disconnects only change the affected unit's alpha.
+local statusEvents = CreateFrame("Frame")
+for _, event in ipairs({"UNIT_CONNECTION", "UNIT_HEALTH", "UNIT_FLAGS", "PLAYER_FLAGS_CHANGED"}) do statusEvents:RegisterEvent(event) end
+statusEvents:SetScript("OnEvent", function(_, _, unit)
+  if type(unit) ~= "string" then return end
+  for region in pairs(activeRegions) do
+    local native = region.blizzardAuraDisplay
+    local trigger = Display.GetTrigger(native.data)
+    if trigger and (trigger.ignoreDead or trigger.ignoreDisconnected) then
+      local single = #native.instances == 1
+      for _, instance in ipairs(native.instances) do
+        local bound = instance.visible and instance.boundUnit
+        if bound and (bound == unit or (single and Private.ExecEnv.UnitIsUnit(bound, unit)))
+          and (UnitIgnored(trigger, bound) or nil) ~= instance.statusHidden then
+          ApplyUnitStatus(instance, trigger)
+          Display.RefreshSingleStatus(instance)
+        end
+      end
+    end
+  end
+end)
+
 -- Displays waiting for restrictions to end are rebuilt a few per frame, so
 -- the end of combat does not rebuild every display in one frame.
 local PENDING_BUDGET = 8
