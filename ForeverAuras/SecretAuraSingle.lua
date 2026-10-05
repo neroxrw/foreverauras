@@ -1974,6 +1974,13 @@ local function RaiseMissing(missing, strata, level)
   missing.raisedLevel = level
 end
 
+function Display.RefreshSingleStatus(instance)
+  local missing = instance.single and instance.single.missing
+  if missing and missing.active then
+    missing.clip:SetAlpha(missing.unitExists and not instance.statusHidden and 1 or 0)
+  end
+end
+
 function Display.RefreshSingle(instance, unit, shown)
   local single = instance.single
   -- Enabling the container must not bring back a list the settings turned off.
@@ -2019,6 +2026,7 @@ function Display.RefreshSingle(instance, unit, shown)
   -- trigger stays active without the unit, and the Missing look stays too.
   local trigger = instance.data and Display.GetTrigger(instance.data)
   local keepWithoutUnit = trigger and trigger.unitExists
-  missing.clip:SetAlpha((keepWithoutUnit or Display.SingleUnitExists({unit = unit})) and 1 or 0)
+  missing.unitExists = keepWithoutUnit or Display.SingleUnitExists({unit = unit})
+  missing.clip:SetAlpha(missing.unitExists and not instance.statusHidden and 1 or 0)
   if shown then container:UpdateAllAuras() end
 end

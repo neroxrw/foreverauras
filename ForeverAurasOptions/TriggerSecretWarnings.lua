@@ -82,7 +82,8 @@ function Warnings.GetScope(data, triggernum)
   local event = trigger.type ~= "custom" and trigger.event
   local fields = SelectedFields(data, triggernum, trigger)
   if event == "Health" then
-    fields.percenthealth = nil
+    -- The trigger's own combat status line covers these.
+    return
   elseif event == "Power" or event == "Alternate Power" then
     local powerType = event == "Alternate Power" and 10 or trigger.use_powertype and trigger.powertype or nil
     if event == "Alternate Power" and powerType and Restricted(Query("GetPowerTypeSecrecy", powerType)) then return "Power value checks and calculations:" end
@@ -96,7 +97,7 @@ function Warnings.GetScope(data, triggernum)
         end
       end
     end
-    if event == "Power" then fields.power, fields.percentpower, fields.deficit = nil, nil, nil end
+    if event == "Power" then return end
   elseif event == "Character Stats" and next(fields) and Query("ShouldUnitStatsBeSecret") == true then
     return "Character stat checks:"
   elseif event == "Threat Situation" then
