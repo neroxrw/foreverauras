@@ -267,6 +267,9 @@ local function singleTest(arg, trigger, name, value, operator, use_exact)
   elseif (arg.type == "string" or arg.type == "select") then
     return "(".. name .." and not issecretvalue(" .. name .. ") and "..name.."==" ..(number or ("\""..(tostring(value) or "").."\""))..")";
   elseif (arg.type == "number") then
+    if arg.secretCurve then
+      return "(issecretvalue(" .. name .. ") or (" .. name .. " and " .. name .. (operator or "==") .. (number or 0) .. "))";
+    end
     return "(".. name .." and not issecretvalue(" .. name ..") and "..name..(operator or "==")..(number or 0) ..")";
   else
     -- Should be unused
@@ -934,14 +937,29 @@ function WeakAuras.ScanEvents(event, arg1, arg2, ...)
   scannerFrame:Queue(Private.ScanEvents, event, arg1, arg2, ...)
 end
 
+-- One reused table per nesting depth for the CDM triggers of a dispatch.
+local cdmBatchPool, cdmBatchDepth = {}, 0
+local function BeginCDMBatch()
+  local previous = Private.cdmScanBatch
+  cdmBatchDepth = cdmBatchDepth + 1
+  local batch = cdmBatchPool[cdmBatchDepth]
+  if batch then wipe(batch) else batch = {}; cdmBatchPool[cdmBatchDepth] = batch end
+  Private.cdmScanBatch = batch
+  return previous
+end
+
+local function EndCDMBatch(previous)
+  cdmBatchDepth = math.max(0, cdmBatchDepth - 1)
+  Private.cdmScanBatch = previous
+end
+
 ---@param event string
 ---@param unit UnitToken
 ---@param ... any
 function Private.ScanUnitEvents(event, unit, ...)
   -- All CDM triggers in one synchronous dispatch share catalog/frame discovery.
   -- Restore the outer snapshot for nested scans; later events always get fresh frames.
-  local previousCDMBatch = Private.cdmScanBatch
-  Private.cdmScanBatch = {}
+  local previousCDMBatch = BeginCDMBatch()
   Private.StartProfileSystem("generictrigger " .. event .. " " .. unit)
   local unit_list = loaded_unit_events[unit]
   local inRaid = IsInRaid()
@@ -979,7 +997,7 @@ function Private.ScanUnitEvents(event, unit, ...)
     end
   end
   Private.StopProfileSystem("generictrigger " .. event .. " " .. unit)
-  Private.cdmScanBatch = previousCDMBatch
+  EndCDMBatch(previousCDMBatch)
 end
 
 function WeakAuras.ScanUnitEvents(event, unit, ...)
@@ -1007,8 +1025,7 @@ end
 function Private.ScanEventsInternal(event_list, event, arg1, arg2, ... )
   -- All CDM triggers in one synchronous dispatch share catalog/frame discovery.
   -- Restore the outer snapshot for nested scans; later events always get fresh frames.
-  local previousCDMBatch = Private.cdmScanBatch
-  Private.cdmScanBatch = {}
+  local previousCDMBatch = BeginCDMBatch()
   for id, triggers in pairs(event_list) do
     Private.StartProfileAura(id);
     Private.ActivateAuraEnvironment(id);
@@ -1039,7 +1056,7 @@ function Private.ScanEventsInternal(event_list, event, arg1, arg2, ... )
     Private.StopProfileAura(id);
     Private.ActivateAuraEnvironment(nil);
   end
-  Private.cdmScanBatch = previousCDMBatch
+  EndCDMBatch(previousCDMBatch)
 end
 
 function WeakAuras.ScanEventsInternal(event_list, event, arg1, arg2, ... )
@@ -1488,8 +1505,7 @@ local unitEventsToRegister = {};
 function GenericTrigger.LoadDisplays(toLoad, loadEvent, ...)
   -- All CDM triggers in one synchronous dispatch share catalog/frame discovery.
   -- Restore the outer snapshot for nested scans; later events always get fresh frames.
-  local previousCDMBatch = Private.cdmScanBatch
-  Private.cdmScanBatch = {}
+  local previousCDMBatch = BeginCDMBatch()
   for id in pairs(toLoad) do
     local register_for_frame_updates = false;
     if(events[id]) then
@@ -1570,7 +1586,7 @@ function GenericTrigger.LoadDisplays(toLoad, loadEvent, ...)
 
   wipe(eventsToRegister);
   wipe(unitEventsToRegister);
-  Private.cdmScanBatch = previousCDMBatch
+  EndCDMBatch(previousCDMBatch)
 end
 
 function GenericTrigger.FinishLoadUnload()
@@ -2527,6 +2543,7 @@ do
         end
         return
       end
+      secretPolled[effectiveSpellId] = nil
       local charges, maxCharges, startTime, duration, unifiedCooldownBecauseRune,
         startTimeCooldown, durationCooldown, cooldownBecauseRune, startTimeCharges, durationCharges,
         spellCount, unifiedModRate, modRate, modRateCharges, paused
@@ -3909,7 +3926,7 @@ function Private.WatchStagger()
       staggerWatchFrame:SetScript("OnEvent", function()
         Private.StartProfileSystem("stagger")
         local stagger = UnitStagger("player")
-        if stagger > 0 then
+        if issecretvalue(stagger) or stagger > 0 then
           if not staggerWatchFrame.onupdate then
             staggerWatchFrame.onupdate = true
             staggerWatchFrame:SetScript("OnUpdate", function()
@@ -3930,7 +3947,7 @@ function Private.WatchStagger()
           end
         end
 
-        if stagger ~= staggerWatchFrame.stagger then
+        if not issecretvalue(stagger) and stagger ~= staggerWatchFrame.stagger then
           staggerWatchFrame.stagger = stagger
           Private.ScanEvents("WA_UNIT_STAGGER_CHANGED", "player", stagger)
         end

@@ -286,6 +286,237 @@ function Private.ExecEnv.GetConditionValue(state, variable)
   return state[variable]
 end
 
+local PowerCurve = {}
+Private.ExecEnv.PowerCurve = PowerCurve
+local huge = math.huge
+PowerCurve.ALL = {{-huge, huge}}
+PowerCurve.NONE = {}
+local knownMax = {}
+
+PowerCurve.kinds = {
+  power = {value = "power", percent = "percentpower", deficit = "deficit"},
+  health = {value = "health", percent = "percenthealth", deficit = "deficit"},
+}
+
+local function Readable(...)
+  return not hasanysecretvalues(...)
+end
+
+local function MaxKey(kind, s)
+  return kind .. ":" .. s.unit .. ":" .. tostring(s.powertype)
+end
+
+function PowerCurve.IsSecret(s, kind)
+  if s == nil or not s.show then return false end
+  local names = PowerCurve.kinds[kind]
+  return issecretvalue(s[names.value]) or issecretvalue(s[names.percent]) or false
+end
+
+function PowerCurve.Remember(s, kind)
+  if s and Readable(s.unit, s.powertype, s.total) and type(s.unit) == "string" and type(s.total) == "number" and s.total > 0 then
+    knownMax[MaxKey(kind, s)] = s.total
+  end
+end
+
+function PowerCurve.Begin(s, kind)
+  if not Readable(s.unit, s.powertype) or type(s.unit) ~= "string" then return end
+  if kind == "power" and (s.powertype == nil or s.powertype == 99) then return end
+  local max = s.total
+  if not Readable(max) or type(max) ~= "number" or max <= 0 then
+    max = knownMax[MaxKey(kind, s)]
+  end
+  if not max then
+    local ok, value
+    if kind == "power" then
+      ok, value = pcall(UnitPowerMax, s.unit, s.powertype)
+    else
+      ok, value = pcall(UnitHealthMax, s.unit)
+    end
+    if ok and Readable(value) and type(value) == "number" and value > 0 then max = value end
+  end
+  return {kind = kind, unit = s.unit, powerType = s.powertype, max = max}
+end
+
+local flipped = {[">="] = "<=", [">"] = "<", ["<="] = ">=", ["<"] = ">", ["=="] = "==", ["~="] = "~="}
+
+function PowerCurve.Leaf(ctx, variable, op, value)
+  local names = PowerCurve.kinds[ctx.kind]
+  if variable == names.deficit then
+    if not ctx.max then return PowerCurve.NONE end
+    variable, op, value = names.value, flipped[op], ctx.max - value
+  end
+  local lo, hi
+  if variable == names.value then
+    if not ctx.max then return PowerCurve.NONE end
+    lo, hi = (value - 0.5) / ctx.max, (value + 0.5) / ctx.max
+  else
+    lo, hi = value / 100 - 1e-5, value / 100 + 1e-5
+  end
+  if op == ">=" then return {{lo, huge}}
+  elseif op == ">" then return {{hi, huge}}
+  elseif op == "<=" then return {{-huge, hi}}
+  elseif op == "<" then return {{-huge, lo}}
+  elseif op == "==" then return {{lo, hi}}
+  elseif op == "~=" then return {{-huge, lo}, {hi, huge}}
+  end
+  return PowerCurve.NONE
+end
+
+local function Normalize(list)
+  table.sort(list, function(a, b) return a[1] < b[1] end)
+  local result = {}
+  for _, range in ipairs(list) do
+    if range[2] > range[1] then
+      local last = result[#result]
+      if last and range[1] <= last[2] then
+        if range[2] > last[2] then last[2] = range[2] end
+      else
+        result[#result + 1] = {range[1], range[2]}
+      end
+    end
+  end
+  return result
+end
+
+function PowerCurve.Union(...)
+  local list = {}
+  for i = 1, select("#", ...) do
+    for _, range in ipairs((select(i, ...))) do list[#list + 1] = {range[1], range[2]} end
+  end
+  return Normalize(list)
+end
+
+function PowerCurve.Inter(...)
+  local result = PowerCurve.ALL
+  for i = 1, select("#", ...) do
+    local other, list = select(i, ...), {}
+    for _, a in ipairs(result) do
+      for _, b in ipairs(other) do
+        local lo, hi = math.max(a[1], b[1]), math.min(a[2], b[2])
+        if hi > lo then list[#list + 1] = {lo, hi} end
+      end
+    end
+    result = Normalize(list)
+  end
+  return result
+end
+
+local function Contains(set, x)
+  for _, range in ipairs(set) do
+    if x >= range[1] and x < range[2] then return true end
+  end
+  return false
+end
+
+local function Same(a, b)
+  if type(a) == "table" and type(b) == "table" then
+    for i = 1, 4 do
+      if (a[i] or 1) ~= (b[i] or 1) then return false end
+    end
+    return true
+  end
+  return a == b
+end
+
+function PowerCurve.Pieces(base, ops, gate)
+  local bounds = {0}
+  local function AddBounds(set)
+    for _, range in ipairs(set) do
+      for j = 1, 2 do
+        if range[j] > 0 and range[j] < 1 then bounds[#bounds + 1] = range[j] end
+      end
+    end
+  end
+  for _, op in ipairs(ops) do AddBounds(op[1]) end
+  if gate then AddBounds(gate) end
+  table.sort(bounds)
+  local pieces = {}
+  for k, x in ipairs(bounds) do
+    local nextX = bounds[k + 1] or 1
+    if nextX - x > 1e-6 or k == #bounds then
+      local mid = (x + math.max(nextX, x)) / 2
+      local value = base
+      for _, op in ipairs(ops) do
+        if Contains(op[1], mid) then value = op[2] end
+      end
+      if gate and not Contains(gate, mid) then value = 0 end
+      local last = pieces[#pieces]
+      if not (last and Same(last[2], value)) then pieces[#pieces + 1] = {x, value} end
+    end
+  end
+  return pieces
+end
+
+local curves = {}
+
+local function Curve(pieces, component)
+  local key = {}
+  for k, piece in ipairs(pieces) do
+    local value = piece[2]
+    if component then value = value[component] or 1 end
+    key[k] = piece[1] .. "=" .. value
+  end
+  key = table.concat(key, ";")
+  if curves[key] then return curves[key] end
+  local curve = C_CurveUtil.CreateCurve()
+  curve:SetType(Enum.LuaCurveType.Linear)
+  for k, piece in ipairs(pieces) do
+    local value = piece[2]
+    if component then value = value[component] or 1 end
+    local nextX = pieces[k + 1] and pieces[k + 1][1] or 1
+    curve:AddPoint(piece[1], value)
+    curve:AddPoint(nextX - (pieces[k + 1] and 1e-7 or 0), value)
+  end
+  curves[key] = curve
+  return curve
+end
+
+function PowerCurve.Evaluate(ctx, pieces, component)
+  if #pieces == 1 then
+    local value = pieces[1][2]
+    if component then return value[component] or 1 end
+    return value
+  end
+  if ctx.kind == "health" then
+    return UnitHealthPercent(ctx.unit, true, Curve(pieces, component))
+  end
+  return UnitPowerPercent(ctx.unit, ctx.powerType, false, Curve(pieces, component))
+end
+
+function PowerCurve.Apply(ctx, region, propertyChanges, active, sets, plan, gate)
+  for property, info in pairs(plan.props) do
+    local value, ops = info.base, {}
+    for _, step in ipairs(plan.steps) do
+      local change = step.changes[property]
+      if change ~= nil then
+        if step.power then
+          ops[#ops + 1] = {sets[step.condition] or PowerCurve.NONE, change}
+        elseif active[step.condition] then
+          value, ops = change, {}
+        end
+      end
+    end
+    local propertyGate = property == plan.gateProperty and gate or nil
+    if #ops > 0 or property == plan.gateProperty then
+      local pieces = PowerCurve.Pieces(value, ops, propertyGate)
+      if info.type == "color" then
+        propertyChanges[property] = {PowerCurve.Evaluate(ctx, pieces, 1), PowerCurve.Evaluate(ctx, pieces, 2),
+          PowerCurve.Evaluate(ctx, pieces, 3), PowerCurve.Evaluate(ctx, pieces, 4)}
+      else
+        propertyChanges[property] = PowerCurve.Evaluate(ctx, pieces)
+      end
+      region.powerCurveActive = true
+    end
+  end
+end
+
+function PowerCurve.Restore(region, propertyChanges, plan)
+  region.powerCurveActive = nil
+  for property, info in pairs(plan.props) do
+    if propertyChanges[property] == nil then propertyChanges[property] = info.base end
+  end
+end
+
 local function CreateTestForCondition(data, input, allConditionsTemplate, usedStates)
   if Private.BlizzardAuraDisplay.ContainsNativeCondition(data, input) then return "false" end
   local uid = data.uid
@@ -827,6 +1058,337 @@ local function CreateActivateCondition(ret, id, condition, conditionNumber, data
   return ret;
 end
 
+local powerCurveOps = {[">="] = true, [">"] = true, ["<="] = true, ["<"] = true, ["=="] = true, ["~="] = true}
+local powerCurveReadable = {number = true, timer = true, elapsedTimer = true, select = true, bool = true, string = true, alwaystrue = true}
+
+local function CurveTriggerKind(data, index)
+  local entry = type(index) == "number" and index > 0 and data.triggers[index]
+  local trigger = entry and entry.trigger
+  if not trigger or trigger.type ~= "unit" then return end
+  if trigger.event == "Power" and not (trigger.use_powertype and trigger.powertype == 99) then return "power" end
+  if trigger.event == "Health" then return "health" end
+end
+
+local function IsCurveVariable(kind, variable)
+  local names = kind and Private.ExecEnv.PowerCurve.kinds[kind]
+  return names and (variable == names.value or variable == names.percent or variable == names.deficit) or false
+end
+
+local function PowerCurveExpression(data, check, allConditionsTemplate, curveTrigger, kind)
+  if type(check) ~= "table" then return end
+  local variable = check.variable
+  if variable == "AND" or variable == "OR" then
+    local parts, hasPower = {}, false
+    for _, subcheck in ipairs(check.checks or {}) do
+      local expression, usesPower = PowerCurveExpression(data, subcheck, allConditionsTemplate, curveTrigger, kind)
+      if not expression then return end
+      parts[#parts + 1] = expression
+      hasPower = hasPower or usesPower
+    end
+    if #parts == 0 then return end
+    return (variable == "AND" and "PC.Inter(" or "PC.Union(") .. table.concat(parts, ", ") .. ")", hasPower
+  end
+  if check.trigger == curveTrigger and IsCurveVariable(kind, variable) then
+    local value = tonumber(check.value)
+    if not value or not powerCurveOps[check.op] then return end
+    return string.format("PC.Leaf(ctx, %q, %q, %s)", variable, check.op, tostring(value)), true
+  end
+  local template = check.trigger and variable and allConditionsTemplate[check.trigger]
+    and allConditionsTemplate[check.trigger][variable]
+  if not template or not powerCurveReadable[template.type] or template.test or template.preamble or template.recheckTime then
+    return
+  end
+  local test = CreateTestForCondition(data, check, allConditionsTemplate, {})
+  if not test then return end
+  return "((" .. test .. ") and PC.ALL or PC.NONE)", false
+end
+
+local function FindCurveTrigger(check, data)
+  if type(check) ~= "table" then return end
+  if check.variable == "AND" or check.variable == "OR" then
+    for _, subcheck in ipairs(check.checks or {}) do
+      local found = FindCurveTrigger(subcheck, data)
+      if found then return found end
+    end
+  elseif IsCurveVariable(CurveTriggerKind(data, check.trigger), check.variable) then
+    return check.trigger
+  end
+end
+
+-- The trigger's own value filters, which pass while the value is secret.
+local function CurveFilterExpression(data, index, kind)
+  local trigger = data.triggers[index].trigger
+  local prototype = Private.event_prototypes[trigger.event]
+  local parts = {}
+  for _, arg in ipairs(prototype and prototype.args or {}) do
+    local name = arg.secretCurve and arg.name
+    local enabled = name and trigger["use_" .. name] and (type(arg.enable) ~= "function" or arg.enable(trigger))
+    if enabled and IsCurveVariable(kind, name) then
+      local values, operators = trigger[name], trigger[name .. "_operator"]
+      if type(values) ~= "table" then values, operators = {values}, {operators} end
+      for i, value in ipairs(values) do
+        local number = tonumber(value)
+        local op = type(operators) == "table" and operators[i] or "=="
+        if number and powerCurveOps[op] then
+          parts[#parts + 1] = string.format("PC.Leaf(ctx, %q, %q, %s)", name, op, tostring(number))
+        end
+      end
+    end
+  end
+  if #parts > 0 then return "PC.Inter(" .. table.concat(parts, ", ") .. ")" end
+end
+
+-- Whether a failed filter should hide the aura, given the other triggers.
+local function CurveGateCondition(data, index)
+  local count = 0
+  for _ in ipairs(data.triggers) do count = count + 1 end
+  if count == 1 or data.triggers.disjunctive ~= "any" then return "true" end
+  local others = {}
+  for i = 1, count do
+    if i ~= index then others[#others + 1] = "(state[" .. i .. "] and state[" .. i .. "].show)" end
+  end
+  return "not (" .. table.concat(others, " or ") .. ")"
+end
+
+function Private.HasCurveFilter(data)
+  for index in ipairs(data.triggers or {}) do
+    local kind = CurveTriggerKind(data, index)
+    if kind and CurveFilterExpression(data, index, kind) then return true end
+  end
+  return false
+end
+
+local function CurveSetup(data, properties)
+  local conditions = data.conditions or {}
+  local supported, mixed = {}, {}
+  for name, propertyData in pairs(properties) do
+    if propertyData.valueFromBoolean or propertyData.colorFromBoolean then
+      local base = ResolveBaseProperty(name, propertyData.baseProperty or name)
+      local baseData = properties[base]
+      if baseData and baseData.setter and (baseData.type == "number" or baseData.type == "color") then
+        supported[base] = propertyData
+      end
+    end
+  end
+  for _, condition in ipairs(conditions) do
+    for _, change in ipairs(condition.changes or {}) do
+      local propertyData = change.property and properties[change.property]
+      if propertyData and (propertyData.valueFromBoolean or propertyData.colorFromBoolean) then
+        mixed[ResolveBaseProperty(change.property, propertyData.baseProperty or change.property)] = true
+      end
+    end
+  end
+
+  local curveTrigger, gate
+  for index in ipairs(data.triggers) do
+    local kind = CurveTriggerKind(data, index)
+    gate = kind and CurveFilterExpression(data, index, kind)
+    if gate then curveTrigger = index; break end
+  end
+  if not curveTrigger then
+    for _, condition in ipairs(conditions) do
+      curveTrigger = curveTrigger or FindCurveTrigger(condition.check, data)
+    end
+  end
+  return supported, mixed, curveTrigger, gate, curveTrigger and CurveTriggerKind(data, curveTrigger)
+end
+
+local function PowerCurveCode(data, properties, allConditionsTemplate)
+  Private.AuraWarnings.UpdateWarning(data.uid, "power_curve_conditions", nil)
+  if Private.BlizzardAuraDisplay.Enabled(data) then return end
+  local conditions = data.conditions or {}
+  local supported, mixed, curveTrigger, gate, kind = CurveSetup(data, properties)
+  if not curveTrigger then return end
+
+  local function Base(property, propertyData)
+    local base = GetBaseProperty(data, property)
+    if propertyData.type == "color" then
+      if type(base) ~= "table" then base = supported[property].resetFallback or {1, 1, 1, 1} end
+      return {base[1] or 1, base[2] or 1, base[3] or 1, base[4] or 1}
+    end
+    return tonumber(base) or (property:match("alpha$") and 1) or 0
+  end
+
+  local plan = {props = {}, steps = {}}
+  local expressions, limited = {}, false
+  for conditionNumber, condition in ipairs(conditions) do
+    local linked = condition.linked
+    local expression, usesPower
+    if not linked then
+      expression, usesPower = PowerCurveExpression(data, condition.check, allConditionsTemplate, curveTrigger, kind)
+    end
+    local step = {condition = conditionNumber, power = usesPower and true or false, changes = {}}
+    for _, change in ipairs(condition.changes or {}) do
+      local property = change.property
+      local propertyData = property and properties[property]
+      if propertyData and supported[property] and not mixed[property] then
+        local value = change.value
+        if propertyData.type == "number" then value = tonumber(value) end
+        if propertyData.type == "color" and type(value) ~= "table" then value = nil end
+        if value ~= nil then
+          step.changes[property] = value
+          if usesPower and not plan.props[property] then
+            plan.props[property] = {type = propertyData.type, base = Base(property, propertyData)}
+          end
+        elseif usesPower and property then
+          limited = true
+        end
+      elseif usesPower and property then
+        limited = true
+      end
+    end
+    if usesPower then expressions[conditionNumber] = expression end
+    plan.steps[#plan.steps + 1] = step
+  end
+
+  if gate then
+    if properties.alpha and supported.alpha and not mixed.alpha then
+      plan.gateProperty = "alpha"
+      plan.props.alpha = plan.props.alpha or {type = "number", base = Base("alpha", properties.alpha)}
+    else
+      gate = nil
+    end
+  end
+
+  Private.AuraWarnings.UpdateWarning(data.uid, "power_curve_conditions", limited and "info" or nil,
+    limited and L["In combat, Power and Health conditions can only change Alpha and Color."] or nil)
+  if not next(plan.props) then return end
+
+  Private.ExecEnv.conditionHelpers[data.uid] = Private.ExecEnv.conditionHelpers[data.uid] or {}
+  Private.ExecEnv.conditionHelpers[data.uid].powerCurve = plan
+
+  local ret = {}
+  table.insert(ret, "  do\n")
+  table.insert(ret, "    local PC = Private.ExecEnv.PowerCurve\n")
+  table.insert(ret, "    local curveState = state[" .. curveTrigger .. "]\n")
+  table.insert(ret, "    local plan = Private.ExecEnv.conditionHelpers[uid].powerCurve\n")
+  table.insert(ret, string.format("    local ctx = not hideRegion and PC.IsSecret(curveState, %q) and PC.Begin(curveState, %q)\n", kind, kind))
+  table.insert(ret, "    if ctx then\n")
+  table.insert(ret, "      local sets = {}\n")
+  for conditionNumber, expression in pairs(expressions) do
+    table.insert(ret, "      sets[" .. conditionNumber .. "] = " .. expression .. "\n")
+  end
+  if gate then
+    table.insert(ret, "      local gate = (" .. CurveGateCondition(data, curveTrigger) .. ") and " .. gate .. " or nil\n")
+  else
+    table.insert(ret, "      local gate = nil\n")
+  end
+  table.insert(ret, "      PC.Apply(ctx, region, propertyChanges, newActiveConditions, sets, plan, gate)\n")
+  table.insert(ret, "    else\n")
+  table.insert(ret, string.format("      PC.Remember(curveState, %q)\n", kind))
+  table.insert(ret, "      if region.powerCurveActive then PC.Restore(region, propertyChanges, plan) end\n")
+  table.insert(ret, "    end\n")
+  table.insert(ret, "  end\n")
+  return table.concat(ret), plan.gateProperty
+end
+
+local function UsesCurveVariable(check, triggernum, kind)
+  if type(check) ~= "table" then return false end
+  if check.variable == "AND" or check.variable == "OR" then
+    for _, subcheck in ipairs(check.checks or {}) do
+      if UsesCurveVariable(subcheck, triggernum, kind) then return true end
+    end
+    return false
+  end
+  return check.trigger == triggernum and IsCurveVariable(kind, check.variable)
+end
+
+local function PropertyName(propertyData, property)
+  local display = propertyData and propertyData.display
+  if type(display) == "table" then display = table.concat(display, " ") end
+  return type(display) == "string" and display ~= "" and display or property
+end
+
+local function HasStartActions(data)
+  local start = data.actions and data.actions.start
+  return start and (start.do_sound or start.do_message or start.do_custom or start.do_glow) and true or false
+end
+
+-- What a Power or Health trigger does in combat, as filled-in lists for the trigger editor.
+function Private.CurveCombatReport(data, triggernum)
+  local kind = CurveTriggerKind(data, triggernum)
+  if not kind then return end
+  local report = {works = {}, notes = {}, fails = {}}
+  if Private.BlizzardAuraDisplay.Enabled(data) then return report end
+  local properties = Private.GetProperties(data) or {}
+  local templates = Private.GetTriggerConditions(data)
+  templates[-1] = Private.GetGlobalConditions(data)
+  local supported, mixed, curveTrigger = CurveSetup(data, properties)
+  local other = curveTrigger and curveTrigger ~= triggernum
+
+  local trigger = data.triggers[triggernum].trigger
+  local prototype = Private.event_prototypes[trigger.event]
+  local filters = {}
+  for _, arg in ipairs(prototype and prototype.args or {}) do
+    local name = arg.secretCurve and arg.name
+    if name and trigger["use_" .. name] and (type(arg.enable) ~= "function" or arg.enable(trigger)) then
+      local values, operators = trigger[name], trigger[name .. "_operator"]
+      if type(values) ~= "table" then values, operators = {values}, {operators} end
+      for i, value in ipairs(values) do
+        if tonumber(value) then
+          filters[#filters + 1] = ("%s %s %s"):format(arg.display, type(operators) == "table" and operators[i] or "==", value)
+        end
+      end
+    end
+  end
+  if #filters > 0 then
+    local fades = properties.alpha and supported.alpha and not mixed.alpha
+    if other or not fades then
+      report.fails[#report.fails + 1] = table.concat(filters, ", ")
+        .. (other and " (only one Power or Health trigger per aura can be checked in combat)" or " (this display can't fade out)")
+    else
+      report.works[#report.works + 1] = table.concat(filters, ", ") .. ", the aura fades out instead of hiding"
+      local count = #data.triggers
+      if count > 1 and data.triggers.disjunctive == "any" then
+        report.notes[#report.notes + 1] = "It only fades out while no other trigger is active."
+      elseif count > 1 and data.triggers.disjunctive == "custom" then
+        report.notes[#report.notes + 1] = "With Custom trigger logic, it fades out whatever the other triggers say."
+      end
+      local parent = data.parent and WeakAuras.GetData(data.parent)
+      if parent and parent.regionType == "dynamicgroup" then
+        report.notes[#report.notes + 1] = "In a Dynamic Group it keeps its place while faded out."
+      end
+      if HasStartActions(data) then
+        report.notes[#report.notes + 1] = "On Show actions still run when the filter isn't met."
+      end
+    end
+  end
+
+  for conditionNumber, condition in ipairs(data.conditions or {}) do
+    if UsesCurveVariable(condition.check, triggernum, kind) then
+      local label = "Condition " .. conditionNumber
+      local linked = condition.linked
+      local expression = not other and not linked
+        and PowerCurveExpression(data, condition.check, templates, triggernum, kind)
+      if other then
+        report.fails[#report.fails + 1] = label .. " (only one Power or Health trigger per aura can be checked in combat)"
+      elseif linked then
+        report.fails[#report.fails + 1] = label .. " (Else If conditions can't be checked in combat)"
+      elseif not expression then
+        report.fails[#report.fails + 1] = label .. " (combined with a check that can't be read in combat)"
+      else
+        local good, bad = {}, {}
+        for _, change in ipairs(condition.changes or {}) do
+          local property = change.property
+          local propertyData = property and properties[property]
+          if propertyData then
+            local value = change.value
+            local ok = supported[property] and not mixed[property]
+              and ((propertyData.type == "number" and tonumber(value)) or (propertyData.type == "color" and type(value) == "table"))
+            local list = ok and good or bad
+            local name = PropertyName(propertyData, property)
+            if mixed[property] and supported[property] then name = name .. " (also set by a Boolean condition)" end
+            list[#list + 1] = name
+          end
+        end
+        if #good > 0 then report.works[#report.works + 1] = label .. ": " .. table.concat(good, ", ") end
+        if #bad > 0 then report.fails[#report.fails + 1] = label .. ": " .. table.concat(bad, ", ") end
+      end
+    end
+  end
+  return report
+end
+
 function Private.GetSubRegionProperties(data, properties)
   if data.subRegions then
     local subIndex = {}
@@ -1071,7 +1633,7 @@ end
 
 local function ConstructConditionFunction(data)
   local debug = false
-  if (not data.conditions or #data.conditions == 0) then
+  if (not data.conditions or #data.conditions == 0) and not Private.HasCurveFilter(data) then
     return nil
   end
 
@@ -1152,6 +1714,10 @@ local function ConstructConditionFunction(data)
     table.insert(ret, "  end\n")
   end
 
+  local powerCurve, gateProperty = PowerCurveCode(data, properties, allConditionsTemplate)
+  if powerCurve then table.insert(ret, powerCurve) end
+  if gateProperty then usedProperties[gateProperty] = true end
+
   -- Last apply changes to region
   for property, _  in pairs(usedProperties) do
     local propertyData = properties and properties[property]
@@ -1160,7 +1726,7 @@ local function ConstructConditionFunction(data)
     -- possibly restricted number with nil before passing it to the texture setter.
     local directDesaturation = desaturation and baseProperty == "desaturate"
     if not directDesaturation then
-      table.insert(ret, "  if(propertyChanges['" .. baseProperty .. "'] ~= nil) then\n")
+      table.insert(ret, "  if issecretvalue(propertyChanges['" .. baseProperty .. "']) or propertyChanges['" .. baseProperty .. "'] ~= nil then\n")
     end
     local arg1 = ""
     if (properties[baseProperty].arg1) then

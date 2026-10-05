@@ -83,6 +83,16 @@ function Private.GetSpellLastCast(spellID)
   return lastCast[spellID]
 end
 
+-- Only a wand shot can hold a cooldown, so without one no copies are kept.
+local wandEquipped
+local function WandEquipped()
+  if wandEquipped == nil then
+    local ok, equipped = pcall(IsEquippedItemType, "Wands")
+    wandEquipped = not ok or issecretvalue(equipped) or equipped == true
+  end
+  return wandEquipped
+end
+
 -- Select before recharge/loss-of-control timers; Blizzard expires the copied duration.
 function Private.GetWandCooldownDuration(spellID, duration, source)
   if not PublicSpell(spellID) or spellID == 5019 then return duration end
@@ -93,7 +103,7 @@ function Private.GetWandCooldownDuration(spellID, duration, source)
     -- The second return identifies a copied timer without reading its contents.
     return snapshots[key] or duration, snapshots[key] ~= nil
   end
-  if duration and duration.Copy then
+  if duration and duration.Copy and WandEquipped() then
     snapshots[key] = duration:Copy()
   else
     snapshots[key] = nil
@@ -106,3 +116,7 @@ frame:SetScript("OnEvent", OnEvent)
 frame:RegisterUnitEvent("UNIT_SPELLCAST_SUCCEEDED", "player")
 frame:RegisterEvent("SPELL_UPDATE_COOLDOWN")
 frame:RegisterEvent("PLAYER_ENTERING_WORLD")
+
+local equipment = CreateFrame("Frame")
+equipment:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
+equipment:SetScript("OnEvent", function() wandEquipped = nil end)

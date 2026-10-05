@@ -239,7 +239,8 @@ end
 function Display.RefreshGridFor(region)
   local native = region and region.blizzardAuraDisplay
   local id = native and native.gridMember
-  if id then Display.RefreshGrid(WeakAuras.GetData(id)) end
+  local group = id and WeakAuras.GetData(id)
+  if group and not Display.DeferGridRefresh(group) then Display.RefreshGrid(group) end
 end
 
 -- Options preview: the samples are plain frames, laid out like the live grid.

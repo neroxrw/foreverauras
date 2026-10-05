@@ -133,6 +133,20 @@ local function GetOptions(data, triggernum)
         Save("unitRoles", trigger.unitRoles)
       end,
     },
+    useIncludePets = {
+      type = "toggle", name = "Include Pets", order = 4.45, width = width,
+      hidden = function() return trigger.unit ~= "group" and trigger.unit ~= "party" and trigger.unit ~= "raid" end,
+      get = function() return trigger.useIncludePets or false end,
+      set = function(_, value) Save("useIncludePets", value) end,
+    },
+    includePets = {
+      type = "select", name = "Include Pets", order = 4.46, width = width,
+      values = OptionsPrivate.Private.include_pets_types,
+      hidden = function() return trigger.unit ~= "group" and trigger.unit ~= "party" and trigger.unit ~= "raid" end,
+      disabled = function() return not trigger.useIncludePets end,
+      get = function() return trigger.includePets or "PlayersAndPets" end,
+      set = function(_, value) Save("includePets", value) end,
+    },
     filtersHeader = {type = "header", name = "Aura Filters", order = 10},
     -- Maximum Duration is now Total Duration "<=" (AuraTriggerOptions.lua).
     includeNameplateOnly = {

@@ -214,6 +214,8 @@ function SlashCmdList.WeakAuras(input)
     WeakAurasProfilingFrame:Toggle()
   elseif msg == "minimap" then
     WeakAuras.ToggleMinimap();
+  elseif msg == "loadtime" then
+    Private.PrintLoadProfile()
   elseif msg == "help" then
     Private.PrintHelp();
   elseif msg == "repair" then
@@ -1216,6 +1218,36 @@ local function CheckForPreviousEncounter()
   end
 end
 
+local function Sum(list)
+  local total = 0
+  for _, value in pairs(list) do total = total + value end
+  return total
+end
+
+function Private.PrintLoadProfile()
+  local profile = Private.loadProfile
+  local function ms(value) return value and ("%d ms"):format(value) or "?" end
+  prettyPrint(("Load time: files %s, login %s (%s while loading, %s of work)."):format(ms(profile.files),
+    ms(profile.loginWall), ms(profile.loadingScreen), ms(profile.loginCpu)))
+  prettyPrint(("Prepare %s, add %s, load events %s, load displays %s (Aura (Modern) build %s)."):format(ms(Sum(profile.prepare)),
+    ms(Sum(profile.add)), ms(profile.loadEvents), ms(profile.resume), ms(Sum(profile.modern))))
+  if profile.deferred then
+    prettyPrint(("Aura (Modern) displays built after login: %s over %d frames."):format(ms(profile.deferred), profile.deferredFrames or 0))
+  end
+  local totals = {}
+  for _, key in ipairs({"prepare", "add", "modern"}) do
+    for id, value in pairs(profile[key]) do totals[id] = (totals[id] or 0) + value end
+  end
+  local ids = {}
+  for id in pairs(totals) do ids[#ids + 1] = id end
+  table.sort(ids, function(a, b) return totals[a] > totals[b] end)
+  for index = 1, math.min(10, #ids) do
+    local id = ids[index]
+    prettyPrint(("%d. %s: %s (prepare %s, add %s, Aura (Modern) %s)"):format(index, id, ms(totals[id]),
+      ms(profile.prepare[id] or 0), ms(profile.add[id] or 0), ms(profile.modern[id] or 0)))
+  end
+end
+
 function Private.Login(takeNewSnapshots)
   local loginFunc = (function() -- coroutine.create
 
@@ -1257,9 +1289,13 @@ function Private.Login(takeNewSnapshots)
       CheckForPreviousEncounter()
     end
     coroutine.yield(1000);
+    local started = debugprofilestop()
     Private.RegisterLoadEvents();
+    Private.loadProfile.loadEvents = debugprofilestop() - started
     coroutine.yield(10000);
+    started = debugprofilestop()
     Private.Resume();
+    Private.loadProfile.resume = debugprofilestop() - started
     coroutine.yield(100);
 
     local nextCallback = loginQueue[1];
@@ -1290,7 +1326,13 @@ function Private.Login(takeNewSnapshots)
     name = "login",
   }
 
-  local thread = Private:Async(loginThreadConfig, loginFunc):OnSuccess(function()
+  local profile = Private.loadProfile
+  profile.loginStart = debugprofilestop()
+  local thread
+  thread = Private:Async(loginThreadConfig, loginFunc):OnSuccess(function()
+    profile.loginWall = debugprofilestop() - profile.loginStart
+    profile.loginCpu = thread and thread.executionTime
+    profile.done = true
     Private.callbacks:Fire("WEAKAURAS_LOGIN_COMPLETE")
     if GREMINDER and GREMINDER.FireCallback then
       GREMINDER:FireCallback("WEAKAURAS_LOGIN_COMPLETE")
@@ -1298,6 +1340,7 @@ function Private.Login(takeNewSnapshots)
   end)
   if not db.deferLogin then
     thread:ForceRun(12000)
+    profile.loadingScreen = debugprofilestop() - profile.loginStart
   end
 end
 
@@ -1320,6 +1363,7 @@ end
 loadedFrame:SetScript("OnEvent", function(self, event, ...)
   if(event == "ADDON_LOADED") then
     if(... == ADDON_NAME) then
+      Private.loadProfile.files = debugprofilestop() - Private.loadProfile.filesStart
       ForeverAurasSaved = ForeverAurasSaved or {};
       db = ForeverAurasSaved;
       Private.db = db
@@ -2680,7 +2724,9 @@ function Private.AddMany(tbl, takeSnapshots)
       bads[data.id] = true
     else
       local oldSnapshot = oldSnapshots[data.uid] or nil
+      local started = debugprofilestop()
       local ok = xpcall(WeakAuras.PreAdd, Private.GetErrorHandlerUid(data.uid, "PreAdd"), data, oldSnapshot)
+      Private.loadProfile.prepare[data.id] = debugprofilestop() - started
       if not ok then
         prettyPrint(L["Unable to modernize aura '%s'. This is probably due to corrupt data or a bad migration."]:format(data.id))
         if data.regionType == "dynamicgroup" or data.regionType == "group" then
@@ -2699,7 +2745,9 @@ function Private.AddMany(tbl, takeSnapshots)
       if data.parent and bads[data.parent] then
         bads[data.id] = true
       else
+        local started = debugprofilestop()
         local ok = xpcall(pAdd, Private.GetErrorHandlerUid(data.uid, "pAdd"), data)
+        Private.loadProfile.add[data.id] = debugprofilestop() - started
         if not ok then
           bads[data.id] = true
         end
@@ -6278,11 +6326,34 @@ function Private.FindUnusedId(prefix)
   return id
 end
 
+-- A unit whose identity the game hides (enemies in instances) cannot be shown
+-- as a 3D model; its 2D portrait is shown instead.
+local function ShowPortraitFallback(frame, unit)
+  if not frame.faPortrait then
+    frame.faPortrait = frame:CreateTexture(nil, "ARTWORK")
+    frame.faPortrait:SetAllPoints(frame)
+  end
+  if unit and UnitExists(unit) and SetPortraitTexture then
+    pcall(frame.ClearModel, frame)
+    if pcall(SetPortraitTexture, frame.faPortrait, unit, true) then frame.faPortrait:Show() else frame.faPortrait:Hide() end
+  else
+    frame.faPortrait:Hide()
+  end
+end
+
 function WeakAuras.SetModel(frame, unused, model_fileId, isUnit, isDisplayInfo)
+  if frame.faPortrait then frame.faPortrait:Hide() end
   if isDisplayInfo then
     pcall(frame.SetDisplayInfo, frame, tonumber(model_fileId))
   elseif isUnit then
-    pcall(frame.SetUnit, frame, model_fileId)
+    local hidden = false
+    if C_Secrets and C_Secrets.ShouldUnitIdentityBeSecret and type(model_fileId) == "string" then
+      local okQuery, secret = pcall(C_Secrets.ShouldUnitIdentityBeSecret, model_fileId)
+      hidden = okQuery and secret == true
+    end
+    local ok, success = false, false
+    if not hidden then ok, success = pcall(frame.SetUnit, frame, model_fileId) end
+    if not ok or success == false then ShowPortraitFallback(frame, model_fileId) end
   else
     pcall(frame.SetModel, frame, tonumber(model_fileId))
   end

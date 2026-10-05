@@ -10,6 +10,7 @@ ForeverAuras = WeakAuras
 ---@type table<string, string>
 WeakAuras.L = {}
 Private.frames = {}
+Private.loadProfile = {filesStart = debugprofilestop(), prepare = {}, add = {}, modern = {}}
 
 --- @alias uid string
 --- @alias auraId string
@@ -385,7 +386,7 @@ WeakAuras.normalWidth = 1.3
 WeakAuras.halfWidth = WeakAuras.normalWidth / 2
 WeakAuras.doubleWidth = WeakAuras.normalWidth * 2
 local versionStringFromToc = C_AddOns.GetAddOnMetadata("ForeverAuras", "Version")
-local versionString = "0.50.3-BETA.1"
+local versionString = "0.56.6-BETA.1"
 local buildTime = "2026-09-29"
 
 -- Prerelease labels are case-insensitive; packages use the requested BETA spelling.
@@ -400,10 +401,10 @@ WeakAuras.buildTime = buildTime
 WeakAuras.newFeatureString = "|TInterface\\OptionsFrame\\UI-OptionsFrame-NewFeatureIcon:0|t"
 WeakAuras.BuildInfo = select(4, GetBuildInfo())
 
-WeakAuras.displayName = "WeakAuras - ForeverAuras"
+WeakAuras.displayName = "ForeverAuras"
 
 WeakAuras.prettyPrint = function(...)
-  print("|cff9900ffWeakAuras - ForeverAuras:|r ", ...)
+  print("|cff9900ffForeverAuras:|r ", ...)
 end
 
 -- Force enable ForeverAurasCompanion and Archive because some addon managers interfere with it

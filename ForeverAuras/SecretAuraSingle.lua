@@ -31,6 +31,7 @@ Display.remOperators = {["<"] = "<", ["<="] = "<=", [">"] = ">", [">="] = ">="}
 -- Keys of the extra native parts, unique within their containers.
 local MISSING_GROUP = "FAMissing"
 local SLOT_ICON = "FARemainIcon"
+local SLOT_TEXTURE = "FARemainTexture"
 -- A Step curve point rules from its own value upwards; <= and > move the edge
 -- just past the entered number.
 local REMAIN_EPS = 0.001
@@ -84,6 +85,16 @@ Display.missingTypes = missingTypes
 local function NeedsMissing(trigger)
   local showOn = Display.ShowOn(trigger)
   return showOn == "showOnMissing" or showOn == "showAlways"
+end
+Display.NeedsMissing = NeedsMissing
+
+-- Aura(s) Missing and Always on unit frames or nameplates: one Missing part per unit.
+function Display.UnitPlacedMissing(data, trigger)
+  trigger = trigger or (data and Display.GetTrigger(data))
+  if type(trigger) ~= "table" or not data or not NeedsMissing(trigger) then return false end
+  local mode = Display.FrameAnchorType(data)
+  if mode == "UNITFRAME" or mode == "NAMEPLATE" then return true end
+  return not Display.FlowGroup(data) and Display.UsesNameplates(data)
 end
 
 -- A single aura is one aura at the region's corner.
@@ -294,8 +305,8 @@ function Display.ValidateSingle(data, trigger)
     end
   end
   if not Display.IsSingle(trigger, data) then return end
-  if not Display.IsSingleUnit(trigger) then
-    return "Aura(s) Missing, Always and Remaining Time watch one unit: choose Player, Target, Focus, Pet, Target of Target, Target of Focus or a Specific Unit."
+  if not Display.IsSingleUnit(trigger) and not Display.UnitPlacedMissing(data, trigger) then
+    return "On the screen, Aura(s) Missing, Always and Remaining Time watch one unit: choose Player, Target, Focus, Pet, Target of Target, Target of Focus or a Specific Unit. Anchored to unit frames or nameplates, Missing and Always work for every unit."
   end
   local showOn = Display.ShowOn(trigger)
   local op = Display.RemainingWindow(trigger)
@@ -310,7 +321,7 @@ function Display.ValidateSingle(data, trigger)
     if not op and not missingTypes[data.regionType] then
       return label .. " is available for Icon, Bar, Progress Texture and Text displays."
     end
-    if Display.FrameAnchorType(data) == "UNITFRAME" or Display.FrameAnchorType(data) == "NAMEPLATE" then
+    if op and (Display.FrameAnchorType(data) == "UNITFRAME" or Display.FrameAnchorType(data) == "NAMEPLATE") then
       return label .. " cannot anchor to unit frames or nameplates. Anchor the aura to the screen or a frame."
     end
   end
@@ -377,7 +388,7 @@ local function StyleMissing(missing, region, data)
   local native = missing.native
   Display.StyleNative(native, data, region)
   native.button:ClearAllPoints()
-  native.button:SetPoint("TOPLEFT", Display.ContentAnchor(region), "TOPLEFT")
+  native.button:SetPoint("TOPLEFT", missing.slot or Display.ContentAnchor(region), "TOPLEFT")
   local trigger = Display.GetTrigger(data)
   local id = Display.GetSpellIDs(trigger, false)[1]
   local info = id and C_Spell.GetSpellInfo(id)
@@ -625,7 +636,7 @@ Display.ClearSingleWarning = function(data) Warn(data) end
 -- display starts: one icon further on while the aura is missing
 -- (SecretAuraFlow.lua). It follows the Missing container's unit.
 local PRESENCE_GROUP = "FAPresence"
-local function EnsurePresence(missing, region, data, filter, candidates)
+local function EnsurePresence(missing, region, data, filter, candidates, perUnit)
   missing.presenceActive = false
   if not Display.FlowGroup(data) then
     if missing.presence then missing.presence:SetEnabled(false); missing.presence:Hide() end
@@ -666,6 +677,10 @@ local function EnsurePresence(missing, region, data, filter, candidates)
     presence:SetAuraGroupEnabled(PRESENCE_GROUP, true)
   end
   missing.presenceBoundUnit = nil
+  if perUnit then
+    missing.presenceActive = true
+    return
+  end
   if not Display.AnchorFlowPresence(region, data, presence) then
     -- Refused: the display takes a fixed icon in the group instead.
     presence:SetEnabled(false); presence:Hide()
@@ -676,7 +691,7 @@ local function EnsurePresence(missing, region, data, filter, candidates)
 end
 
 -- The Missing part: its own container, so its width depends only on presence.
-local function EnsureMissing(single, region, data, trigger)
+local function EnsureMissing(single, region, data, trigger, instance)
   local width, height = Display.Dimensions(data)
   local margin = MissingMargin(data, width, height)
   local filter, candidates = Display.FilterString(trigger), Display.CandidateFilters(data)
@@ -687,9 +702,14 @@ local function EnsureMissing(single, region, data, trigger)
     return
   end
   local missing = single.missing
+  local perUnit = instance ~= nil
+  if missing and (missing.perUnit == true) ~= perUnit then
+    for _, key in ipairs({"container", "clip", "presence", "flowShadow"}) do Display.RetireFrame(missing[key]) end
+    single.missing, missing = nil, nil
+  end
   if not missing then
-    missing = {}
-    local container = Display.CreateAuraContainer(region, data)
+    missing = {perUnit = perUnit}
+    local container = Display.CreateAuraContainer(region, data, perUnit)
     container:SetEnabled(false)
     container:SetAuraProcessingPolicy(CustomAuraContainerAuraProcessingPolicy.None)
     -- TOPLEFT only: Blizzard sizes the container from the group; nothing reads it.
@@ -727,14 +747,28 @@ local function EnsureMissing(single, region, data, trigger)
   end
   -- Absent: the container is 1 px wide and the clip spans the icon plus margin.
   -- Present: its right edge moves onto the clip's right edge, closing it.
-  local anchor = Display.ContentAnchor(region)
+  local anchor
   missing.container:ClearAllPoints()
-  if not Display.AnchorToContent(missing.container, "TOPLEFT", region, "TOPLEFT") then anchor = region end
+  if perUnit then
+    local slot = instance.missingSlot
+    if not slot then
+      slot = CreateFrame("Frame", nil, region, "DisableUntrustedLayoutScriptsTemplate")
+      slot:EnableMouse(false)
+      instance.missingSlot = slot
+    end
+    slot:SetSize(width, height)
+    missing.slot, anchor = slot, slot
+    missing.container:SetPoint("TOPLEFT", slot, "TOPLEFT")
+  else
+    missing.slot = nil
+    anchor = Display.ContentAnchor(region)
+    if not Display.AnchorToContent(missing.container, "TOPLEFT", region, "TOPLEFT") then anchor = region end
+  end
   local clip = missing.clip
   clip:ClearAllPoints()
   clip:SetPoint("TOPLEFT", missing.container, "TOPRIGHT", -1 - margin, margin)
   clip:SetPoint("BOTTOMRIGHT", anchor, "BOTTOMRIGHT", margin, -margin)
-  EnsurePresence(missing, region, data, filter, candidates)
+  EnsurePresence(missing, region, data, filter, candidates, perUnit)
   clip:SetFrameLevel(region:GetFrameLevel() + 1)
   missing.container:SetFrameLevel(region:GetFrameLevel() + 1)
   StyleMissing(missing, region, data)
@@ -860,6 +894,48 @@ local function EnsureRemaining(single, instance, region, data, trigger, op, x)
   end
   icon.text:Show()
   instance.container:SetAuraSlotEnabled(SLOT_ICON, true)
+  local level = icon.button:GetFrameLevel()
+  for index, element in ipairs(data.subRegions or {}) do
+    if element.type == "subtexture" and element.textureVisible ~= false and element.textureTexture
+      and not Display.IsDetachedElement(data, element) then
+      local key = SLOT_TEXTURE .. index
+      local slot = EnsureSlot(single, instance, region, key, trigger, data)
+      if slot then
+        local w, h, point, relative, ox, oy
+        if element.anchor_mode == "point" then
+          w, h = element.width or 32, element.height or 32
+          point, relative = element.self_point or "CENTER", (element.anchor_point or "CENTER"):gsub("^INNER_", ""):gsub("^OUTER_", "")
+          ox, oy = element.xOffset or 0, element.yOffset or 0
+        else
+          w, h = width + (element.xOffset or 0), height + (element.yOffset or 0)
+          point, relative, ox, oy = "CENTER", "CENTER", 0, 0
+        end
+        w, h = math.max(1, math.floor(w + 0.5)), math.max(1, math.floor(h + 0.5))
+        slot.button:ClearAllPoints()
+        slot.button:SetSize(w, h)
+        slot.button:SetPoint(point, region, relative, ox, oy)
+        pcall(slot.button.SetFrameLevel, slot.button, level + index)
+        slot.text = slot.text or slot.button:CreateFontString(nil, "ARTWORK")
+        slot.text:SetWordWrap(false)
+        slot.text:SetFont(STANDARD_TEXT_FONT, 12, "")
+        slot.text:ClearAllPoints()
+        slot.text:SetPoint("CENTER", slot.button, "CENTER")
+        slot.button:ClearDurationText()
+        local tint = element.textureColor or {1, 1, 1, 1}
+        local ok = pcall(slot.button.SetDurationText, slot.button, slot.text, {
+          textFormat = {formatString = TextureMarkup(element.textureTexture, w, h, 0, 1, 0, 1), components = {}},
+          textColor = {curve = RemainingCurve(op, x, tint[1] or 1, tint[2] or 1, tint[3] or 1, (tint[4] or 1) * (element.texture_alpha or 1)),
+            property = Enum.DurationTextBindingProperty.RemainingDuration},
+        })
+        if ok then
+          slot.text:Show()
+          instance.container:SetAuraSlotEnabled(key, true)
+        else
+          slot.used = false
+        end
+      end
+    end
+  end
   return true
 end
 
@@ -1830,9 +1906,10 @@ end
 -- instance only; containers left from an earlier multi-unit list are retired.
 function Display.ConfigureSingle(instance, region, data, index)
   local trigger = Display.GetTrigger(data)
-  local valid = index == 1 and Display.ValidateSingle(data, trigger) == nil
+  local perUnit = Display.UnitPlacedMissing(data, trigger)
+  local valid = (index == 1 or perUnit) and Display.ValidateSingle(data, trigger) == nil
   local isSingle = valid and Display.IsSingle(trigger, data)
-  if valid then
+  if valid and index == 1 then
     local lateX = Display.LateGlowSpec(data, trigger)
     Display.WatchAuraLearning(region, data, trigger, lateX)
   elseif index == 1 then
@@ -1844,7 +1921,11 @@ function Display.ConfigureSingle(instance, region, data, index)
   instance.single = single
   for _, slot in pairs(single.slots or {}) do slot.used = false end
   single.foundMode = foundFollow
-  if (isSingle and NeedsMissing(trigger)) or foundFollow then EnsureMissing(single, region, data, trigger) else DisableMissing(single) end
+  if (isSingle and NeedsMissing(trigger)) or foundFollow then
+    EnsureMissing(single, region, data, trigger, perUnit and instance or nil)
+  else
+    DisableMissing(single)
+  end
   local op, x = Display.RemainingWindow(trigger)
   if isSingle and op then EnsureRemaining(single, instance, region, data, trigger, op, x) end
   -- Parts no longer configured stop matching auras.
@@ -1861,6 +1942,38 @@ end
 
 -- Mirrors the aura list container's unit binding and visibility; unit = nil
 -- with shown = false hides the Missing part.
+local function Descendants(frame, list)
+  for _, child in ipairs({frame:GetChildren()}) do
+    list[#list + 1] = child
+    Descendants(child, list)
+  end
+  return list
+end
+
+-- On unit frames the Missing look sits above the frame, like the aura list:
+-- its clip and everything inside it keep their order, moved to that strata
+-- and above that level.
+local function RaiseMissing(missing, strata, level)
+  local clip = missing.clip
+  if clip:GetFrameStrata() == strata and clip:GetFrameLevel() == level and missing.raisedLevel == level then return end
+  local frames = Descendants(clip, {})
+  clip:SetFrameStrata(strata)
+  clip:SetFrameLevel(level)
+  missing.container:SetFrameStrata(strata)
+  missing.container:SetFrameLevel(level)
+  local lowest
+  for _, frame in ipairs(frames) do
+    if frame:GetFrameStrata() ~= strata then frame:SetFrameStrata(strata) end
+    local own = frame:GetFrameLevel()
+    if not lowest or own < lowest then lowest = own end
+  end
+  local delta = lowest and level + 1 - lowest or 0
+  if delta > 0 then
+    for _, frame in ipairs(frames) do frame:SetFrameLevel(frame:GetFrameLevel() + delta) end
+  end
+  missing.raisedLevel = level
+end
+
 function Display.RefreshSingle(instance, unit, shown)
   local single = instance.single
   -- Enabling the container must not bring back a list the settings turned off.
@@ -1896,6 +2009,10 @@ function Display.RefreshSingle(instance, unit, shown)
   end
   -- A disabled container keeps its last width; the clip must not show then.
   missing.clip:SetShown(shown)
+  if missing.slot and shown then
+    local strata, level = instance.container:GetFrameStrata(), instance.container:GetFrameLevel()
+    if not issecretvalue(strata) and not issecretvalue(level) then RaiseMissing(missing, strata, level + 1) end
+  end
   -- No unit (no target, focus or pet): nothing is missing. The display itself
   -- stays shown, since its frames may be protected in combat; only the Missing
   -- look fades, through its alpha. With Show If Unit Does Not Exist ticked the
