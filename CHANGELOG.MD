@@ -1,6 +1,11 @@
 # Changelog
 
 ## Versions
+## 0.57.0
+- Power and Health (%) can now be used in Conditions in combat, to change Alpha and Color.
+
+**Note**: The game hides power and health values from addons in combat, so the trigger itself can't react to them but conditions can, and they keep the aura working the way you'd expect. Power filters on the trigger only work out of combat. For in-combat checks, use a Condition instead.
+
 ## 0.56.6
 - Power and Health triggers now work in combat: filters fade the aura out instead of hiding it
 - Power and Health conditions can now change Alpha and Color in combat

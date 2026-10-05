@@ -2333,7 +2333,8 @@ function Private.CurveCombatStatus(kind, trigger, data, triggernum)
   if #report.works > 0 then
     lines[#lines + 1] = "|cff33ff99Works in combat:|r " .. table.concat(report.works, "; ") .. "."
   elseif #report.fails == 0 then
-    lines[#lines + 1] = "|cff33ff99Works in combat.|r"
+    lines[#lines + 1] = "|cff33ff99Works in combat.|r |cffff9933In combat, " .. (kind == "power" and "Power" or "Health (%)")
+      .. " Conditions can change Alpha and Color.|r"
   end
   if #report.notes > 0 then lines[#lines + 1] = "|cffff9933" .. table.concat(report.notes, " ") .. "|r" end
   if #report.fails > 0 then
@@ -3264,9 +3265,9 @@ Private.event_prototypes = {
         init = "total", store = true, test = "true", formatter = "BigNumber",
       },
       {
-        name = "percenthealth", display = L["Health (%)"], type = "number", secretCurve = true,
+        name = "percenthealth", display = L["Health (%)"], type = "number", secretCurve = true, hidden = true, test = "true",
         init = "UnitHealthPercent(unit, true, CurveConstants.ScaleTo100)", store = true, formatter = "Number",
-        conditionType = "number", multiEntry = {operator = "and", limit = 2},
+        conditionType = "number",
       },
       {
         name = "deficit", display = L["Health Deficit"], type = "number", hidden = true,
