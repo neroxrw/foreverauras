@@ -267,9 +267,6 @@ local function singleTest(arg, trigger, name, value, operator, use_exact)
   elseif (arg.type == "string" or arg.type == "select") then
     return "(".. name .." and not issecretvalue(" .. name .. ") and "..name.."==" ..(number or ("\""..(tostring(value) or "").."\""))..")";
   elseif (arg.type == "number") then
-    if arg.secretCurve then
-      return "(issecretvalue(" .. name .. ") or (" .. name .. " and " .. name .. (operator or "==") .. (number or 0) .. "))";
-    end
     return "(".. name .." and not issecretvalue(" .. name ..") and "..name..(operator or "==")..(number or 0) ..")";
   else
     -- Should be unused
