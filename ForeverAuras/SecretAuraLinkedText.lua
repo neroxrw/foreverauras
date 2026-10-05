@@ -92,7 +92,7 @@ function Display.UpdateLinkedText(sub, config, parentData, kind, index)
   sub.linkedTexts = sub.linkedTexts or {}
   local native = sub.linkedTexts[kind]
   if not native then
-    if InCombatLockdown() then
+    if InCombatLockdown() or C_Secrets.ShouldAurasBeSecret() then
       pending[sub] = true
       sub.text:SetText("")
       sub.linkedTextActive = true
@@ -129,11 +129,15 @@ function Display.UpdateLinkedText(sub, config, parentData, kind, index)
 end
 
 local events = CreateFrame("Frame")
-for _, event in ipairs({"PLAYER_TARGET_CHANGED", "PLAYER_FOCUS_CHANGED", "UNIT_PET", "UNIT_TARGET", "PLAYER_ENTERING_WORLD", "PLAYER_REGEN_ENABLED"}) do
+for _, event in ipairs({"PLAYER_TARGET_CHANGED", "PLAYER_FOCUS_CHANGED", "UNIT_PET", "UNIT_TARGET", "PLAYER_ENTERING_WORLD",
+  "PLAYER_REGEN_ENABLED", "ADDON_RESTRICTION_STATE_CHANGED"}) do
   events:RegisterEvent(event)
 end
-events:SetScript("OnEvent", function(_, event)
-  if event == "PLAYER_REGEN_ENABLED" then
+events:SetScript("OnEvent", function(_, event, unit)
+  if event == "UNIT_TARGET" and unit ~= "target" and unit ~= "focus" then return end
+  if event == "UNIT_PET" and unit ~= "player" then return end
+  if event == "PLAYER_REGEN_ENABLED" or event == "ADDON_RESTRICTION_STATE_CHANGED" then
+    if InCombatLockdown() or C_Secrets.ShouldAurasBeSecret() then return end
     for sub in pairs(pending) do
       pending[sub] = nil
       if sub.Update then sub:Update() end

@@ -120,11 +120,11 @@ end
 -- Why this display cannot join its Modern Aura Group's growth, or nil.
 function Display.FlowProblem(data, trigger)
   if not Display.FlowGroup(data) then return end
-  if data.regionType ~= "icon" then return "In a Modern Aura Group, use an Icon display." end
+  if not Display.missingTypes[data.regionType] then return "In a Modern Aura Group, use an Icon, Progress Bar, Progress Texture or Text display." end
   if Display.RemainingWindow(trigger) then return "In a Modern Aura Group, Remaining Time is not available yet." end
   local mode = Display.FlowFrameMode(data)
   if mode then
-    if Display.IsSingle(trigger) then return "Grouped by unit frame or nameplate, use Show On: Aura(s) Found." end
+    if Display.IsSingle(trigger) and not Display.NeedsMissing(trigger) then return "Grouped by unit frame or nameplate, use Show On: Aura(s) Found." end
     if mode == "NAMEPLATE" and trigger.unit ~= "nameplate" then return "Grouped by nameplate, choose the Nameplate unit." end
     if mode == "UNITFRAME" and trigger.unit == "nameplate" then return "Grouped by unit frame, choose a unit other than Nameplate." end
   end
@@ -133,8 +133,8 @@ end
 -- Aura containers in a Modern Aura Group depend on other displays' secret sizes,
 -- so they also opt out of untrusted layout scripts, like every frame anchored
 -- to an aura container must. Returns the container and whether it opted out.
-function Display.CreateAuraContainer(parent, data)
-  if Display.FlowGroup(data) then
+function Display.CreateAuraContainer(parent, data, optOut)
+  if optOut or Display.FlowGroup(data) then
     local ok, container = pcall(CreateFrame, "AuraContainer", nil, parent,
       "CustomAuraContainerTemplate, DisableUntrustedLayoutScriptsTemplate")
     if ok and container then return container, true end
@@ -334,7 +334,7 @@ function Display.EnsureFlowShadows(region, data)
   else
     for _, instance in ipairs(native.instances) do HideShadow(instance, "flowShadow") end
   end
-  if showOn == "showOnMissing" and missing and missing.active then
+  if showOn == "showOnMissing" and missing and missing.active and not missing.slot then
     local single = {elementWidth = along and size or width, elementHeight = along and height or size}
     missing.flowShadow = MeasureContainer(missing.flowShadow, region, data, sh, single, 1, filter, candidates)
     missing.flowShadowActive = missing.flowShadow ~= nil
@@ -510,12 +510,24 @@ end
 
 -- While an event refreshes many displays, each group is re-anchored once at
 -- the end (EndFlowBatch) instead of once per display.
-local batch
-function Display.BeginFlowBatch() batch = batch or {} end
+local batch, gridBatch
+function Display.BeginFlowBatch() batch, gridBatch = batch or {}, gridBatch or {} end
 function Display.EndFlowBatch()
-  local groups = batch
-  batch = nil
+  local groups, grids = batch, gridBatch
+  batch, gridBatch = nil, nil
   for group in pairs(groups or {}) do Display.RelinkFlowUnits(group) end
+  for group in pairs(grids or {}) do Display.RefreshGrid(group) end
+end
+
+-- During a batch, each grid is refreshed once at its end.
+function Display.DeferGridRefresh(group)
+  if not gridBatch then return false end
+  gridBatch[group] = true
+  return true
+end
+
+function Display.FlowUnitStart(group)
+  return (AlignedPoints(group, GROWTH[GrowthKey(group)]))
 end
 
 function Display.RelinkFlowUnits(group)
@@ -525,7 +537,7 @@ function Display.RelinkFlowUnits(group)
   local g = GROWTH[GrowthKey(group)]
   -- The group's own Position and Size settings, relative to each frame.
   local point, frameX, frameY = FramePosition(group)
-  local start, listEnd = AlignedPoints(group, g)
+  local start, listEnd, far = AlignedPoints(group, g)
   local spacing = tonumber(group.blizzardFlowSpacing) or 2
   -- Centred: per unit, the shadows run backwards from the frame point first.
   local lastShadow = {}
@@ -556,12 +568,16 @@ function Display.RelinkFlowUnits(group)
     local entry = Private.regions[childID]
     local native = entry and entry.region and entry.region.blizzardAuraDisplay
     if native and native.active then
+      local missingOnly = Display.ShowOn(Display.GetTrigger(native.data) or {}) == "showOnMissing"
+      local width, height = Display.Dimensions(native.data)
+      local along = g.sign[1] ~= 0
       for _, instance in ipairs(native.instances) do
         local unit = instance.visible and instance.boundUnit
         if unit then
           local container = instance.container
           container:ClearAllPoints()
-          local linked = last[unit] and pcall(container.SetPoint, container, start, last[unit], listEnd, g.pixel[1], g.pixel[2])
+          local previous = last[unit]
+          local linked = previous and pcall(container.SetPoint, container, start, previous[1], previous[2], previous[3], previous[4])
           if not linked and lastShadow[unit] then
             -- Centred: start where the shadows end, half a spacing on.
             linked = pcall(container.SetPoint, container, start, lastShadow[unit], shEnd,
@@ -574,7 +590,20 @@ function Display.RelinkFlowUnits(group)
               container:SetPoint(start, frame, point, frameX, frameY)
             end
           end
-          last[unit] = container
+          last[unit] = {container, listEnd, g.pixel[1], g.pixel[2]}
+          local missing = instance.single and instance.single.missing
+          local slot = missing and missing.active and missing.slot
+          if slot then
+            local size = (along and width or height) + spacing
+            last[unit] = {slot, listEnd, g.sign[1] * spacing, g.sign[2] * spacing}
+            local presence = missingOnly and missing.presenceActive and missing.presence
+            if presence then
+              presence:ClearAllPoints()
+              if pcall(presence.SetPoint, presence, far, slot, start, g.sign[1] * (size + 1), g.sign[2] * (size + 1)) then
+                last[unit] = {presence, start, 0, 0}
+              end
+            end
+          end
         end
       end
     end

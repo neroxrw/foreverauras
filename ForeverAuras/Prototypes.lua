@@ -803,6 +803,18 @@ do
   -- this client does not have. They cannot be shown or cleared in the
   -- options, and the aura never loads, so they are removed.
   -- allowView: other specs' talents may be read (only while the options are open).
+  -- A spec's talent entries do not change within a session.
+  local validTalents = {}
+  local function ValidTalents(specId)
+    if validTalents[specId] then return validTalents[specId] end
+    local talents = Private.GetTalentData(specId)
+    if type(talents) ~= "table" or #talents < 20 then return end
+    local valid = {}
+    for _, talent in ipairs(talents) do valid[talent[1]] = true end
+    validTalents[specId] = valid
+    return valid
+  end
+
   function Private.CleanForeignTalents(data, allowView)
     local load = data and data.load
     if type(load) ~= "table" then return false end
@@ -826,10 +838,8 @@ do
     local ownSpec = Private.ExecEnv.GetSpecialization()
     local ownSpecId = ownSpec and Private.ExecEnv.GetSpecializationInfo(ownSpec)
     if specId ~= ownSpecId and not allowView then return false end
-    local talents = Private.GetTalentData(specId)
-    if type(talents) ~= "table" or #talents < 20 then return false end
-    local valid = {}
-    for _, talent in ipairs(talents) do valid[talent[1]] = true end
+    local valid = ValidTalents(specId)
+    if not valid then return false end
     local changed = false
     for _, key in ipairs(talentLoadKeys) do
       local option = load[key]
@@ -853,13 +863,23 @@ do
     return changed
   end
 
-  local talentCleanupDone
+  local talentCleanupDone, talentRetry
   function Private.CleanForeignTalentsAfterLogin()
-    if talentCleanupDone or InCombatLockdown() then return end
+    if talentCleanupDone then return end
+    if InCombatLockdown() then
+      if not talentRetry then
+        talentRetry = CreateFrame("Frame")
+        talentRetry:SetScript("OnEvent", function(self)
+          self:UnregisterEvent("PLAYER_REGEN_ENABLED")
+          Private.CleanForeignTalentsAfterLogin()
+        end)
+      end
+      talentRetry:RegisterEvent("PLAYER_REGEN_ENABLED")
+      return
+    end
     local ownSpec = Private.ExecEnv.GetSpecialization()
     local ownSpecId = ownSpec and Private.ExecEnv.GetSpecializationInfo(ownSpec)
-    local talents = ownSpecId and Private.GetTalentData(ownSpecId)
-    if type(talents) ~= "table" or #talents < 20 then return end
+    if not (ownSpecId and ValidTalents(ownSpecId)) then return end
     talentCleanupDone = true
     for _, data in pairs(Private.db and Private.db.displays or {}) do
       if Private.CleanForeignTalents(data, false) then WeakAuras.Add(data) end
@@ -2302,6 +2322,26 @@ local function CastSpellNeverSecret(value)
   return ok and not issecretvalue(secrecy) and secrecy == Enum.SecrecyLevel.NeverSecret
 end
 
+function Private.CurveCombatStatus(kind, trigger, data, triggernum)
+  trigger = type(trigger) == "table" and trigger or {}
+  if kind == "power" and trigger.use_powertype and trigger.powertype == 99 then
+    return "|cffff2020Won't work in combat:|r Stagger checks."
+  end
+  local report = data and triggernum and Private.CurveCombatReport(data, triggernum)
+  if not report then return "|cff33ff99Works in combat.|r" end
+  local lines = {}
+  if #report.works > 0 then
+    lines[#lines + 1] = "|cff33ff99Works in combat:|r " .. table.concat(report.works, "; ") .. "."
+  elseif #report.fails == 0 then
+    lines[#lines + 1] = "|cff33ff99Works in combat.|r"
+  end
+  if #report.notes > 0 then lines[#lines + 1] = "|cffff9933" .. table.concat(report.notes, " ") .. "|r" end
+  if #report.fails > 0 then
+    lines[#lines + 1] = "|cffff2020Won't work in combat:|r " .. table.concat(report.fails, "; ") .. "."
+  end
+  return table.concat(lines, "\n")
+end
+
 function Private.CastCombatStatus(trigger)
   trigger = type(trigger) == "table" and trigger or {}
   local unit = trigger.unit or "player"
@@ -2354,8 +2394,6 @@ Private.event_prototypes = {
     args = {
       {name = "swingType", display = "Weapon", type = "select", required = true, default = 0,
         values = function() return {[0] = "Main Hand", [1] = "Off Hand", [2] = "Ranged"} end, test = "true"},
-      {name = "swingHelp", type = "description", display = "",
-        text = "Starts when Blizzard reports a player swing. Choose a weapon and style the timer in Display.", test = "true"},
       {name = "inRange", display = "Target In Range", type = "tristate", init = "inRange", store = true,
         conditionType = "bool", desc = "Whether your target is within reach of this weapon."},
       {name = "duration", hidden = true, init = "duration", test = "true", store = true},
@@ -3199,6 +3237,10 @@ Private.event_prototypes = {
     statesParameter = "unit",
     args = {
       {
+        name = "combatStatus", type = "description", display = "",
+        text = function(trigger, data, triggernum) return Private.CurveCombatStatus("health", trigger, data, triggernum) end,
+      },
+      {
         name = "unit", required = true, display = L["Unit"], type = "unit",
         init = "arg", values = "actual_unit_types_cast", desc = Private.actual_unit_types_cast_tooltip,
         test = "true", store = true,
@@ -3222,8 +3264,9 @@ Private.event_prototypes = {
         init = "total", store = true, test = "true", formatter = "BigNumber",
       },
       {
-        name = "percenthealth", display = L["Health (%)"], type = "number", hidden = true,
-        init = "UnitHealthPercent(unit, true, CurveConstants.ScaleTo100)", store = true, test = "true", formatter = "Number",
+        name = "percenthealth", display = L["Health (%)"], type = "number", secretCurve = true,
+        init = "UnitHealthPercent(unit, true, CurveConstants.ScaleTo100)", store = true, formatter = "Number",
+        conditionType = "number", multiEntry = {operator = "and", limit = 2},
       },
       {
         name = "deficit", display = L["Health Deficit"], type = "number", hidden = true,
@@ -3381,6 +3424,10 @@ Private.event_prototypes = {
     statesParameter = "unit",
     args = {
       {
+        name = "combatStatus", type = "description", display = "",
+        text = function(trigger, data, triggernum) return Private.CurveCombatStatus("power", trigger, data, triggernum) end,
+      },
+      {
         name = "unit",
         required = true,
         display = L["Unit"],
@@ -3469,6 +3516,7 @@ Private.event_prototypes = {
         name = "power",
         display = L["Power"],
         type = "number",
+        secretCurve = true,
         init = "power",
         store = true,
         conditionType = "number",
@@ -3510,6 +3558,7 @@ Private.event_prototypes = {
         name = "percentpower",
         display = L["Power (%)"],
         type = "number",
+        secretCurve = true,
         init = "powerType ~= 99 and UnitPowerPercent(unit, powerType, false, CurveConstants.ScaleTo100) or (not hasanysecretvalues(power, total) and total ~= 0 and (power / total) * 100 or nil)",
         store = true,
         conditionType = "number",
@@ -3523,6 +3572,7 @@ Private.event_prototypes = {
         name = "deficit",
         display = L["Power Deficit"],
         type = "number",
+        secretCurve = true,
         init = "powerType ~= 99 and UnitPowerMissing(unit, powerType) or (not hasanysecretvalues(power, total) and total ~= 0 and (total - power) or nil)",
         store = true,
         conditionType = "number",

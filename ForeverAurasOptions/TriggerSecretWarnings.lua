@@ -82,21 +82,21 @@ function Warnings.GetScope(data, triggernum)
   local event = trigger.type ~= "custom" and trigger.event
   local fields = SelectedFields(data, triggernum, trigger)
   if event == "Health" then
-    -- Health display remains supported; value checks do not.
-    return "Health value checks and calculations:"
+    fields.percenthealth = nil
   elseif event == "Power" or event == "Alternate Power" then
     local powerType = event == "Alternate Power" and 10 or trigger.use_powertype and trigger.powertype or nil
-    if powerType ~= 99 and powerType and Restricted(Query("GetPowerTypeSecrecy", powerType)) then return "Power value checks and calculations:" end
+    if event == "Alternate Power" and powerType and Restricted(Query("GetPowerTypeSecrecy", powerType)) then return "Power value checks and calculations:" end
     for unit in pairs(Units(trigger)) do
       local selected = powerType or UnitPowerType(unit)
       if not issecretvalue(selected) then
         if selected == 99 then
           if issecretvalue(UnitStagger(unit)) or Query("ShouldUnitHealthMaxBeSecret", unit) == true then return "Stagger value checks and calculations:" end
-        elseif Restricted(Query("GetPowerTypeSecrecy", selected)) or Query("ShouldUnitPowerBeSecret", unit, selected) == true or Query("ShouldUnitPowerMaxBeSecret", unit, selected) == true then
+        elseif event == "Alternate Power" and (Restricted(Query("GetPowerTypeSecrecy", selected)) or Query("ShouldUnitPowerBeSecret", unit, selected) == true or Query("ShouldUnitPowerMaxBeSecret", unit, selected) == true) then
           return "Power value checks and calculations:"
         end
       end
     end
+    if event == "Power" then fields.power, fields.percentpower, fields.deficit = nil, nil, nil end
   elseif event == "Character Stats" and next(fields) and Query("ShouldUnitStatsBeSecret") == true then
     return "Character stat checks:"
   elseif event == "Threat Situation" then

@@ -1,6 +1,24 @@
 # Changelog
 
 ## Versions
+## 0.56.6
+- Power and Health triggers now work in combat: filters fade the aura out instead of hiding it
+- Power and Health conditions can now change Alpha and Color in combat
+- Health trigger has Health (%) again
+- Power and Health triggers show what works and doesn't work in combat, based on your settings
+- Aura (Modern) extra textures now show with Remaining Time
+- Modern Aura Groups now accept Progress Bars, Progress Textures and Texts
+- Aura(s) Missing and Always now work on Smart Group, Party, Raid and nameplates when anchored to unit frames or nameplates
+- Missing icons on unit frames now draw above the frame
+- Aura (Modern) now has Include Pets (Players and Pets / Pets only)
+- Fix Pixel Glow stuttering and reversing
+- Faster login and /reload: Aura (Modern) displays now build right after the loading screen
+- New /fa loadtime command shows what slowed down your login
+- Fix spell cooldowns being checked constantly after combat
+- Fix a possible error with Stagger in combat
+- General fixes and performance improvements for logging in or reloading during combat
+- Minor style changes
+
 ## 0.50.3
 - Add Weapon Charges for Show Always Weapon Enchant Trigger
 - Importing auras from other game versions kept talent data loaded in the backend. This will now retro-fix talent data stored with Auras, and properly clear them when importing from other versions.

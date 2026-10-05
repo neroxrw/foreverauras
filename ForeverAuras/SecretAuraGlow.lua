@@ -3,7 +3,7 @@
 --
 -- Nothing inside a shown aura button can be moved by addon code, so these
 -- glows have no OnUpdate. Each is built at safe time from textures and
--- AnimationGroups (FlipBook, Path, Alpha) registered with
+-- AnimationGroups (FlipBook, Translation, Alpha) registered with
 -- AddAuraShownAnimation, and Blizzard plays them while the aura is shown.
 -- Editor samples and the Missing icon use the same code.
 if not WeakAuras.IsLibsOK() then return end
@@ -94,8 +94,8 @@ local function FlipBook(glow, texture, rows, columns, frames, duration, frameSiz
 end
 
 -- Moves texture once around the w x h rectangle of holder per duration,
--- starting at phase (0..1) of the perimeter. Straight segments between the
--- corners and 16 evenly spaced points keep the speed even without per-frame code.
+-- starting at phase (0..1) of the perimeter. One Translation per straight
+-- stretch between corners, each timed by its length, keeps the speed even.
 local function Perimeter(glow, texture, holder, w, h, duration, phase, reverse)
   local perimeter = 2 * (w + h)
   local function Point(distance)
@@ -111,23 +111,25 @@ local function Perimeter(glow, texture, holder, w, h, duration, phase, reverse)
   local x0, y0 = Point(start)
   texture:ClearAllPoints()
   texture:SetPoint("CENTER", holder, "BOTTOMLEFT", x0, y0)
-  local distances, seen = {perimeter}, {[perimeter] = true}
-  local function Add(distance)
-    if distance > 0 and distance < perimeter and not seen[distance] then distances[#distances + 1] = distance; seen[distance] = true end
-  end
-  for step = 1, 15 do Add(perimeter * step / 16) end
+  local stops, seen = {perimeter}, {[perimeter] = true}
   for _, corner in ipairs({0, w, w + h, 2 * w + h}) do
-    Add((reverse and (start - corner) or (corner - start)) % perimeter)
+    local distance = (reverse and (start - corner) or (corner - start)) % perimeter
+    if distance > 1e-6 and distance < perimeter - 1e-6 and not seen[distance] then
+      stops[#stops + 1] = distance
+      seen[distance] = true
+    end
   end
-  table.sort(distances)
+  table.sort(stops)
   local group = NewGroup(glow, texture)
-  local path = group:CreateAnimation("Path")
-  path:SetDuration(duration)
-  path:SetCurveType("NONE")
-  for order, distance in ipairs(distances) do
+  local previous, px, py = 0, x0, y0
+  for order, distance in ipairs(stops) do
     local x, y = Point(start + (reverse and -distance or distance))
-    local point = path:CreateControlPoint(nil, nil, order)
-    point:SetOffset(x - x0, y - y0)
+    if order == #stops then x, y = x0, y0 end
+    local move = group:CreateAnimation("Translation")
+    move:SetOrder(order)
+    move:SetDuration(duration * (distance - previous) / perimeter)
+    move:SetOffset(x - px, y - py)
+    previous, px, py = distance, x, y
   end
   return group
 end
@@ -240,8 +242,9 @@ function Display.StyleElementGlow(entry, button, parent, anchor, element, w, h)
         texture:SetTexCoord(unpack(SPARKLE_TC))
         texture:SetSize(size, size)
         Tint(texture, element)
-        local group = Perimeter(glow, texture, holder, gw, gh, duration, (sparkle - 1) / count, reverse)
+        Perimeter(glow, texture, holder, gw, gh, duration, (sparkle - 1) / count, reverse)
         -- The shine's twinkle: fade in, then out, alongside one lap of movement.
+        local group = NewGroup(glow, texture)
         for half = 1, 2 do
           local alpha = group:CreateAnimation("Alpha")
           alpha:SetOrder(1)

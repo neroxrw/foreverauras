@@ -259,16 +259,36 @@ function Display.Enabled(data)
   return Display.Eligible(data)
 end
 
-local function Capacity(trigger)
-  -- Missing and Always watch exactly one unit token. (Remaining Time on Icons
-  -- is validated to single units, which give 1 below; on other display
-  -- types it is a list.)
-  if Display.ShowOn and Display.ShowOn(trigger) ~= "showOnActive" then return 1 end
-  local unit = trigger.unit
+local function UnitCount(unit)
   if unit == "group" or unit == "raid" or unit == "nameplate" then return 40 end
   if unit == "party" or unit == "arena" then return 5 end
   if unit == "boss" then return 10 end
   return 1
+end
+
+local groupModes = {group = true, party = true, raid = true}
+
+-- "PlayersAndPets" or "PetsOnly" when a group trigger includes pets, else nil.
+function Display.IncludesPets(trigger)
+  if type(trigger) ~= "table" or not trigger.useIncludePets or not groupModes[trigger.unit] then return end
+  return trigger.includePets == "PetsOnly" and "PetsOnly" or "PlayersAndPets"
+end
+
+local function PetToken(token)
+  if token == "player" then return "pet" end
+  local kind, index = token:match("^(%a+)(%d+)$")
+  if kind == "party" or kind == "raid" then return kind .. "pet" .. index end
+end
+
+local function Capacity(trigger, data)
+  -- Missing and Always watch exactly one unit token, except on unit frames and
+  -- nameplates. (Remaining Time on Icons is validated to single units, which
+  -- give 1 below; on other display types it is a list.)
+  if Display.ShowOn and Display.ShowOn(trigger) ~= "showOnActive"
+    and not (data and Display.UnitPlacedMissing and Display.UnitPlacedMissing(data, trigger)) then return 1 end
+  local count = UnitCount(trigger.unit)
+  if Display.IncludesPets(trigger) == "PlayersAndPets" then count = count * 2 end
+  return count
 end
 
 local function MatchesUnitName(trigger, unit)
@@ -296,11 +316,11 @@ local function UnitTokens(trigger)
   elseif unit == "raid" then
     if IsInRaid() then for i = 1, GetNumGroupMembers() do result[i] = "raid" .. i end end
   elseif unit == "boss" or unit == "arena" or unit == "nameplate" then
-    for i = 1, Capacity(trigger) do result[i] = unit .. i end
+    for i = 1, UnitCount(unit) do result[i] = unit .. i end
   else
     result[1] = unit
   end
-  if (trigger.useUnitNames or trigger.useUnitRoles) and (trigger.unit == "group" or trigger.unit == "party" or trigger.unit == "raid") then
+  if (trigger.useUnitNames or trigger.useUnitRoles) and groupModes[trigger.unit] then
     local filtered = {}
     for _, token in ipairs(result) do
       local role = trigger.useUnitRoles and UnitGroupRolesAssigned(token)
@@ -309,7 +329,16 @@ local function UnitTokens(trigger)
         filtered[#filtered + 1] = token
       end
     end
-    return filtered
+    result = filtered
+  end
+  local pets = Display.IncludesPets(trigger)
+  if pets then
+    local withPets = {}
+    for _, token in ipairs(result) do
+      if pets == "PlayersAndPets" then withPets[#withPets + 1] = token end
+      withPets[#withPets + 1] = PetToken(token)
+    end
+    result = withPets
   end
   return result
 end
@@ -914,9 +943,9 @@ end
 
 local function CompactUnits(data)
   -- In a Modern Aura Group on the screen, units are always chained.
-  if Display.FlowGroup(data) and not Display.FlowFrameMode(data) then return Capacity(Display.GetTrigger(data)) > 1 end
+  if Display.FlowGroup(data) and not Display.FlowFrameMode(data) then return Capacity(Display.GetTrigger(data), data) > 1 end
   return data.anchorFrameType ~= "UNITFRAME" and not Display.UsesNameplates(data)
-    and Capacity(Display.GetTrigger(data)) > 1
+    and Capacity(Display.GetTrigger(data), data) > 1
 end
 
 function Display.IconsPerRow(data)
@@ -1220,6 +1249,16 @@ local function RefreshUnits(region, removedUnit, changedUnit)
           Display.AnchorToContent(container, anchor, region, anchor)
         end
       end
+      if instance.missingSlot then
+        local slotPoint
+        if frameMode then slotPoint = Display.FlowUnitStart(Display.FlowGroup(data))
+        elseif unitFrames then slotPoint = data.selfPoint or "CENTER"
+        elseif nameplates then slotPoint = data.anchorFrameType == "NAMEPLATE" and (data.selfPoint or "BOTTOM") or "BOTTOM" end
+        instance.missingSlot:ClearAllPoints()
+        if not (slotPoint and pcall(instance.missingSlot.SetPoint, instance.missingSlot, slotPoint, container, slotPoint)) then
+          instance.missingSlot:SetPoint("TOPLEFT", region, "TOPLEFT")
+        end
+      end
       instance.visible = shown
       container:SetShown(shown)
       container:SetEnabled(shown)
@@ -1304,26 +1343,80 @@ local function ApplyInstance(region, data, index, instance)
 end
 
 local EDITOR_INSTANCES_NOW, EDITOR_INSTANCES_PER_FRAME = 2, 4
+-- Only the units present now are built at once; the rest of the reserve
+-- follows in the background, a few milliseconds per frame.
+local BACKGROUND_BUDGET = 4
 local instanceQueues = {}
 local instanceDraining = false
+
+-- The units a display needs right away, at login.
+local function UnitsNow(trigger)
+  local unit = trigger and trigger.unit
+  if unit == "boss" or unit == "arena" then return UnitCount(unit) end
+  if unit == "nameplate" then
+    -- Plate tokens are not packed: build up to the highest one shown now.
+    local highest = 1
+    local ok, plates = pcall(C_NamePlate.GetNamePlates)
+    for _, plate in ipairs(ok and plates or {}) do
+      local token = plate.namePlateUnitToken or (plate.UnitFrame and plate.UnitFrame.unit)
+      local index = type(token) == "string" and not issecretvalue(token) and tonumber(token:match("^nameplate(%d+)$"))
+      if index and index > highest then highest = index end
+    end
+    return highest
+  end
+  return math.max(1, #UnitTokens(trigger))
+end
+
+local function FinishApply(region, data)
+  local native = region.blizzardAuraDisplay
+  -- Where the next display in a Modern Aura Group starts, then the whole chain.
+  local single = native.instances[1] and native.instances[1].single
+  Display.EnsureFlowShadows(region, data)
+  Display.SetFlowEnd(region, data, single and single.missing and single.missing.active and single.missing.presenceActive and single.missing.presence)
+  Display.RechainFlow(Display.FlowGroup(data))
+  RefreshUnits(region)
+  pending[region] = nil
+  SyncSounds(region)
+  Warn(data)
+end
+
 local function DrainInstanceQueues()
   instanceDraining = false
   local more = false
+  local deadline = debugprofilestop() + BACKGROUND_BUDGET
   for region in pairs(instanceQueues) do
     local native = region.blizzardAuraDisplay
     local queue = native and native.instanceQueue
     if not queue or not native.active or native.data ~= queue.data then
       instanceQueues[region] = nil
     elseif Restricted() then
-      native.instanceQueue, instanceQueues[region] = nil, nil
-      pending[region] = queue.data
-    else
-      local last = math.min(queue.nextIndex + EDITOR_INSTANCES_PER_FRAME - 1, #native.instances)
-      for index = queue.nextIndex, last do ApplyInstance(region, queue.data, index, native.instances[index]) end
-      queue.nextIndex = last + 1
-      if queue.nextIndex > #native.instances then
+      -- Kept; the end of restrictions restarts the drain.
+      if not queue.background then
         native.instanceQueue, instanceQueues[region] = nil, nil
-        RefreshUnits(region)
+        pending[region] = queue.data
+      end
+    elseif debugprofilestop() > deadline then
+      more = true
+    else
+      local last = queue.background and queue.total or math.min(queue.nextIndex + EDITOR_INSTANCES_PER_FRAME - 1, queue.total)
+      local index = queue.nextIndex
+      while index <= last do
+        local ok, instance = true, native.instances[index]
+        if not instance then ok, instance = pcall(Create, region, queue.data) end
+        if ok then
+          native.instances[index] = instance
+          xpcall(ApplyInstance, geterrorhandler(), region, queue.data, index, instance)
+        else
+          geterrorhandler()(instance)
+          index = queue.total
+        end
+        index = index + 1
+        if queue.background and debugprofilestop() > deadline then break end
+      end
+      queue.nextIndex = index
+      if index > queue.total then
+        native.instanceQueue, instanceQueues[region] = nil, nil
+        if queue.background then FinishApply(region, queue.data) else RefreshUnits(region) end
       else
         more = true
       end
@@ -1338,14 +1431,26 @@ end
 function Display.FlushInstanceQueue(region)
   local native = region.blizzardAuraDisplay
   local queue = native and native.instanceQueue
-  if not queue then return end
+  if not queue or queue.background then return end
   native.instanceQueue, instanceQueues[region] = nil, nil
   if Restricted() then pending[region] = queue.data; return end
   if native.data ~= queue.data then return end
-  for index = queue.nextIndex, #native.instances do ApplyInstance(region, queue.data, index, native.instances[index]) end
+  for index = queue.nextIndex, queue.total do
+    native.instances[index] = native.instances[index] or Create(region, queue.data)
+    ApplyInstance(region, queue.data, index, native.instances[index])
+  end
 end
 
+local ApplyDisplay
 function Display.Apply(region, data)
+  local profile = Private.loadProfile
+  if not profile or profile.done then return ApplyDisplay(region, data) end
+  local started = debugprofilestop()
+  ApplyDisplay(region, data)
+  profile.modern[data.id] = (profile.modern[data.id] or 0) + debugprofilestop() - started
+end
+
+function ApplyDisplay(region, data)
   DynamicGroupWarning(data)
   if not Display.Enabled(data) then Display.Release(region); Warn(data); SoundWarning(data); return end
   Suppress(region)
@@ -1363,6 +1468,11 @@ function Display.Apply(region, data)
     Display.HidePreview(region)
     Display.RestorePreviewRegion(region)
     Display.RestoreGroupPreview(Display.FlowGroup(data))
+  end
+  -- Built right after login, a few per frame, instead of during the loading screen.
+  if not IsPreview() and not WeakAuras.IsLoginFinished() then
+    pending[region] = data
+    return
   end
   if Restricted() then
     pending[region] = data
@@ -1417,30 +1527,29 @@ function Display.Apply(region, data)
     native.instances = {}
   end
   -- Reserve containers before combat; roster and plate events only rebind existing ones.
-  for index = 1, Capacity(Display.GetTrigger(data)) do
+  local trigger = Display.GetTrigger(data)
+  local total = math.max(Capacity(trigger, data), #native.instances)
+  local now, background = total, false
+  if IsPreview() then
+    now = math.min(total, EDITOR_INSTANCES_NOW)
+  else
+    now = math.min(total, UnitsNow(trigger))
+    background = true
+  end
+  for index = 1, now do
     if not native.instances[index] then native.instances[index] = Create(region, data) end
   end
   Display.ClearSingleWarning(data)
   native.instanceQueue, instanceQueues[region] = nil, nil
-  local now = #native.instances
-  if IsPreview() and now > EDITOR_INSTANCES_NOW then
-    now = EDITOR_INSTANCES_NOW
-    native.instanceQueue = {data = data, nextIndex = now + 1}
+  if now < total then
+    native.instanceQueue = {data = data, nextIndex = now + 1, total = total, background = background}
     instanceQueues[region] = true
   end
   for index = 1, now do ApplyInstance(region, data, index, native.instances[index]) end
   native.active = true
   native.appliedTrigger = Display.GetSavedTrigger(data)
   activeRegions[region] = true
-  -- Where the next display in a Modern Aura Group starts, then the whole chain.
-  local single = native.instances[1] and native.instances[1].single
-  Display.EnsureFlowShadows(region, data)
-  Display.SetFlowEnd(region, data, single and single.missing and single.missing.active and single.missing.presenceActive and single.missing.presence)
-  Display.RechainFlow(Display.FlowGroup(data))
-  RefreshUnits(region)
-  pending[region] = nil
-  SyncSounds(region)
-  Warn(data)
+  FinishApply(region, data)
   if native.instanceQueue and not instanceDraining then
     instanceDraining = true
     C_Timer.After(0, DrainInstanceQueues)
@@ -1474,7 +1583,8 @@ function Display.Activate(region, data)
   if not Display.Enabled(data) then Display.Release(region); return end
   Install(region)
   local native = region.blizzardAuraDisplay
-  if native and native.data == data and not pending[region] and Display.Validate(data) == nil then
+  if native and native.data == data and not pending[region] and Display.Validate(data) == nil
+    and #native.instances >= Capacity(Display.GetTrigger(data), data) then
     Display.FlushInstanceQueue(region)
     -- Reloading an existing display must restore its learning subscription too.
     local trigger = Display.GetTrigger(data)
@@ -1536,7 +1646,7 @@ local function DrainEditorQueue()
     -- Skip displays deleted, renamed or replaced since they were queued.
     local entry = Private.regions[data.id]
     if entry and entry.region == region and (WeakAuras.GetData(data.id) or data) == data and Display.Enabled(data) then
-      Display.Apply(region, data)
+      xpcall(Display.Apply, geterrorhandler(), region, data)
       done = done + 1
     end
   end
@@ -1588,11 +1698,11 @@ local unitEvents = {
   ADDON_RESTRICTION_STATE_CHANGED = {},
 }
 
-local function NeedsUnitRefresh(mode, event, unit)
+local function NeedsUnitRefresh(mode, event, unit, trigger)
   if event == "UNIT_TARGET" then
     return (mode == "targettarget" and unit == "target") or (mode == "focustarget" and unit == "focus")
   elseif event == "UNIT_PET" then
-    return (mode == "pet" and unit == "player") or mode == "member"
+    return (mode == "pet" and unit == "player") or mode == "member" or Display.IncludesPets(trigger) ~= nil
   end
   local modes = unitEvents[event]
   return modes == nil or modes[mode] == true
@@ -1609,27 +1719,46 @@ for _, event in ipairs({"PLAYER_ENTERING_WORLD", "GROUP_ROSTER_UPDATE", "PLAYER_
   "NAME_PLATE_UNIT_ADDED", "NAME_PLATE_UNIT_REMOVED", "UNIT_NAME_UPDATE", "PLAYER_ROLES_ASSIGNED"}) do events:RegisterEvent(event) end
 -- Displays waiting for restrictions to end are rebuilt a few per frame, so
 -- the end of combat does not rebuild every display in one frame.
-local APPLIES_PER_FRAME = 3
+local PENDING_BUDGET = 8
 local draining = false
 local function DrainPending()
-  if Restricted() then draining = false; return end
-  local done = 0
+  -- Before login completes, the login callback starts the drain.
+  if Restricted() or not WeakAuras.IsLoginFinished() then draining = false; return end
+  local started = debugprofilestop()
   for region, data in pairs(pending) do
     pending[region] = nil
     if WeakAuras.GetData(data.id) == data and Private.regions[data.id] and Private.regions[data.id].region == region then
-      Display.Apply(region, data)
-      done = done + 1
-      if done >= APPLIES_PER_FRAME then break end
+      xpcall(Display.Apply, geterrorhandler(), region, data)
+      if debugprofilestop() - started > PENDING_BUDGET then break end
     end
+  end
+  local profile = Private.loadProfile
+  if profile and profile.done and not profile.deferredDone then
+    profile.deferred = (profile.deferred or 0) + debugprofilestop() - started
+    profile.deferredFrames = (profile.deferredFrames or 0) + 1
+    if not next(pending) then profile.deferredDone = true end
   end
   if next(pending) then C_Timer.After(0, DrainPending) else draining = false end
 end
 
+Private.callbacks:RegisterCallback("WEAKAURAS_LOGIN_COMPLETE", function()
+  if next(pending) and not draining then
+    draining = true
+    C_Timer.After(0, DrainPending)
+  end
+end)
+
 events:SetScript("OnEvent", function(_, event, unit)
   if event == "UI_SCALE_CHANGED" or event == "DISPLAY_SIZE_CHANGED" then
-    for region in pairs(activeRegions) do Display.Apply(region, region.blizzardAuraDisplay.data) end
+    for region in pairs(activeRegions) do pending[region] = region.blizzardAuraDisplay.data end
+    if not draining then
+      draining = true
+      DrainPending()
+    end
     return
   end
+  -- Only the target's and focus's targets are watched.
+  if event == "UNIT_TARGET" and unit ~= "target" and unit ~= "focus" then return end
   -- Modern Aura Groups re-anchor once after all their displays rebound units.
   Display.BeginFlowBatch()
   for region in pairs(activeRegions) do
@@ -1645,7 +1774,7 @@ events:SetScript("OnEvent", function(_, event, unit)
       end
     elseif pending[region] and not Restricted() then
       -- Rebuilt below; refreshing it first would be wasted.
-    elseif NeedsUnitRefresh(mode, event, unit) then
+    elseif NeedsUnitRefresh(mode, event, unit, trigger) then
       RefreshUnits(region)
     end
     if trigger and (event == "GROUP_ROSTER_UPDATE" or event == "PLAYER_ROLES_ASSIGNED"
@@ -1662,5 +1791,9 @@ events:SetScript("OnEvent", function(_, event, unit)
   if next(pending) and not draining then
     draining = true
     DrainPending()
+  end
+  if next(instanceQueues) and not instanceDraining then
+    instanceDraining = true
+    C_Timer.After(0, DrainInstanceQueues)
   end
 end)
