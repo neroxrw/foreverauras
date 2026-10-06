@@ -1,6 +1,10 @@
 # Changelog
 
 ## Versions
+## 0.60.2
+- Character Stats trigger is now properly functional throughout
+- Fixed Pixel Glow growing in the incorrect direction
+
 ## 0.59.1
 - Fixed spells sharing cooldown updating slow
 - Aura (Modern) now has Ignore Dead and Ignore Disconnected

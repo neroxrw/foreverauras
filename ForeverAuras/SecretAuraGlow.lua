@@ -100,19 +100,19 @@ local function Perimeter(glow, texture, holder, w, h, duration, phase, reverse)
   local perimeter = 2 * (w + h)
   local function Point(distance)
     distance = distance % perimeter
-    if distance < w then return distance, 0 end
-    distance = distance - w
-    if distance < h then return w, distance end
+    if distance < h then return 0, distance end
     distance = distance - h
-    if distance < w then return w - distance, h end
-    return 0, h - (distance - w)
+    if distance < w then return distance, h end
+    distance = distance - w
+    if distance < h then return w, h - distance end
+    return w - (distance - h), 0
   end
   local start = phase * perimeter
   local x0, y0 = Point(start)
   texture:ClearAllPoints()
   texture:SetPoint("CENTER", holder, "BOTTOMLEFT", x0, y0)
   local stops, seen = {perimeter}, {[perimeter] = true}
-  for _, corner in ipairs({0, w, w + h, 2 * w + h}) do
+  for _, corner in ipairs({0, h, w + h, w + 2 * h}) do
     local distance = (reverse and (start - corner) or (corner - start)) % perimeter
     if distance > 1e-6 and distance < perimeter - 1e-6 and not seen[distance] then
       stops[#stops + 1] = distance
