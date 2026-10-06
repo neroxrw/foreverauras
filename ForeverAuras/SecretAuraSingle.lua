@@ -2017,7 +2017,9 @@ function Display.RefreshSingle(instance, unit, shown)
   -- A disabled container keeps its last width; the clip must not show then.
   missing.clip:SetShown(shown)
   if missing.slot and shown then
-    local strata, level = instance.container:GetFrameStrata(), instance.container:GetFrameLevel()
+    local strata, level = instance.drawStrata, instance.drawLevel
+    if not strata then strata = instance.container:GetFrameStrata() end
+    if not level then level = instance.container:GetFrameLevel() end
     if not issecretvalue(strata) and not issecretvalue(level) then RaiseMissing(missing, strata, level + 1) end
   end
   -- No unit (no target, focus or pet): nothing is missing. The display itself

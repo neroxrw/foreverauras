@@ -27,6 +27,33 @@ local ADDON_NAME = "ForeverAurasOptions";
 local displayButtons = {};
 OptionsPrivate.displayButtons = displayButtons;
 
+local syncRun = 0
+function OptionsPrivate.SyncAllVisibility()
+  syncRun = syncRun + 1
+  local run, ids, index = syncRun, {}, 1
+  for id in pairs(displayButtons) do
+    ids[#ids + 1] = id
+  end
+  local function Step()
+    if run ~= syncRun or not WeakAuras.IsOptionsOpen() then return end
+    local start = debugprofilestop()
+    local suspended = OptionsPrivate.Private.PauseAllDynamicGroups()
+    while index <= #ids do
+      local button = displayButtons[ids[index]]
+      index = index + 1
+      if button then
+        button:SyncVisibility()
+      end
+      if debugprofilestop() - start > 8 then break end
+    end
+    OptionsPrivate.Private.ResumeAllDynamicGroups(suspended)
+    if index <= #ids then
+      C_Timer.After(0, Step)
+    end
+  end
+  Step()
+end
+
 local spellCache = WeakAuras.spellCache;
 local savedVars = {};
 OptionsPrivate.savedVars = savedVars;
@@ -877,11 +904,7 @@ function WeakAuras.ShowOptions(msg)
 
   if not(firstLoad) then
     -- Show what was last shown
-    local suspended = OptionsPrivate.Private.PauseAllDynamicGroups()
-    for id, button in pairs(displayButtons) do
-      button:SyncVisibility()
-    end
-    OptionsPrivate.Private.ResumeAllDynamicGroups(suspended)
+    OptionsPrivate.SyncAllVisibility()
   end
 
   if (frame.pickedDisplay) then

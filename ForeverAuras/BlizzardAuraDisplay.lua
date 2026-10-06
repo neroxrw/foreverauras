@@ -1229,10 +1229,13 @@ local function RefreshUnits(region, removedUnit, changedUnit)
       -- every button of the container.
       local strata = (data.frameStrata == nil or data.frameStrata == 1) and parent:GetFrameStrata() or region:GetFrameStrata()
       if Changed(container:GetFrameStrata(), strata) then container:SetFrameStrata(strata) end
+      -- Kept for the Missing look: containers in a Modern Aura Group report secret levels.
+      instance.drawStrata, instance.drawLevel = strata, nil
       if unitFrames then
         -- Keep native aura content above the unit glow and its two child layers.
         local level = anchorFrame and settings.unitGlow and anchorFrame:GetFrameLevel() + unitGlowFrameLevel + 3 or parent:GetFrameLevel() + 1
         if Changed(container:GetFrameLevel(), level) then container:SetFrameLevel(level) end
+        instance.drawLevel = level
         if not frameMode then
           container:ClearAllPoints()
           container:SetPoint(data.selfPoint or "CENTER", anchorFrame or region, data.anchorPoint or "CENTER", data.xOffset or 0, data.yOffset or 0)
