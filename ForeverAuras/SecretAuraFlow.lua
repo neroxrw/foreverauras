@@ -985,6 +985,7 @@ function Display.ArrangeFlowPreview(group)
     if not g.shadow then previous[""] = region end
   end
   local function PlaceSamples(region)
+    if not framed then Display.RestorePreviewRegion(region) end
     local moved = false
     for _, sample in ipairs(region.secretAuraSamples or {}) do
       local button = sample.button
@@ -1000,7 +1001,8 @@ function Display.ArrangeFlowPreview(group)
           start, far = alignedStart, alignedFar
         end
         button:ClearAllPoints()
-        if previous[key] then
+        local chained = previous[key] ~= nil
+        if chained then
           button:SetPoint(start, previous[key], far, g.sign[1] * spacing, g.sign[2] * spacing)
         elseif frame then
           button:SetPoint(start, frame, point, frameX + ox, frameY + oy)
@@ -1009,8 +1011,9 @@ function Display.ArrangeFlowPreview(group)
         else
           button:SetPoint(g.start, region, g.start)
         end
-        -- On a frame, the display's own box follows its first icon.
-        if frame and not moved then
+        -- The display's own box follows its first icon, unless that icon is
+        -- placed on the box itself.
+        if (frame or chained) and not moved then
           MovePreviewRegion(region, button)
           moved = true
         end

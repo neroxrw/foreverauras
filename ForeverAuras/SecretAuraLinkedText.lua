@@ -52,7 +52,7 @@ local function Create(sub, kind, config, index)
         local options
         if format ~= nil and format ~= -1 then
           options = {textFormatter = Private.GetDurationTextFormatter(config[prefix .. "time_legacy_floor"] and 0 or 99,
-            config[prefix .. "time_dynamic_threshold"] or 3, config[prefix .. "time_precision"] or 1, format == -2)}
+            config[prefix .. "time_dynamic_threshold"] or 3, config[prefix .. "time_precision"] or 1, format == -2, format)}
         end
         button:SetDurationText(native.text, options)
       else

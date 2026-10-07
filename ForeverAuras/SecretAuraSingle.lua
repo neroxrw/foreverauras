@@ -31,6 +31,7 @@ Display.remOperators = {["<"] = "<", ["<="] = "<=", [">"] = ">", [">="] = ">="}
 -- Keys of the extra native parts, unique within their containers.
 local MISSING_GROUP = "FAMissing"
 local SLOT_ICON = "FARemainIcon"
+local SLOT_SWIPE = "FARemainSwipe"
 local SLOT_TEXTURE = "FARemainTexture"
 -- A Step curve point rules from its own value upwards; <= and > move the edge
 -- just past the entered number.
@@ -541,7 +542,7 @@ local function ApplyIconSource(region, missing, data, source)
     cooldown:SetCountdownFormatter(nil)
     if format ~= nil and format ~= -1 and Private.GetDurationTextFormatter then
       pcall(cooldown.SetCountdownFormatter, cooldown, Private.GetDurationTextFormatter(countdown[prefix .. "legacy_floor"] and 0 or 99,
-        countdown[prefix .. "dynamic_threshold"] or 3, countdown[prefix .. "precision"] or 1, format == -2))
+        countdown[prefix .. "dynamic_threshold"] or 3, countdown[prefix .. "precision"] or 1, format == -2, format))
     end
   else
     cooldown:SetHideCountdownNumbers(data.cooldownTextDisabled ~= false)
@@ -831,7 +832,7 @@ end
 -- by the same sort as the list, so both agree on which aura is shown. Its
 -- widgets anchor inside the slot button, which is sized and placed on the
 -- region at configuration time.
-local function EnsureSlot(single, instance, region, key, trigger, data)
+local function EnsureSlot(single, instance, region, key, trigger, data, init)
   local container = instance.container
   local filter, candidates = Display.FilterString(trigger), Display.CandidateFilters(data)
   single.slots = single.slots or {}
@@ -845,6 +846,7 @@ local function EnsureSlot(single, instance, region, key, trigger, data)
         slot.button = button
         button:EnableMouse(false)
         button:SetAllPoints(Display.ContentAnchor(region))
+        if init then init(button, slot) end
       end,
     })
     if not ok or not slot.button then
@@ -870,6 +872,57 @@ local function FirstElement(data, matches)
   for index, element in ipairs(data.subRegions or {}) do
     if not Display.IsDetachedElement(data, element) and matches(element) then return element, index end
   end
+end
+
+-- The swipe inside the Remaining Time window: a clip sized by a hidden
+-- countdown text that is the icon's size inside the window and empty outside.
+local swipeCurve
+local function StyleRemainingSwipe(single, instance, region, data, trigger, level)
+  local swipe = EnsureSlot(single, instance, region, SLOT_SWIPE, trigger, data, function(button, slot)
+    slot.clip = CreateFrame("Frame", nil, button, "DisableUntrustedLayoutScriptsTemplate")
+    slot.clip:SetClipsChildren(true)
+    slot.cooldown = CreateFrame("Cooldown", nil, slot.clip, "CooldownFrameTemplate")
+    slot.cooldown:SetDrawBling(false)
+    slot.gate = button:CreateFontString(nil, "BACKGROUND")
+  end)
+  if not (swipe and swipe.clip) then return end
+  if not (C_StringUtil and C_StringUtil.CreateNumericRuleFormatter and Enum.DurationTextBindingProperty) then swipe.used = false; return end
+  local lower, upper = Display.RemainingRange(trigger)
+  local width, height = Display.Dimensions(data)
+  width, height = math.max(1, math.floor(width + 0.5)), math.max(1, math.floor(height + 0.5))
+  local formatter = lower and Display.GateFormatter(lower, upper, ("|TInterface\\Buttons\\WHITE8X8:%d:%d|t"):format(height, width))
+  if not formatter then swipe.used = false; return end
+  if not swipeCurve then
+    swipeCurve = C_CurveUtil.CreateColorCurve()
+    swipeCurve:SetType(Enum.LuaCurveType.Step)
+    swipeCurve:AddPoint(0, CreateColor(0, 0, 0, 0))
+  end
+  local gate, clip, cooldown, button = swipe.gate, swipe.clip, swipe.cooldown, swipe.button
+  gate:SetFont(STANDARD_TEXT_FONT, 12, "")
+  gate:SetWordWrap(false)
+  gate:SetJustifyH("LEFT")
+  gate:ClearAllPoints()
+  gate:SetPoint("TOPLEFT", button, "TOPLEFT")
+  local property = Enum.DurationTextBindingProperty.RemainingDuration
+  button:ClearDurationText()
+  if not pcall(button.SetDurationText, button, gate, {
+    textFormat = {formatString = "{}", components = {{property = property, formatter = formatter}}},
+    textColor = {curve = swipeCurve, property = property},
+  }) then swipe.used = false; return end
+  gate:Show()
+  clip:ClearAllPoints()
+  clip:SetPoint("TOPLEFT", gate, "TOPLEFT")
+  clip:SetPoint("BOTTOMRIGHT", gate, "BOTTOMRIGHT")
+  cooldown:ClearAllPoints()
+  cooldown:SetAllPoints(button)
+  cooldown:SetDrawSwipe(data.cooldownSwipe ~= false)
+  cooldown:SetDrawEdge(data.cooldownEdge == true)
+  cooldown:SetReverse(data.inverse == true)
+  cooldown:SetHideCountdownNumbers(true)
+  cooldown:SetSwipeColor(unpack(data.blizzardAuraDisplay and data.blizzardAuraDisplay.swipeColor or {0, 0, 0, 0.8}))
+  pcall(button.SetFrameLevel, button, level + 1)
+  button:SetDurationCooldown(cooldown)
+  instance.container:SetAuraSlotEnabled(SLOT_SWIPE, true)
 end
 
 -- Remaining Time: the list keeps drawing the aura (its countdown and glow are
@@ -901,6 +954,7 @@ local function EnsureRemaining(single, instance, region, data, trigger, op, x)
   icon.text:Show()
   instance.container:SetAuraSlotEnabled(SLOT_ICON, true)
   local level = icon.button:GetFrameLevel()
+  if data.cooldown ~= false then StyleRemainingSwipe(single, instance, region, data, trigger, level) end
   for index, element in ipairs(data.subRegions or {}) do
     if element.type == "subtexture" and element.textureVisible ~= false and element.textureTexture
       and not Display.IsDetachedElement(data, element) then
@@ -1892,7 +1946,7 @@ function Display.StyleDurationGate(native, data)
     cooldown:SetCountdownFormatter(nil)
     if format ~= nil and format ~= -1 and Private.GetDurationTextFormatter then
       pcall(cooldown.SetCountdownFormatter, cooldown, Private.GetDurationTextFormatter(countdown[prefix .. "legacy_floor"] and 0 or 99,
-        countdown[prefix .. "dynamic_threshold"] or 3, countdown[prefix .. "precision"] or 1, format == -2))
+        countdown[prefix .. "dynamic_threshold"] or 3, countdown[prefix .. "precision"] or 1, format == -2, format))
     end
     button:SetDurationCooldown(cooldown)
   end
