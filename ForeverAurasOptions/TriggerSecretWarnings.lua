@@ -59,7 +59,10 @@ local function SelectedFields(data, triggernum, trigger)
       fields[arg.name] = true
     end
   end
-  for _, condition in ipairs(data.conditions or {}) do AddConditionFields(condition.check, triggernum, fields) end
+  for _, condition in ipairs(data.conditions or {}) do
+    -- Remaining Time conditions that only change Alpha or Color work in combat.
+    if not OptionsPrivate.Private.TimerConditionHandled(data, condition) then AddConditionFields(condition.check, triggernum, fields) end
+  end
   return fields
 end
 

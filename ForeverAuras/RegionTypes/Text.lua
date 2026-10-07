@@ -1,4 +1,4 @@
--- Modified for ForeverAuras, 2026-09-18.
+-- Modified for ForeverAuras, 2026-10-07.
 if not WeakAuras.IsLibsOK() then return end
 ---@type string
 local AddonName = ...
@@ -287,7 +287,9 @@ local function modify(parent, region, data)
 
   local formatters, everyFrameFormatters
   do
+    local tint = Private.DurationTextStyle(data)
     local getter = function(key, default)
+      if key:find("_time_tint$") then return tint end
       local fullKey = "displayText_format_" .. key
       if (data[fullKey] == nil) then
         data[fullKey] = default

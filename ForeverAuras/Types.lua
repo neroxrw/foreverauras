@@ -1,4 +1,4 @@
--- Modified for ForeverAuras, 2026-09-30.
+-- Modified for ForeverAuras, 2026-10-07.
 if not WeakAuras.IsLibsOK() then return end
 
 ---@type string
@@ -439,6 +439,9 @@ Private.format_types = {
       local precision = get(symbol .. "_time_precision", 1)
       local modRate = get(symbol .. "_time_mod_rate", true)
       local legacyRoundingMode = get(symbol .. "_time_legacy_floor", false)
+      local tint = get(symbol .. "_time_tint")
+      -- Old and Modern Blizzard formats for timers Lua cannot read.
+      local timeStyles = {[0] = true, [99] = true, [1] = -3, [2] = -4}
 
       if format == 0 and not legacyRoundingMode then
         format = 99
@@ -572,8 +575,8 @@ Private.format_types = {
           if not state or (state.progressType ~= "timed" and state.progressType ~= "durationObject") then
             return value
           end
-          if Private.UsesDurationText(state) and (format == 0 or format == 99) then
-            return Private.FormatDurationText(Private.GetTextDuration(state), sym == "t", format, threshold, precision, modRate)
+          if Private.UsesDurationText(state) and timeStyles[format] then
+            return Private.FormatDurationText(Private.GetTextDuration(state), sym == "t", format == 0 and 0 or 99, threshold, precision, modRate, tint, timeStyles[format])
           end
           return formatter(value, state, trigger)
         end, next(timePointProperty) ~= nil

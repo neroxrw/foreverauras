@@ -1,6 +1,20 @@
 # Changelog
 
 ## Versions
+## 0.70.1
+- Normal auras (icons and texts) in Modern Aura Groups now line up anywhere in the row, in and out of combat, including with Centered growth.
+- Clickable auras in Modern Aura Groups keep working.
+- Limit now cuts off the whole row after that many icons, normal auras included, with every growth, in combat and in the options preview.
+- Out-of-combat auras leaving as combat starts no longer push a centred row off-centre.
+- Remaining Time conditions on cooldowns and casts can change Alpha and Color in combat.
+- Timer texts can be coloured in several steps, and hidden or shown by Remaining Time, in combat too.
+- Old and Modern Blizzard time formats now work on restricted timers.
+- "Secret detected" is no longer shown for conditions that work in combat.
+- Fixed duplicate text and "Aura is Off Screen" in Modern Aura Group previews.
+- Fixed texts copied into a row being cut short with "...".
+- Fixed several Lua errors and blocked actions in combat in Modern Aura Groups with Remaining Time or clickable auras.
+- Less work when texts in a Modern Aura Group change size.
+
 ## 0.64.5
 - Small fix for Previews in the Modern (Aura) Group
 

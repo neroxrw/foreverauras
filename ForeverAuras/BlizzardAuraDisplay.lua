@@ -442,6 +442,18 @@ local function Restricted()
   return InCombatLockdown() or (C_Secrets and C_Secrets.ShouldAurasBeSecret())
 end
 
+function Display.Locked(frame)
+  if frame == nil or not frame.GetParent then return false end
+  if frame.IsForbidden and frame:IsForbidden() then return true end
+  return not pcall(frame.GetParent, frame)
+end
+-- Locked, or protected in combat (a secure button, or anything it hangs from).
+function Display.Busy(frame)
+  if Display.Locked(frame) then return true end
+  return frame ~= nil and InCombatLockdown() and frame.IsProtected ~= nil and frame:IsProtected()
+end
+local Locked = Display.Busy
+
 local function Warn(data, message)
   Private.AuraWarnings.UpdateWarning(data.uid, "blizzard_aura_display", message and "warning" or nil, message)
 end
@@ -694,7 +706,7 @@ function Display.HideUnitGlows(region)
   if not native then return end
   native.unitGlowsHidden = true
   for _, instance in ipairs(native.instances) do
-    if instance.unitGlow then
+    if instance.unitGlow and not Locked(instance.unitGlow.container) then
       instance.unitGlow.container:SetEnabled(false)
       instance.unitGlow.container:Hide()
     end
@@ -712,8 +724,12 @@ function Display.Release(region)
     native.active = false
     native.instanceQueue = nil
     for _, instance in ipairs(native.instances) do
-      instance.container:SetEnabled(false)
-      instance.container:Hide()
+      if Locked(instance.container) then
+        pending[region] = native.data
+      else
+        instance.container:SetEnabled(false)
+        instance.container:Hide()
+      end
       Display.RefreshSingle(instance, nil, false)
     end
     -- A released display draws nothing, so no Missing or Remaining Time part can be failing.
@@ -1151,14 +1167,16 @@ function Display.UpdateDetachedFrameLevels(region)
   for _, instance in ipairs(native.instances) do
     -- A Modern Aura Group's containers may report a secret level; they sit
     -- just above the region, which the reserve below covers.
-    local containerLevel = instance.container:GetFrameLevel()
-    if not issecretvalue(containerLevel) then level = math.max(level, containerLevel) end
+    if not Locked(instance.container) then
+      local containerLevel = instance.container:GetFrameLevel()
+      if not issecretvalue(containerLevel) then level = math.max(level, containerLevel) end
+    end
   end
   -- Reserve the native button, three levels per element, and glow/cooldown children.
   -- Only container frames are inspected; native aura buttons may be inaccessible.
   level = level + #(native.data.subRegions or {}) * 3 + 8
   for index, element in ipairs(region.subRegions or {}) do
-    if element.secretAuraDetached then element:SetFrameLevel(level + index) end
+    if element.secretAuraDetached and not Locked(element) then element:SetFrameLevel(level + index) end
   end
 end
 
@@ -1179,7 +1197,7 @@ end
 local function ApplyUnitStatus(instance, trigger)
   local hidden = UnitIgnored(trigger, instance.visible and instance.boundUnit)
   instance.statusHidden = hidden or nil
-  instance.container:SetAlpha(hidden and 0 or instance.baseAlpha or 1)
+  if not Locked(instance.container) then instance.container:SetAlpha(hidden and 0 or instance.baseAlpha or 1) end
 end
 
 local function RefreshUnits(region, removedUnit, changedUnit)
@@ -1200,7 +1218,9 @@ local function RefreshUnits(region, removedUnit, changedUnit)
   for index, instance in ipairs(native.instances) do
     local container = instance.container
     local unit = units[index]
-    if not changedUnit or unit == changedUnit then
+    if Locked(container) then
+      pending[region] = data
+    elseif not changedUnit or unit == changedUnit then
       -- In a Modern Aura Group the group's mode decides (screen, unit frames or
       -- nameplates); the display's own anchor is not used for its auras.
       local unitFrames, nameplates
@@ -1521,8 +1541,12 @@ function ApplyDisplay(region, data)
     region:HookScript("OnHide", function()
       Display.HideUnitGlows(region)
       for _, instance in ipairs(native.instances) do
-        instance.container:SetEnabled(false)
-        instance.container:Hide()
+        if Locked(instance.container) then
+          pending[region] = native.data
+        else
+          instance.container:SetEnabled(false)
+          instance.container:Hide()
+        end
         Display.RefreshSingle(instance, nil, false)
       end
       SyncSounds(region)

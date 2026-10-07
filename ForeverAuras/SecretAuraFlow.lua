@@ -21,6 +21,19 @@
 if not WeakAuras.IsLibsOK() then return end
 local _, Private = ...
 local Display = Private.BlizzardAuraDisplay
+local function Locked(frame) return Display.Locked ~= nil and Display.Locked(frame) end
+local function Busy(frame)
+  if Locked(frame) then return true end
+  return InCombatLockdown() and frame.IsProtected ~= nil and frame:IsProtected()
+end
+local function Place(frame, ...)
+  if Busy(frame) then return false end
+  return pcall(frame.SetPoint, frame, ...)
+end
+local function SetShown(frame, shown)
+  if not frame or Busy(frame) or frame:IsShown() == shown then return end
+  if shown then frame:Show() else frame:Hide() end
+end
 
 Display.flowGrowths = {RIGHT = "Right", LEFT = "Left", DOWN = "Down", UP = "Up",
   CENTER_HORIZONTAL = "Centered Horizontal", CENTER_VERTICAL = "Centered Vertical"}
@@ -172,7 +185,8 @@ end
 -- region when Blizzard refuses the anchor.
 function Display.AnchorToContent(container, point, region, relativePoint, x, y)
   local anchor = Display.ContentAnchor(region)
-  if anchor ~= region and pcall(container.SetPoint, container, point, anchor, relativePoint, x or 0, y or 0) then return true end
+  if anchor ~= region and Place(container, point, anchor, relativePoint, x or 0, y or 0) then return true end
+  if Busy(container) then return false end
   container:ClearAllPoints()
   container:SetPoint(point, region, relativePoint, x or 0, y or 0)
   return anchor == region
@@ -189,7 +203,7 @@ end
 function Display.EnsureFlowStart(region, data)
   local native = region.blizzardAuraDisplay
   if not Display.FlowGroup(data) then
-    if native.flow then native.flow.start:Hide(); native.flow = nil end
+    if native.flow then SetShown(native.flow.start, false); native.flow = nil end
     return
   end
   Display.WatchFlowVisibility(region)
@@ -202,7 +216,7 @@ function Display.EnsureFlowStart(region, data)
   end
   local width, height = Display.Dimensions(data)
   flow.start:SetSize(width, height)
-  flow.start:Show()
+  SetShown(flow.start, true)
   local growth = Display.FlowGrowth(data)
   flow.growth = GROWTH[growth]
   -- Until the chain is built, start where the region is.
@@ -256,7 +270,7 @@ local function AnchorBackwards(container, g, startFrame, size, region)
   local along = g.sign[1] ~= 0
   local point = along and OPPOSITE[g.start] or (g.start == "TOPLEFT" and "BOTTOMLEFT" or "TOPLEFT")
   container:ClearAllPoints()
-  local ok = pcall(container.SetPoint, container, point, startFrame, g.start, g.sign[1] * size, g.sign[2] * size)
+  local ok = Place(container, point, startFrame, g.start, g.sign[1] * size, g.sign[2] * size)
   if not ok then
     container:ClearAllPoints()
     container:SetPoint("TOPLEFT", region, "TOPLEFT")
@@ -426,7 +440,7 @@ end
 
 local function HideShadow(holder, key)
   local container = holder and holder[key]
-  if container then
+  if container and not Busy(container) then
     holder[key .. "Active"] = false
     container:SetEnabled(false)
     container:Hide()
@@ -445,7 +459,7 @@ function Display.EnsureFlowShadows(region, data)
   end
   if not sh then
     HideShadow(missing, "flowShadow")
-    if flow and flow.shadowStart then flow.shadowStart:Hide() end
+    if flow then SetShown(flow.shadowStart, false) end
     return
   end
   if not flow.shadowStart then
@@ -453,7 +467,7 @@ function Display.EnsureFlowShadows(region, data)
     flow.shadowStart:EnableMouse(false)
     flow.shadowStart:SetSize(1, 1)
   end
-  flow.shadowStart:Show()
+  SetShown(flow.shadowStart, true)
   local trigger = Display.GetTrigger(data)
   local _, spacing = Display.FlowGrowth(data)
   local width, height = Display.Dimensions(data)
@@ -518,13 +532,13 @@ local function MeasureText(instance, key, data, trigger, g, startFrame, length, 
   container:SetAuraSlotCandidateFilters(key, Display.CandidateFilters(data))
   container:SetAuraSlotSortMethod(key, Display.SortOrder(data, trigger))
   entry.button:ClearAllPoints()
-  pcall(entry.button.SetPoint, entry.button, g.start, startFrame, g.start)
+  Place(entry.button, g.start, startFrame, g.start)
   local text = entry.text
   text:SetFont(STANDARD_TEXT_FONT, 12, "")
   text:SetWordWrap(false)
   text:SetJustifyH(g.sign[1] < 0 and "RIGHT" or "LEFT")
   text:ClearAllPoints()
-  if not pcall(text.SetPoint, text, g.start, startFrame, g.start) then return end
+  if not Place(text, g.start, startFrame, g.start) then return end
   local along = g.sign[1] ~= 0
   length = math.max(1, math.floor(length + 0.5))
   local fill = ("|TInterface\\Buttons\\WHITE8X8:%d:%d|t"):format(along and 1 or length, along and length or 1)
@@ -586,7 +600,7 @@ end
 -- Keeps a display's list shadow on the same unit as its aura area.
 function Display.RefreshFlowShadow(instance, unit, shown)
   local container = instance.flowShadowActive and instance.flowShadow
-  if not container then return end
+  if not container or Busy(container) then return end
   if unit and instance.flowShadowUnit ~= unit then
     container:SetEnabled(false)
     container:SetUnit(unit)
@@ -603,14 +617,14 @@ local function ChainShadows(flow)
   local sh = flow.growth.shadow
   if flow.shadowKind == "list" then
     for index, container in ipairs(flow.shadowList) do
-      container:ClearAllPoints()
+      if not InCombatLockdown() then container:ClearAllPoints() end
       local ok
       if index == 1 then
-        ok = pcall(container.SetPoint, container, sh.start, flow.shadowStart, sh.start)
+        ok = Place(container, sh.start, flow.shadowStart, sh.start)
       else
-        ok = pcall(container.SetPoint, container, sh.start, flow.shadowList[index - 1], sh.listEnd, sh.pixel[1], sh.pixel[2])
+        ok = Place(container, sh.start, flow.shadowList[index - 1], sh.listEnd, sh.pixel[1], sh.pixel[2])
       end
-      if not ok then
+      if not ok and not InCombatLockdown() then
         container:ClearAllPoints()
         container:SetPoint(sh.start, flow.region, sh.start)
       end
@@ -798,7 +812,7 @@ function Display.RelinkFlowUnits(group)
           local shadow = unit and instance.flowShadowActive and instance.flowShadow
           if shadow then
             shadow:ClearAllPoints()
-            local linked = lastShadow[unit] and pcall(shadow.SetPoint, shadow, shStart, lastShadow[unit], shEnd, sh.pixel[1], sh.pixel[2])
+            local linked = lastShadow[unit] and Place(shadow, shStart, lastShadow[unit], shEnd, sh.pixel[1], sh.pixel[2])
             local frame = not linked and UnitAnchor(mode, unit)
             if frame then shadow:SetPoint(shStart, frame, point, frameX, frameY) end
             lastShadow[unit] = shadow
@@ -821,10 +835,10 @@ function Display.RelinkFlowUnits(group)
           local container = instance.container
           container:ClearAllPoints()
           local previous = last[unit]
-          local linked = previous and pcall(container.SetPoint, container, start, previous[1], previous[2], previous[3], previous[4])
+          local linked = previous and Place(container, start, previous[1], previous[2], previous[3], previous[4])
           if not linked and lastShadow[unit] then
             -- Centred: start where the shadows end, half a spacing on.
-            linked = pcall(container.SetPoint, container, start, lastShadow[unit], shEnd,
+            linked = Place(container, start, lastShadow[unit], shEnd,
               sh.pixel[1] + g.sign[1] * spacing / 2, sh.pixel[2] + g.sign[2] * spacing / 2)
           end
           if not linked then
@@ -843,7 +857,7 @@ function Display.RelinkFlowUnits(group)
             local presence = missingOnly and missing.presenceActive and missing.presence
             if presence then
               presence:ClearAllPoints()
-              if pcall(presence.SetPoint, presence, far, slot, start, g.sign[1] * (size + 1), g.sign[2] * (size + 1)) then
+              if Place(presence, far, slot, start, g.sign[1] * (size + 1), g.sign[2] * (size + 1)) then
                 last[unit] = {presence, start, 0, 0}
               end
             end
@@ -929,6 +943,7 @@ end
 -- Options preview: the samples are plain frames of known size, so they are
 -- lined up in the group's order: per unit on its frame (or on the nameplate
 -- stand-in) when grouped by frame, else starting at the first display.
+local PlaceNormalRegion
 local previewOrigins = {}
 function Display.ArrangeFlowPreview(group)
   if not group then return end
@@ -944,32 +959,50 @@ function Display.ArrangeFlowPreview(group)
   local spacing = tonumber(group.blizzardFlowSpacing) or 2
   local along = g.sign[1] ~= 0
   local point, frameX, frameY = FramePosition(group)
-  local function Key(sample) return framed and mode == "UNITFRAME" and sample.previewUnit or "" end
-  -- Each row's length and depth, known here; centred rows start half back.
-  local length, cross, firstKey = {}, {}, nil
   for _, childID in ipairs(group.controlledChildren or {}) do
     local entry = Private.regions[childID]
     local region = entry and entry.region
-    if region and region.secretAuraSamplesActive then
+    local normal = region and region.flowNormal
+    if normal and normal.active and normal.stand then PlaceNormalRegion(region, normal) end
+  end
+  local function Key(sample) return framed and mode == "UNITFRAME" and sample.previewUnit or "" end
+  -- Each row's length and depth, known here; centred rows start half back.
+  local length, cross, firstKey, sampleStep, iconStep, anyStep = {}, {}, nil, nil, nil, nil
+  local leadSteps = {}
+  for _, childID in ipairs(group.controlledChildren or {}) do
+    local entry = Private.regions[childID]
+    local region = entry and entry.region
+    if region and region.secretAuraSamplesActive and region:IsShown() then
       for _, sample in ipairs(region.secretAuraSamples or {}) do
         local button = sample.button
         if button:IsShown() then
           local key = Key(sample)
           firstKey = firstKey or key
           local width, height = button:GetWidth() or 0, button:GetHeight() or 0
+          sampleStep = sampleStep or (along and width or height) + spacing
           length[key] = (length[key] or 0) + (along and width or height) + spacing
           cross[key] = math.max(cross[key] or 0, along and height or width)
         end
       end
-    elseif region and region.flowNormal and region.flowNormal.active and region:IsShown() and not g.shadow then
+    elseif region and region.flowNormal and region.flowNormal.active and region:IsShown()
+      and (not g.shadow or region.flowNormal.stand) then
       local width, height = NormalSize(region, region.flowNormal.data)
+      local step = (along and width or height) + spacing
+      anyStep = anyStep or step
+      if region.flowNormal.stand and region.flowNormal.data.regionType == "icon" then iconStep = iconStep or step end
+      if not region.flowNormal.stand then leadSteps[#leadSteps + 1] = step end
       length[""] = (length[""] or 0) + (along and width or height) + spacing
       cross[""] = math.max(cross[""] or 0, along and height or width)
     end
   end
+  local limit = not framed and group.blizzardFlowUseLimit and math.max(1, math.floor(tonumber(group.blizzardFlowLimit) or 5))
+  local firstStep = sampleStep or iconStep or anyStep
+  local rowStart
   local function Offset(key)
     if not g.shadow then return 0, 0 end
-    local half = math.max(0, (length[key] or 0) - spacing) / 2
+    local total = length[key] or 0
+    if limit and firstStep then total = math.min(total, limit * firstStep) end
+    local half = math.max(0, total - spacing) / 2
     return -g.sign[1] * half, -g.sign[2] * half
   end
   local previous = {}
@@ -992,15 +1025,21 @@ function Display.ArrangeFlowPreview(group)
     return origin
   end
   local function PlaceNormal(region)
-    local home = region.flowNormal.home
-    if not g.shadow and previous[""] then
+    local normal = region.flowNormal
+    local inRow = not g.shadow or normal.stand ~= nil
+    if inRow and previous[""] then
       region:SetAnchor(g.start, previous[""], g.far)
       region:SetOffset(g.sign[1] * spacing, g.sign[2] * spacing)
+    elseif inRow and g.shadow then
+      local ox, oy = Offset("")
+      region:SetAnchor(g.start, normal.home, g.centerPoint)
+      region:SetOffset(ox, oy)
     else
-      region:SetAnchor(g.start, home, g.start)
+      region:SetAnchor(g.start, normal.home, g.start)
       region:SetOffset(0, 0)
     end
-    if not g.shadow then previous[""] = region end
+    if inRow and not previous[""] then rowStart = region end
+    if inRow then previous[""] = region end
   end
   local function PlaceSamples(region)
     if not framed then Display.RestorePreviewRegion(region) end
@@ -1034,6 +1073,7 @@ function Display.ArrangeFlowPreview(group)
           moved = true
         end
         onFrame = onFrame or frame ~= nil and frame ~= false
+        if not framed and not previous[key] then rowStart = button end
         previous[key] = button
       end
     end
@@ -1042,15 +1082,21 @@ function Display.ArrangeFlowPreview(group)
   for _, childID in ipairs(group.controlledChildren or {}) do
     local entry = Private.regions[childID]
     local region = entry and entry.region
-    if region and not region.secretAuraSamplesActive and region.flowNormal and region.flowNormal.active and region:IsShown() then
+    if region and not region.secretAuraSamplesActive and region.flowNormal and region.flowNormal.active
+      and not region.flowNormal.stand and region:IsShown() then
       PlaceNormal(region)
     end
   end
   for _, childID in ipairs(group.controlledChildren or {}) do
     local entry = Private.regions[childID]
     local region = entry and entry.region
-    if region and region.secretAuraSamplesActive then PlaceSamples(region) end
+    if region and region.secretAuraSamplesActive and region:IsShown() then
+      PlaceSamples(region)
+    elseif region and region.flowNormal and region.flowNormal.active and region.flowNormal.stand and region:IsShown() then
+      PlaceNormal(region)
+    end
   end
+  if limit and Display.PreviewFlowClip then Display.PreviewFlowClip(group, g, rowStart, leadSteps, firstStep) end
   if onFrame and firstKey then
     local ox, oy = Offset(firstKey)
     local cx, cy = CrossOffset(group, g, cross[firstKey] or 0)
@@ -1059,6 +1105,273 @@ function Display.ArrangeFlowPreview(group)
   else
     Display.RestoreGroupPreview(group)
   end
+end
+
+
+-- Limit: nothing can count the shown auras in combat, so the row is cut off
+-- by a clipping frame between the group and its displays. A centred row is
+-- also kept from starting further back than the limit allows: a frame
+-- stretched from that cap to the row start collapses onto the cap when the
+-- row is longer, so its far edge is whichever is further on.
+local clips, caps = {}, {}
+local CLIP_MARGIN = 600
+
+-- How to stretch a frame between the cap and the row start so that one of its
+-- edges is whichever of the two is further along the row. Learned once from
+-- plain frames, out of combat; nil when no way works.
+local stretchRules = {}
+Display.flowStretchRules = stretchRules
+local EDGE_POINT = {LEFT = "TOPLEFT", RIGHT = "TOPRIGHT", TOP = "TOPLEFT", BOTTOM = "BOTTOMLEFT"}
+local function StretchRule(vertical)
+  if stretchRules[vertical] ~= nil then return stretchRules[vertical] or nil end
+  if InCombatLockdown() then return end
+  local edges = vertical and {"TOP", "BOTTOM"} or {"LEFT", "RIGHT"}
+  local cap = CreateFrame("Frame", nil, UIParent)
+  local start = CreateFrame("Frame", nil, UIParent)
+  local probe = CreateFrame("Frame", nil, UIParent, "DisableUntrustedLayoutScriptsTemplate")
+  cap:SetSize(1, 1); start:SetSize(1, 1); probe:SetSize(1, 1)
+  cap:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+  local function Read(frame, edge)
+    if edge == "LEFT" then return frame:GetLeft() elseif edge == "RIGHT" then return frame:GetRight()
+    elseif edge == "TOP" then return frame:GetTop() else return frame:GetBottom() end
+  end
+  local found = false
+  for _, capEdge in ipairs(edges) do
+    local startEdge = capEdge == edges[1] and edges[2] or edges[1]
+    for _, capFirst in ipairs({true, false}) do
+      for _, readEdge in ipairs(edges) do
+        local good = true
+        -- Further along the row: right, or down.
+        for _, distance in ipairs({20, -20}) do
+          start:ClearAllPoints()
+          start:SetPoint("CENTER", cap, "CENTER", vertical and 0 or distance, vertical and -distance or 0)
+          probe:ClearAllPoints()
+          local function ToCap() probe:SetPoint(EDGE_POINT[capEdge], cap, "CENTER") end
+          local function ToStart() probe:SetPoint(EDGE_POINT[startEdge], start, "CENTER") end
+          if capFirst then ToCap(); ToStart() else ToStart(); ToCap() end
+          local capX, capY = cap:GetCenter()
+          local startX, startY = start:GetCenter()
+          local value = Read(probe, readEdge)
+          local wanted = vertical and math.min(capY, startY) or math.max(capX, startX)
+          if not value or math.abs(value - wanted) > 1 then good = false break end
+        end
+        if good then
+          found = {capPoint = EDGE_POINT[capEdge], startPoint = EDGE_POINT[startEdge], readPoint = EDGE_POINT[readEdge], capFirst = capFirst}
+          break
+        end
+      end
+      if found then break end
+    end
+    if found then break end
+  end
+  for _, frame in ipairs({cap, start, probe}) do frame:ClearAllPoints(); frame:Hide() end
+  stretchRules[vertical] = found
+  return found or nil
+end
+
+local function ClipWanted(group)
+  if not group or not group.blizzardFlowUseLimit then return false end
+  if Display.FlowGrid(group) or group.blizzardFlowFrames ~= nil then return false end
+  local key = GrowthKey(group)
+  if key == "CENTER_HORIZONTAL" or key == "CENTER_VERTICAL" then return StretchRule(key == "CENTER_VERTICAL") ~= nil end
+  return true
+end
+
+local function GroupRegion(group)
+  local entry = Private.regions[group.id]
+  return entry and entry.region
+end
+
+-- Displays anchored to a chosen frame and parented to it keep that parent.
+local function KeepsParent(data)
+  return data and data.anchorFrameType == "SELECTFRAME" and data.anchorFrameParent ~= false
+end
+
+-- Keeps the display's own strata and level.
+local function Reparent(region, parent)
+  local strata = region:GetFrameStrata()
+  region:SetParent(parent)
+  region:SetFrameStrata(strata)
+  if Private.ApplyFrameLevel and region.id then Private.ApplyFrameLevel(region) end
+end
+
+local function EnsureClip(group)
+  local groupRegion = GroupRegion(group)
+  if not groupRegion then return end
+  local clip = clips[group.id]
+  if not clip then
+    clip = CreateFrame("Frame", nil, groupRegion)
+    clip:EnableMouse(false)
+    clip:SetAllPoints(groupRegion)
+    clips[group.id] = clip
+  end
+  if not Busy(clip) then
+    if clip:GetParent() ~= groupRegion then clip:SetParent(groupRegion) end
+    clip:SetClipsChildren(true)
+    clip:Show()
+  end
+  return clip
+end
+
+-- The frame a display of the group is parented to, or nil for the group itself.
+function Display.FlowClipParent(data)
+  local group = Display.FlowGroup(data)
+  if not ClipWanted(group) or KeepsParent(data) then return end
+  -- With Centered growth only icons and texts join the row; the rest keep their own place.
+  local inRow = Display.Enabled(data) or Display.FlowNormal(data)
+    and (not GROWTH[GrowthKey(group)].shadow or Display.UsesStand ~= nil and Display.UsesStand(data))
+  if inRow then return EnsureClip(group) end
+end
+
+local function FlowData(flow)
+  return flow.normal and flow.normal.data or flow.region.blizzardAuraDisplay and flow.region.blizzardAuraDisplay.data
+end
+
+-- One icon and its spacing along the row: from the first Aura (Modern)
+-- display, else the first copied icon, else the first display.
+local function RowStep(group, g, flows)
+  local pick
+  for _, flow in ipairs(flows) do
+    if not flow.normal then pick = flow break end
+  end
+  if not pick then
+    for _, flow in ipairs(flows) do
+      if flow.stand and flow.normal.data.regionType == "icon" then pick = flow break end
+    end
+  end
+  pick = pick or flows[1]
+  local width, height
+  if pick.normal then
+    width, height = NormalSize(pick.region, pick.normal.data)
+  else
+    width, height = Display.Dimensions(pick.region.blizzardAuraDisplay.data)
+  end
+  local spacing = tonumber(group.blizzardFlowSpacing) or 2
+  return ((g.sign[1] ~= 0) and width or height) + spacing, spacing, width, height
+end
+
+local function Limit(group)
+  return math.max(1, math.floor(tonumber(group.blizzardFlowLimit) or 5))
+end
+
+-- How far the first `limit` displays reach: displays that lead the row count
+-- with their own length, the rest with one icon each.
+local function WindowLength(limit, leadSteps, step, spacing)
+  local length, count = 0, 0
+  for _, lead in ipairs(leadSteps) do
+    if count >= limit then break end
+    length, count = length + lead, count + 1
+  end
+  return length + (limit - count) * step - spacing
+end
+
+local function LeadSteps(flows)
+  local steps = {}
+  for _, flow in ipairs(flows) do
+    if flow.home and not flow.stand then steps[#steps + 1] = math.abs(flow.x) + math.abs(flow.y) end
+  end
+  return steps
+end
+
+-- Centred: where the visible row starts, no further back than the limit.
+local function CapRowStart(group, g, flows, previous, combat)
+  if not previous or not ClipWanted(group) then return previous end
+  local vertical = g.sign[1] == 0
+  local rule = StretchRule(vertical)
+  if not rule then return previous end
+  local parent = GroupRegion(group) or UIParent
+  local cap = caps[group.id]
+  if not cap then
+    cap = {left = CreateFrame("Frame", nil, parent),
+      joint = CreateFrame("Frame", nil, parent, "DisableUntrustedLayoutScriptsTemplate")}
+    cap.left:SetSize(1, 1)
+    cap.left:EnableMouse(false)
+    cap.joint:SetSize(1, 1)
+    cap.joint:EnableMouse(false)
+    caps[group.id] = cap
+  end
+  if not combat then
+    for _, frame in ipairs({cap.left, cap.joint}) do
+      if frame:GetParent() ~= parent then frame:SetParent(parent) end
+    end
+  end
+  local step, spacing = RowStep(group, g, flows)
+  local origin = flows[1].home or flows[1].region
+  local back = WindowLength(Limit(group), {}, step, spacing) / 2
+  if not combat then cap.left:ClearAllPoints() end
+  Place(cap.left, "TOPLEFT", origin, g.centerPoint, vertical and 0 or -back, vertical and back or 0)
+  if not combat then cap.joint:ClearAllPoints() end
+  local function ToCap() return Place(cap.joint, rule.capPoint, cap.left, "TOPLEFT") end
+  local function ToStart() return Place(cap.joint, rule.startPoint, previous.endFrame, previous.endPoint, previous.x, previous.y) end
+  local ok
+  if rule.capFirst then ok = ToCap() and ToStart() else ok = ToStart() and ToCap() end
+  if not ok then return previous end
+  return {endFrame = cap.joint, endPoint = rule.readPoint, x = 0, y = 0}
+end
+
+-- The cut: from well before the row start (glows and texts of the first icon)
+-- to the end of the last display within the limit plus its spacing.
+local function SetWindow(clip, g, point, anchor, length, width, height, spacing)
+  local after = length + math.max(0, spacing or 0) + CLIP_MARGIN
+  local horizontal = point:find("LEFT") and -1 or 1
+  local vertical = point:find("TOP") and 1 or -1
+  clip:ClearAllPoints()
+  clip:SetPoint(point, anchor, point, horizontal * CLIP_MARGIN, vertical * CLIP_MARGIN)
+  if g.sign[1] ~= 0 then
+    clip:SetSize(after, height + 2 * CLIP_MARGIN)
+  else
+    clip:SetSize(width + 2 * CLIP_MARGIN, after)
+  end
+end
+
+-- Options preview: the samples are placed in Lua, so the cut starts at the first one.
+function Display.PreviewFlowClip(group, g, rowStart, leadSteps, step)
+  local clip = clips[group.id]
+  if not clip or not ClipWanted(group) or not rowStart or not step or Busy(clip) then return end
+  local spacing = tonumber(group.blizzardFlowSpacing) or 2
+  SetWindow(clip, g, g.start, rowStart, WindowLength(Limit(group), leadSteps, step, spacing),
+    rowStart:GetWidth() or 0, rowStart:GetHeight() or 0, spacing)
+end
+
+function Display.UpdateFlowClip(group, flows, g)
+  if not group then return end
+  local wanted = ClipWanted(group)
+  local clip = wanted and EnsureClip(group) or clips[group.id]
+  if not clip or Busy(clip) then return end
+  local groupRegion = GroupRegion(group)
+  if not wanted or not groupRegion then
+    if not InCombatLockdown() then
+      for _, child in ipairs({clip:GetChildren()}) do Reparent(child, groupRegion or clip:GetParent()) end
+    end
+    clip:SetClipsChildren(false)
+    clip:Hide()
+    return
+  end
+  if not InCombatLockdown() then
+    local inRow = {}
+    for _, flow in ipairs(flows or {}) do
+      inRow[flow.region] = true
+      if flow.region:GetParent() ~= clip and not KeepsParent(FlowData(flow)) then Reparent(flow.region, clip) end
+    end
+    -- A centred row's display that could not be copied keeps its own place.
+    if g.shadow then
+      for _, child in ipairs({clip:GetChildren()}) do
+        local normal = child.flowNormal
+        if not inRow[child] and normal and normal.active and not (normal.stand and normal.stand.active) and child:IsShown() then
+          Reparent(child, groupRegion)
+        end
+      end
+    end
+  end
+  local first = flows and flows[1]
+  -- The options preview places its own cut.
+  if not first or WeakAuras.IsOptionsOpen() then return end
+  local step, spacing, width, height = RowStep(group, g, flows)
+  local length = WindowLength(Limit(group), g.shadow and {} or LeadSteps(flows), step, spacing)
+  local cap = caps[group.id]
+  local origin, point = first.home or first.region, g.start
+  if g.shadow and cap then origin, point = cap.left, "TOPLEFT" end
+  SetWindow(clip, g, point, origin, length, width, height, spacing)
 end
 
 local afterCombat, queued = {}, {}
@@ -1073,7 +1386,10 @@ end)
 local function FlushQueued()
   local groups = queued
   queued = {}
-  for group in pairs(groups) do Display.RechainFlow(group) end
+  for group in pairs(groups) do
+    Display.RechainFlow(group)
+    if WeakAuras.IsOptionsOpen() then Display.ArrangeFlowPreview(group) end
+  end
 end
 
 local function QueueRechain(region)
@@ -1084,6 +1400,9 @@ local function QueueRechain(region)
   if not group then return end
   if not next(queued) then C_Timer.After(0, FlushQueued) end
   queued[group] = true
+  -- Entering combat: displays that unload now must leave the row before the
+  -- lockdown, which may keep it from moving until combat ends.
+  if not InCombatLockdown() and UnitAffectingCombat("player") then FlushQueued() end
 end
 
 function Display.WatchFlowVisibility(region)
@@ -1091,7 +1410,14 @@ function Display.WatchFlowVisibility(region)
   region.flowVisibilityHooked = true
   region:HookScript("OnShow", QueueRechain)
   region:HookScript("OnHide", QueueRechain)
-  region:HookScript("OnSizeChanged", QueueRechain)
+  region:HookScript("OnSizeChanged", function(self)
+    -- Only a normal display's size moves the row (texts resize as they change).
+    local normal = self.flowNormal
+    if not (normal and normal.active and normal.flow and normal.flow.growth) then return end
+    local width, height = NormalSize(self, normal.data)
+    if normal.homeWidth and math.abs(width - normal.homeWidth) < 0.5 and math.abs(height - normal.homeHeight) < 0.5 then return end
+    QueueRechain(self)
+  end)
 end
 
 function Display.FlowNormal(data)
@@ -1113,17 +1439,21 @@ local function SizeFlowNormal(region, normal, g, group)
   local size = (along and width or height) + spacing
   flow.growth, flow.endFrame, flow.endPoint = g, flow.start, g.start
   flow.x, flow.y = g.sign[1] * size, g.sign[2] * size
-  normal.home:SetSize(width, height)
+  if (normal.homeWidth ~= width or normal.homeHeight ~= height) and not InCombatLockdown() then
+    normal.home:SetSize(width, height)
+    if normal.stand then flow.start:SetSize(width, height) end
+    normal.homeWidth, normal.homeHeight = width, height
+  end
   if g.shadow then
     if not flow.shadowStart then
       flow.shadowStart = CreateFrame("Frame", nil, region, "DisableUntrustedLayoutScriptsTemplate")
       flow.shadowStart:EnableMouse(false)
       flow.shadowStart:SetSize(1, 1)
     end
-    flow.shadowStart:Show()
+    SetShown(flow.shadowStart, true)
     flow.shadowKind, flow.shadowList, flow.half = "fixed", nil, size / 2
   else
-    if flow.shadowStart then flow.shadowStart:Hide() end
+    SetShown(flow.shadowStart, false)
     flow.shadowKind = nil
   end
 end
@@ -1133,9 +1463,26 @@ local function NormalWarning(normal, message)
   if uid then Private.AuraWarnings.UpdateWarning(uid, "flow_normal", message and "warning" or nil, message) end
 end
 
-local function PlaceNormalRegion(region, normal, origin, x, y)
+function PlaceNormalRegion(region, normal, origin, x, y)
   local g = normal.flow.growth
-  if not g or WeakAuras.IsOptionsOpen() then return end
+  if not g then return end
+  if Busy(region) then return end
+  if WeakAuras.IsOptionsOpen() then
+    if normal.stand and not Display.StandLocked(normal) then
+      SetShown(normal.flow.start, false)
+      if region.relativeTo == UIParent then
+        region:SetAnchor(g.start, normal.home, g.start)
+        region:SetOffset(0, 0)
+      end
+    end
+    return
+  end
+  if normal.stand and normal.stand.active then
+    if not Display.StandLocked(normal) then SetShown(normal.flow.start, true) end
+    region:SetOffset(0, 0)
+    region:SetAnchor("BOTTOMRIGHT", UIParent, "TOPLEFT")
+    return
+  end
   region:SetOffset(x or 0, y or 0)
   region:SetAnchor(g.start, origin or normal.home, g.start)
 end
@@ -1147,7 +1494,8 @@ function Display.AnchorFlowNormal(data, region, anchorParent, anchorPoint)
     if normal and normal.active then
       normal.active = false
       NormalWarning(normal, nil)
-      if normal.flow.shadowStart then normal.flow.shadowStart:Hide() end
+      SetShown(normal.flow.shadowStart, false)
+      if normal.stand then Display.ReleaseStand(normal); normal.stand = nil; SetShown(normal.flow.start, false) end
       local old = Display.FlowGroup(normal.data) or normal.group
       normal.group = nil
       if old then Display.RechainFlow(old) end
@@ -1164,12 +1512,23 @@ function Display.AnchorFlowNormal(data, region, anchorParent, anchorPoint)
     region.flowNormal = normal
   end
   normal.data, normal.group, normal.active = data, group, true
-  normal.home:ClearAllPoints()
-  normal.home:SetPoint(data.selfPoint or "CENTER", anchorParent, anchorPoint or "CENTER", data.xOffset or 0, data.yOffset or 0)
+  if not InCombatLockdown() then normal.home:ClearAllPoints() end
+  Place(normal.home, data.selfPoint or "CENTER", anchorParent, anchorPoint or "CENTER", data.xOffset or 0, data.yOffset or 0)
   local g = GROWTH[group.blizzardFlowGrowth] or GROWTH.RIGHT
+  if Display.UsesStand and Display.UsesStand(data) then
+    if not xpcall(function() Display.EnsureStand(region, normal) end, geterrorhandler()) then
+      Display.ReleaseStand(normal)
+      normal.stand = nil
+    end
+    normal.homeWidth = nil
+  elseif normal.stand then
+    Display.ReleaseStand(normal)
+    normal.stand = nil
+  end
   SizeFlowNormal(region, normal, g, group)
   Display.WatchFlowVisibility(region)
   if WeakAuras.IsOptionsOpen() then
+    SetShown(normal.flow.start, false)
     region:SetAnchor(g.start, normal.home, g.start)
     region:SetOffset(0, 0)
     Display.ArrangeFlowPreview(group)
@@ -1194,8 +1553,9 @@ function Display.RechainFlow(group)
   if not group then return end
   Display.RefreshFlowMerge(group)
   Display.RebuildGrid(group)
-  if Display.FlowGrid(group) then return end
+  if Display.FlowGrid(group) then Display.UpdateFlowClip(group) return end
   if group.blizzardFlowFrames == "UNITFRAME" or group.blizzardFlowFrames == "NAMEPLATE" then
+    Display.UpdateFlowClip(group)
     if not InCombatLockdown() then
       for _, childID in ipairs(group.controlledChildren or {}) do
         if StaleGrowth(group, childID) and not staleRebuilds[childID] then
@@ -1230,10 +1590,13 @@ function Display.RechainFlow(group)
     -- chain when its own rebuild runs.
     if flow and flow.endFrame and flow.growth == g and region:IsShown() then
       flow.region = region
-      if not flow.home then
+      flow.stand = flow.home and normal.stand and normal.stand.active or nil
+      if flow.stand then flow.normal = normal end
+      if not flow.home or flow.stand then
         modernFlows[#modernFlows + 1] = flow
+        if flow.stand then NormalWarning(normal, nil); Display.SyncStandSecure(region, normal); PlaceNormalRegion(region, normal) end
       elseif g.shadow then
-        NormalWarning(normal, "Centered growth only lines up Aura (Modern) displays. This display keeps its own position.")
+        NormalWarning(normal, "With Centered growth, only icons and texts line up. This display keeps its own position.")
         PlaceNormalRegion(region, normal)
       else
         NormalWarning(normal, nil)
@@ -1250,40 +1613,51 @@ function Display.RechainFlow(group)
     local spacing = tonumber(group.blizzardFlowSpacing) or 2
     for _, flow in ipairs(flows) do
       if flow.shadowStart and flow.shadowKind then
-        flow.shadowStart:ClearAllPoints()
-        if not (shadowEnd and pcall(flow.shadowStart.SetPoint, flow.shadowStart, g.shadow.start, shadowEnd[1], shadowEnd[2], shadowEnd[3], shadowEnd[4])) then
-          flow.shadowStart:ClearAllPoints()
-          flow.shadowStart:SetPoint(g.shadow.start, flows[1].home or flows[1].region, g.centerPoint)
+        local start = flow.shadowStart
+        if combat then
+          if shadowEnd then Place(start, g.shadow.start, shadowEnd[1], shadowEnd[2], shadowEnd[3], shadowEnd[4])
+          else Place(start, g.shadow.start, flows[1].home or flows[1].region, g.centerPoint) end
+          local ok, chained = pcall(ChainShadows, flow)
+          if ok then shadowEnd = chained end
+        else
+          start:ClearAllPoints()
+          if not (shadowEnd and Place(start, g.shadow.start, shadowEnd[1], shadowEnd[2], shadowEnd[3], shadowEnd[4])) then
+            start:ClearAllPoints()
+            start:SetPoint(g.shadow.start, flows[1].home or flows[1].region, g.centerPoint)
+          end
+          shadowEnd = ChainShadows(flow)
         end
-        shadowEnd = ChainShadows(flow)
       end
     end
     if shadowEnd then
       previous = {endFrame = shadowEnd[1], endPoint = shadowEnd[2],
         x = shadowEnd[3] + g.sign[1] * spacing / 2, y = shadowEnd[4] + g.sign[2] * spacing / 2}
+      previous = CapRowStart(group, g, flows, previous, combat)
     end
   end
   local origin, lead = nil, 0
   for _, flow in ipairs(flows) do
     local region = flow.region
-    if flow.home then
+    if flow.home and not flow.stand then
       origin = origin or flow.home
       local x, y = g.sign[1] * lead, g.sign[2] * lead
       if not combat then flow.start:ClearAllPoints() end
-      flow.start:SetPoint(g.start, origin, g.start, x, y)
+      Place(flow.start, g.start, origin, g.start, x, y)
       PlaceNormalRegion(region, flow.normal, origin, x, y)
       lead = lead + math.abs(flow.x) + math.abs(flow.y)
       previous = flow
+    elseif combat and flow.stand and Display.StandLocked(flow.normal) then
+      previous = flow
     elseif combat then
       if previous then
-        pcall(flow.start.SetPoint, flow.start, flow.growth.start, previous.endFrame, previous.endPoint, previous.x, previous.y)
+        Place(flow.start, flow.growth.start, previous.endFrame, previous.endPoint, previous.x, previous.y)
       else
-        flow.start:SetPoint(flow.growth.start, flow.home or region, flow.growth.start)
+        Place(flow.start, flow.growth.start, flow.home or region, flow.growth.start)
       end
       previous = flow
     else
       flow.start:ClearAllPoints()
-      local chained = previous and pcall(flow.start.SetPoint, flow.start, flow.growth.start,
+      local chained = previous and Place(flow.start, flow.growth.start,
         previous.endFrame, previous.endPoint, previous.x, previous.y)
       if not chained then
         -- First display, or Blizzard refused the anchor: start at the region.
@@ -1293,4 +1667,5 @@ function Display.RechainFlow(group)
       previous = flow
     end
   end
+  Display.UpdateFlowClip(group, flows, g)
 end

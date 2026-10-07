@@ -1,4 +1,4 @@
--- Modified for ForeverAuras, 2026-09-18.
+-- Modified for ForeverAuras, 2026-10-07.
 if not WeakAuras.IsLibsOK() then return end
 ---@type string
 local AddonName = ...
@@ -1007,6 +1007,7 @@ function Private.regionPrototype.modifyFinish(parent, region, data)
   region:UpdateTick()
 
   Private.ApplyFrameLevel(region)
+  Private.BlizzardAuraDisplay.RefreshStand(region)
 end
 
 local frameForFrameTick = CreateFrame("Frame");

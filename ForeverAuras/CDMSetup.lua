@@ -1,7 +1,7 @@
--- Save class-pack CDM settings for Blizzard to apply on reload.
+-- Save class-pack CDM settings for Blizzard to apply on reload, after asking.
 if not WeakAuras.IsLibsOK() then return end
 local _, Private = ...
-local pending, timer, needsReload
+local pending, timer, needsReload, confirmed, asked
 local attempts = 0
 
 local function RecordPending(self, value)
@@ -139,6 +139,12 @@ local function ApplySetup()
   -- Preserve the character's original settings for recovery.
   local character = UnitGUID("player")
   if issecretvalue(character) or type(character) ~= "string" then error("The character is not ready for CDM setup.") end
+  if not confirmed then
+    if asked or (Private.db.cdmClassPackSetupSkip or {})[character] then return true end
+    asked = true
+    StaticPopup_Show("FOREVERAURAS_CDM_SETUP_ASK", count, cooldownCount, {character = character})
+    return true
+  end
   Private.db.cdmClassPackSetupBackups = Private.db.cdmClassPackSetupBackups or {}
   Private.db.cdmClassPackSetupBackups[character] = Private.db.cdmClassPackSetupBackups[character] or {
     cooldownLayout = C_CooldownViewer.GetLayoutData(),
@@ -164,6 +170,28 @@ local function ApplySetup()
   return true
 end
 
+local RunSetup
+
+StaticPopupDialogs["FOREVERAURAS_CDM_SETUP_ASK"] = {
+  text = "A ForeverAuras class pack can set up Blizzard's Cooldown Manager for its auras (%d buffs, %d spell cooldowns). This changes your CDM and Edit Mode settings and needs a reload.",
+  button1 = "Apply",
+  button2 = "Not now",
+  button3 = "Don't ask again",
+  OnAccept = function()
+    confirmed, pending, attempts = true, true, 0
+    if not timer then timer = C_Timer.NewTimer(0, RunSetup) end
+  end,
+  OnAlt = function(_, info)
+    Private.db.cdmClassPackSetupSkip = Private.db.cdmClassPackSetupSkip or {}
+    if info and info.character then Private.db.cdmClassPackSetupSkip[info.character] = true end
+    print("ForeverAuras: CDM setup won't be offered again on this character. Type /fa cdmsetup to run it.")
+  end,
+  timeout = 0,
+  whileDead = true,
+  hideOnEscape = true,
+  preferredIndex = 3,
+}
+
 StaticPopupDialogs["FOREVERAURAS_CDM_SETUP_RELOAD"] = {
   text = "ForeverAuras has changed CDM settings. Reload to apply them.",
   button1 = RELOADUI,
@@ -175,7 +203,7 @@ StaticPopupDialogs["FOREVERAURAS_CDM_SETUP_RELOAD"] = {
   preferredIndex = 3,
 }
 
-local function RunSetup()
+function RunSetup()
   timer = nil
   if not pending or needsReload then return end
   if InCombatLockdown() then return end
@@ -206,6 +234,17 @@ function WeakAuras.SetupClassPackCDM(class)
   pending = true
   if not timer then timer = C_Timer.NewTimer(0, RunSetup) end
   return true
+end
+
+-- /fa cdmsetup: run it now, also after "Don't ask again".
+function Private.RunCDMSetup()
+  local character = UnitGUID("player")
+  if Private.db.cdmClassPackSetupSkip and type(character) == "string" and not issecretvalue(character) then
+    Private.db.cdmClassPackSetupSkip[character] = nil
+  end
+  if needsReload then StaticPopup_Show("FOREVERAURAS_CDM_SETUP_RELOAD") return end
+  confirmed, pending, attempts = true, true, 0
+  if not timer then timer = C_Timer.NewTimer(0, RunSetup) end
 end
 
 local events = CreateFrame("Frame")

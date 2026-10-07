@@ -1,4 +1,4 @@
--- Modified for ForeverAuras, 2026-09-18.
+-- Modified for ForeverAuras, 2026-10-07.
 if not WeakAuras.IsLibsOK() then return end
 local _, Private = ...
 
@@ -230,7 +230,9 @@ function Private.ValidateSpellCooldownSupport(data)
     end
     for _, child in ipairs(check.checks or {}) do CheckCondition(child) end
   end
-  for _, condition in ipairs(data.conditions or {}) do CheckCondition(condition.check) end
+  for _, condition in ipairs(data.conditions or {}) do
+    if not Private.TimerConditionHandled(data, condition) then CheckCondition(condition.check) end
+  end
 
   local messages = {}
   if comparisons then

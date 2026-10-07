@@ -1,4 +1,4 @@
--- Modified for ForeverAuras, 2026-09-18.
+-- Modified for ForeverAuras, 2026-10-07.
 if not WeakAuras.IsLibsOK() then return end
 ---@type string
 local AddonName = ...
@@ -339,7 +339,27 @@ end
 
 local flipped = {[">="] = "<=", [">"] = "<", ["<="] = ">=", ["<"] = ">", ["=="] = "==", ["~="] = "~="}
 
+-- Remaining Time, in seconds, on a timer Lua cannot read.
+local TIMER_TOP = 1e6
+function PowerCurve.BeginTimer(s)
+  if s == nil or not s.show or s.progressType ~= "durationObject" then return end
+  local duration = Private.GetTextDuration and Private.GetTextDuration(s) or s.durationObject
+  if not WeakAuras.IsDurationObject(duration) then return end
+  local ok, remaining = pcall(duration.GetRemainingDuration, duration)
+  if ok and not issecretvalue(remaining) then return end
+  return {kind = "timer", duration = duration, top = TIMER_TOP, flag = "timerCurveActive"}
+end
+
 function PowerCurve.Leaf(ctx, variable, op, value)
+  if ctx.kind == "timer" then
+    if op == ">=" then return {{value, huge}}
+    elseif op == ">" then return {{value + 1e-3, huge}}
+    -- A finished timer (0) is not "remaining less than".
+    elseif op == "<=" then return {{1e-6, value + 1e-3}}
+    elseif op == "<" then return {{1e-6, value}}
+    end
+    return PowerCurve.NONE
+  end
   local names = PowerCurve.kinds[ctx.kind]
   if variable == names.deficit then
     if not ctx.max then return PowerCurve.NONE end
@@ -418,12 +438,13 @@ local function Same(a, b)
   return a == b
 end
 
-function PowerCurve.Pieces(base, ops)
+function PowerCurve.Pieces(base, ops, top)
+  top = top or 1
   local bounds = {0}
   local function AddBounds(set)
     for _, range in ipairs(set) do
       for j = 1, 2 do
-        if range[j] > 0 and range[j] < 1 then bounds[#bounds + 1] = range[j] end
+        if range[j] > 0 and range[j] < top then bounds[#bounds + 1] = range[j] end
       end
     end
   end
@@ -431,7 +452,7 @@ function PowerCurve.Pieces(base, ops)
   table.sort(bounds)
   local pieces = {}
   for k, x in ipairs(bounds) do
-    local nextX = bounds[k + 1] or 1
+    local nextX = bounds[k + 1] or top
     if nextX - x > 1e-6 or k == #bounds then
       local mid = (x + math.max(nextX, x)) / 2
       local value = base
@@ -447,12 +468,13 @@ end
 
 local curves = {}
 
-local function Curve(pieces, component)
-  local key = {}
+local function Curve(pieces, component, top)
+  top = top or 1
+  local key = {top}
   for k, piece in ipairs(pieces) do
     local value = piece[2]
     if component then value = value[component] or 1 end
-    key[k] = piece[1] .. "=" .. value
+    key[k + 1] = piece[1] .. "=" .. value
   end
   key = table.concat(key, ";")
   if curves[key] then return curves[key] end
@@ -461,7 +483,7 @@ local function Curve(pieces, component)
   for k, piece in ipairs(pieces) do
     local value = piece[2]
     if component then value = value[component] or 1 end
-    local nextX = pieces[k + 1] and pieces[k + 1][1] or 1
+    local nextX = pieces[k + 1] and pieces[k + 1][1] or top
     curve:AddPoint(piece[1], value)
     curve:AddPoint(nextX - (pieces[k + 1] and 1e-7 or 0), value)
   end
@@ -475,6 +497,9 @@ function PowerCurve.Evaluate(ctx, pieces, component)
     if component then return value[component] or 1 end
     return value
   end
+  if ctx.kind == "timer" then
+    return ctx.duration:EvaluateRemainingDuration(Curve(pieces, component, ctx.top))
+  end
   if ctx.kind == "health" then
     return UnitHealthPercent(ctx.unit, true, Curve(pieces, component))
   end
@@ -482,6 +507,7 @@ function PowerCurve.Evaluate(ctx, pieces, component)
 end
 
 function PowerCurve.Apply(ctx, region, propertyChanges, active, sets, plan)
+  local varies = false
   for property, info in pairs(plan.props) do
     local value, ops = info.base, {}
     for _, step in ipairs(plan.steps) do
@@ -495,15 +521,40 @@ function PowerCurve.Apply(ctx, region, propertyChanges, active, sets, plan)
       end
     end
     if #ops > 0 then
-      local pieces = PowerCurve.Pieces(value, ops)
+      local pieces = PowerCurve.Pieces(value, ops, ctx.top)
+      if #pieces > 1 then varies = true end
       if info.type == "color" then
         propertyChanges[property] = {PowerCurve.Evaluate(ctx, pieces, 1), PowerCurve.Evaluate(ctx, pieces, 2),
           PowerCurve.Evaluate(ctx, pieces, 3), PowerCurve.Evaluate(ctx, pieces, 4)}
       else
         propertyChanges[property] = PowerCurve.Evaluate(ctx, pieces)
       end
-      region.powerCurveActive = true
+      region[ctx.flag or "powerCurveActive"] = true
     end
+  end
+  return varies
+end
+
+function PowerCurve.RestoreForced(propertyChanges, plan, active)
+  for property, info in pairs(plan.forced) do
+    local value = info.base
+    for _, step in ipairs(plan.steps) do
+      if step.visible and step.visible[property] ~= nil and active[step.condition] then value = step.visible[property] end
+    end
+    propertyChanges[property] = value
+  end
+end
+
+-- Back to what the conditions say once the timer is readable again.
+function PowerCurve.RestoreSteps(region, propertyChanges, plan, active, flag)
+  region[flag] = nil
+  for property, info in pairs(plan.props) do
+    local value = info.base
+    for _, step in ipairs(plan.steps) do
+      local change = step.changes[property]
+      if change ~= nil and active[step.condition] then value = change end
+    end
+    propertyChanges[property] = value
   end
 end
 
@@ -1067,6 +1118,7 @@ local function CurveTriggerKind(data, index)
 end
 
 local function IsCurveVariable(kind, variable)
+  if kind == "timer" then return variable == "expirationTime" end
   local names = kind and Private.ExecEnv.PowerCurve.kinds[kind]
   return names and (variable == names.value or variable == names.percent or variable == names.deficit) or false
 end
@@ -1210,6 +1262,139 @@ local function PowerCurveCode(data, properties, allConditionsTemplate)
   table.insert(ret, "    else\n")
   table.insert(ret, string.format("      PC.Remember(curveState, %q)\n", kind))
   table.insert(ret, "      if region.powerCurveActive then PC.Restore(region, propertyChanges, plan) end\n")
+  table.insert(ret, "    end\n")
+  table.insert(ret, "  end\n")
+  return table.concat(ret)
+end
+
+-- Remaining Time conditions on a timer Lua cannot read (cooldowns, casts and
+-- other duration objects): like Power and Health, they change Alpha and Color
+-- through curves the game evaluates, rechecked a few times a second. Texts
+-- whose timer they color or hide are drawn by the text formatter instead.
+local function FindTimerTrigger(check, allConditionsTemplate, data)
+  if type(check) ~= "table" then return end
+  if check.variable == "AND" or check.variable == "OR" then
+    for _, subcheck in ipairs(check.checks or {}) do
+      local found = FindTimerTrigger(subcheck, allConditionsTemplate, data)
+      if found then return found end
+    end
+  elseif check.variable == "expirationTime" and type(check.trigger) == "number" and check.trigger > 0 then
+    local template = allConditionsTemplate[check.trigger] and allConditionsTemplate[check.trigger].expirationTime
+    if template and template.type == "timer" and Private.RestrictedTimerTrigger(data, check.trigger) then return check.trigger end
+  end
+end
+
+local function StyledTextProperties(data)
+  local handled, forced = {}, {}
+  local style = data.regionType == "text" and Private.DurationTextStyle(data)
+  if style then handled.color = true end
+  for index, element in ipairs(data.subRegions or {}) do
+    if element.type == "subtext" then
+      style = Private.DurationTextStyle(data, element, index)
+      if style then
+        handled["sub." .. index .. ".text_color"] = true
+        if style.usesVisible then
+          handled["sub." .. index .. ".text_visible"] = true
+          forced["sub." .. index .. ".text_visible"] = true
+        end
+      end
+    end
+  end
+  return handled, forced
+end
+
+local function TimerCurveCode(data, properties, allConditionsTemplate)
+  Private.AuraWarnings.UpdateWarning(data.uid, "timer_curve_conditions", nil)
+  if Private.BlizzardAuraDisplay.Enabled(data) then return end
+  local conditions = data.conditions or {}
+  local timerTrigger
+  for _, condition in ipairs(conditions) do
+    timerTrigger = timerTrigger or FindTimerTrigger(condition.check, allConditionsTemplate, data)
+  end
+  if not timerTrigger then return end
+  local supported, mixed = CurveSetup(data, properties)
+  local handled, forced = StyledTextProperties(data)
+
+  local function Base(property, propertyData)
+    local base = GetBaseProperty(data, property)
+    if propertyData.type == "color" then
+      if type(base) ~= "table" then base = supported[property].resetFallback or {1, 1, 1, 1} end
+      return {base[1] or 1, base[2] or 1, base[3] or 1, base[4] or 1}
+    end
+    return tonumber(base) or (property:match("alpha$") and 1) or 0
+  end
+
+  local plan = {props = {}, steps = {}, forced = {}}
+  local expressions, limited = {}, false
+  -- Properties a Power or Health curve already drives stay with it.
+  local helpers = Private.ExecEnv.conditionHelpers[data.uid]
+  local powerProps = helpers and helpers.powerCurve and helpers.powerCurve.props or {}
+  for conditionNumber, condition in ipairs(conditions) do
+    local expression, usesTimer
+    -- An Else If after it would replace the curve in combat.
+    local nextLinked = conditions[conditionNumber + 1] and conditions[conditionNumber + 1].linked
+    if not condition.linked and not nextLinked then
+      expression, usesTimer = PowerCurveExpression(data, condition.check, allConditionsTemplate, timerTrigger, "timer")
+    elseif FindTimerTrigger(condition.check, allConditionsTemplate, data) then
+      limited = true
+    end
+    local step = {condition = conditionNumber, power = usesTimer and true or false, changes = {}}
+    for _, change in ipairs(condition.changes or {}) do
+      local property = change.property
+      local propertyData = property and properties[property]
+      if usesTimer and property and forced[property] then
+        plan.forced[property] = {base = GetBaseProperty(data, property) ~= false}
+        step.visible = step.visible or {}
+        step.visible[property] = change.value and true or false
+      elseif propertyData and supported[property] and not mixed[property] and not powerProps[property] then
+        local value = change.value
+        if propertyData.type == "number" then value = tonumber(value) end
+        if propertyData.type == "color" and type(value) ~= "table" then value = nil end
+        if value ~= nil then
+          step.changes[property] = value
+          if usesTimer and not plan.props[property] then
+            plan.props[property] = {type = propertyData.type, base = Base(property, propertyData)}
+          end
+        elseif usesTimer and property and not handled[property] then
+          limited = true
+        end
+      elseif usesTimer and property and not handled[property] then
+        limited = true
+      end
+    end
+    if usesTimer then expressions[conditionNumber] = expression end
+    plan.steps[#plan.steps + 1] = step
+  end
+
+  -- Only triggers whose timers the game restricts need the note.
+  local entry = data.triggers[timerTrigger]
+  local trigger = type(entry) == "table" and entry.trigger
+  local restricted = type(trigger) == "table" and (trigger.type == "spell" or trigger.event == "Cast")
+  limited = limited and restricted
+  Private.AuraWarnings.UpdateWarning(data.uid, "timer_curve_conditions", limited and "info" or nil,
+    limited and L["In combat, Remaining Time conditions can only change Alpha and Color, and color or hide a timer text."] or nil)
+  if not next(plan.props) and not next(plan.forced) then return end
+
+  Private.ExecEnv.conditionHelpers[data.uid] = Private.ExecEnv.conditionHelpers[data.uid] or {}
+  Private.ExecEnv.conditionHelpers[data.uid].timerCurve = plan
+
+  local ret = {}
+  table.insert(ret, "  do\n")
+  table.insert(ret, "    local PC = Private.ExecEnv.PowerCurve\n")
+  table.insert(ret, "    local plan = Private.ExecEnv.conditionHelpers[uid].timerCurve\n")
+  table.insert(ret, "    local ctx = not hideRegion and PC.BeginTimer(state[" .. timerTrigger .. "])\n")
+  table.insert(ret, "    if ctx then\n")
+  table.insert(ret, "      local sets = {}\n")
+  for conditionNumber, expression in pairs(expressions) do
+    table.insert(ret, "      sets[" .. conditionNumber .. "] = " .. expression .. "\n")
+  end
+  table.insert(ret, "      local varies = PC.Apply(ctx, region, propertyChanges, newActiveConditions, sets, plan)\n")
+  table.insert(ret, "      for property in pairs(plan.forced) do propertyChanges[property] = true end\n")
+  table.insert(ret, "      region.timerCurveActive = true\n")
+  table.insert(ret, "      if varies then Private.ExecEnv.ScheduleConditionCheck(now + 0.1, uid, cloneId) end\n")
+  table.insert(ret, "    elseif region.timerCurveActive then\n")
+  table.insert(ret, "      PC.RestoreSteps(region, propertyChanges, plan, newActiveConditions, 'timerCurveActive')\n")
+  table.insert(ret, "      PC.RestoreForced(propertyChanges, plan, newActiveConditions)\n")
   table.insert(ret, "    end\n")
   table.insert(ret, "  end\n")
   return table.concat(ret)
@@ -1679,6 +1864,8 @@ local function ConstructConditionFunction(data)
 
   local powerCurve = PowerCurveCode(data, properties, allConditionsTemplate)
   if powerCurve then table.insert(ret, powerCurve) end
+  local timerCurve = TimerCurveCode(data, properties, allConditionsTemplate)
+  if timerCurve then table.insert(ret, timerCurve) end
 
   -- Last apply changes to region
   for property, _  in pairs(usedProperties) do

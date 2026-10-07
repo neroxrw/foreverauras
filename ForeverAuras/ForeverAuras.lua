@@ -218,6 +218,8 @@ function SlashCmdList.WeakAuras(input)
     Private.PrintLoadProfile()
   elseif msg == "help" then
     Private.PrintHelp();
+  elseif msg == "cdmsetup" then
+    Private.RunCDMSetup()
   elseif msg == "repair" then
     StaticPopup_Show("WeakAuras_CONFIRM_REPAIR", nil, nil, {reason = "user"})
   elseif msg == "trackprint" then
@@ -6291,6 +6293,8 @@ function Private.AnchorFrame(data, region, parent, force)
     else
       region:SetParent(parent or WeakAurasFrame);
     end
+    local flowClip = Private.BlizzardAuraDisplay.FlowClipParent and Private.BlizzardAuraDisplay.FlowClipParent(data)
+    if flowClip and region:GetParent() ~= flowClip then region:SetParent(flowClip) end
 
     local anchorPoint = data.anchorPoint
     if data.parent then
