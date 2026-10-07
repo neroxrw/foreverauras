@@ -15,6 +15,7 @@
 if not WeakAuras.IsLibsOK() then return end
 local _, Private = ...
 local Display = Private.BlizzardAuraDisplay
+local function Locked(frame) return Display.Busy ~= nil and Display.Busy(frame) end
 
 -- Units that name one unit; group, nameplate, boss and arena are lists.
 Display.singleUnits = {player = true, target = true, focus = true, pet = true, targettarget = true, focustarget = true}
@@ -791,7 +792,7 @@ end
 
 local function DisableMissing(single)
   local missing = single.missing
-  if not missing or not missing.active then return end
+  if not missing or not missing.active or Locked(missing.container) then return end
   missing.active = false
   for _, key in ipairs({"presence", "flowShadow"}) do
     if missing[key] then
@@ -2043,7 +2044,7 @@ end
 
 function Display.RefreshSingleStatus(instance)
   local missing = instance.single and instance.single.missing
-  if missing and missing.active then
+  if missing and missing.active and not Locked(missing.clip) then
     missing.clip:SetAlpha(missing.unitExists and not instance.statusHidden and 1 or 0)
   end
 end
@@ -2057,6 +2058,7 @@ function Display.RefreshSingle(instance, unit, shown)
   local missing = instance.single and instance.single.missing
   if not missing or not missing.active then return end
   local container = missing.container
+  if Locked(container) or Locked(missing.clip) then return end
   -- Hiding keeps the bound unit, like the aura list container, so showing the
   -- same unit again does not rebind it.
   if unit and missing.boundUnit ~= unit then
@@ -2070,7 +2072,7 @@ function Display.RefreshSingle(instance, unit, shown)
   -- The Modern Aura Group spacing and centring shadow follow the same unit.
   for _, key in ipairs({"presence", "flowShadow"}) do
     local follower = missing[key]
-    if follower and missing[key .. "Active"] then
+    if follower and missing[key .. "Active"] and not Locked(follower) then
       if unit and missing[key .. "BoundUnit"] ~= unit then
         follower:SetEnabled(false)
         follower:SetUnit(unit)

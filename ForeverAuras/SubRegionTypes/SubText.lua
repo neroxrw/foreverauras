@@ -1,4 +1,4 @@
--- Modified for ForeverAuras, 2026-09-18.
+-- Modified for ForeverAuras, 2026-10-07.
 if not WeakAuras.IsLibsOK() then return end
 ---@type string
 local AddonName = ...
@@ -321,7 +321,9 @@ local function modify(parent, region, parentData, data, first)
     end
   end
 
+  local tint = Private.DurationTextStyle(parentData, data, subRegionIndex)
   local getter = function(key, default)
+    if key:find("_time_tint$") then return tint end
     local fullKey = "text_text_format_" .. key
     if (data[fullKey] == nil) then
       data[fullKey] = default

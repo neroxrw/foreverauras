@@ -583,7 +583,7 @@ local function createOptions(id, data)
     },
     blizzardFlowNormalNote = {
       type = "description", order = 0.612, width = "full", fontSize = "small",
-      name = "|TInterface\\common\\help-i:16:16|t Auras without an Aura (Modern) trigger always sit at the start of the row.",
+      name = "|TInterface\\common\\help-i:16:16|t Icons and texts without an Aura (Modern) trigger are copied into the row (no glows or Masque). Other display types sit at the start.",
       hidden = function() return FlowOff() or Display.FlowGrid(data) or data.blizzardFlowFrames ~= nil end,
     },
     blizzardFlowGridType = {
@@ -650,7 +650,7 @@ local function createOptions(id, data)
     },
     blizzardFlowUseLimit = {
       type = "toggle", width = WeakAuras.normalWidth, order = 0.67, name = L["Limit"], hidden = FlowOff,
-      desc = "The most auras each display, or each sorted row, shows.",
+      desc = "Most auras shown by each Aura (Modern) display, or each sorted row. The whole row is also cut off after this many icons.",
       get = function() return data.blizzardFlowUseLimit or false end,
       set = function(_, v) SaveFlow("blizzardFlowUseLimit", v or nil) end,
     },
