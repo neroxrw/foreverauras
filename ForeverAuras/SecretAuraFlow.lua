@@ -929,6 +929,7 @@ end
 -- Options preview: the samples are plain frames of known size, so they are
 -- lined up in the group's order: per unit on its frame (or on the nameplate
 -- stand-in) when grouped by frame, else starting at the first display.
+local previewOrigins = {}
 function Display.ArrangeFlowPreview(group)
   if not group then return end
   if Display.FlowGrid(group) then
@@ -973,6 +974,23 @@ function Display.ArrangeFlowPreview(group)
   end
   local previous = {}
   local onFrame = false
+  -- Where the first display's box is, so its sample can start there while the
+  -- box itself moves onto the sample.
+  local function Origin(region)
+    local origin = previewOrigins[group.id] or CreateFrame("Frame", nil, UIParent)
+    previewOrigins[group.id] = origin
+    origin:ClearAllPoints()
+    if region.anchorPoint and region.relativeTo then
+      origin:SetPoint(region.anchorPoint, region.relativeTo, region.relativePoint,
+        region.GetXOffset and region:GetXOffset() or 0, region.GetYOffset and region:GetYOffset() or 0)
+    else
+      origin:SetPoint("CENTER", region, "CENTER")
+    end
+    local width, height = region:GetWidth(), region:GetHeight()
+    if issecretvalue(width) or issecretvalue(height) then width, height = region.width or 1, region.height or 1 end
+    origin:SetSize(width, height)
+    return origin
+  end
   local function PlaceNormal(region)
     local home = region.flowNormal.home
     if not g.shadow and previous[""] then
@@ -1001,19 +1019,17 @@ function Display.ArrangeFlowPreview(group)
           start, far = alignedStart, alignedFar
         end
         button:ClearAllPoints()
-        local chained = previous[key] ~= nil
-        if chained then
+        if previous[key] then
           button:SetPoint(start, previous[key], far, g.sign[1] * spacing, g.sign[2] * spacing)
         elseif frame then
           button:SetPoint(start, frame, point, frameX + ox, frameY + oy)
         elseif g.shadow then
-          button:SetPoint(g.start, region, g.centerPoint, ox, oy)
+          button:SetPoint(g.start, Origin(region), g.centerPoint, ox, oy)
         else
-          button:SetPoint(g.start, region, g.start)
+          button:SetPoint(g.start, Origin(region), g.start)
         end
-        -- The display's own box follows its first icon, unless that icon is
-        -- placed on the box itself.
-        if (frame or chained) and not moved then
+        -- The display's own box follows its first icon.
+        if (frame or not framed) and not moved then
           MovePreviewRegion(region, button)
           moved = true
         end

@@ -1,6 +1,9 @@
 # Changelog
 
 ## Versions
+## 0.64.5
+- Small fix for Previews in the Modern (Aura) Group
+
 ## 0.64.4
 - Added Old Blizzard (2h | 3m | 10s) and Modern Blizzard (1h 3m | 3m 7s | 10s) time formats for %p on Aura (Modern) displays
 - Round Up now applies to the Old Blizzard format
