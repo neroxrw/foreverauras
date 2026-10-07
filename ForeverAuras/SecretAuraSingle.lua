@@ -112,6 +112,12 @@ function Display.Growth(data)
 end
 
 function Display.MaxAuras(data)
+  local merged = Display.MergedMaxAuras and Display.MergedMaxAuras(data)
+  if merged then return merged end
+  return Display.RawMaxAuras(data)
+end
+
+function Display.RawMaxAuras(data)
   -- The Total Duration and Stack Count gates stack candidates: room for the
   -- right one among others.
   if Display.UsesGate(data) then return 10 end
@@ -838,7 +844,7 @@ local function EnsureSlot(single, instance, region, key, trigger, data)
         -- Runs inside AddAuraSlot, before Blizzard restricts the button.
         slot.button = button
         button:EnableMouse(false)
-        button:SetAllPoints(region)
+        button:SetAllPoints(Display.ContentAnchor(region))
       end,
     })
     if not ok or not slot.button then
@@ -852,7 +858,7 @@ local function EnsureSlot(single, instance, region, key, trigger, data)
   local width, height = Display.Dimensions(data)
   slot.button:ClearAllPoints()
   slot.button:SetSize(width, height)
-  slot.button:SetPoint("TOPLEFT", region, "TOPLEFT")
+  slot.button:SetPoint("TOPLEFT", Display.ContentAnchor(region), "TOPLEFT")
   container:SetAuraSlotFilterString(key, filter)
   container:SetAuraSlotCandidateFilters(key, candidates)
   container:SetAuraSlotSortMethod(key, Display.SortOrder(data, trigger))
@@ -913,7 +919,7 @@ local function EnsureRemaining(single, instance, region, data, trigger, op, x)
         w, h = math.max(1, math.floor(w + 0.5)), math.max(1, math.floor(h + 0.5))
         slot.button:ClearAllPoints()
         slot.button:SetSize(w, h)
-        slot.button:SetPoint(point, region, relative, ox, oy)
+        slot.button:SetPoint(point, Display.ContentAnchor(region), relative, ox, oy)
         pcall(slot.button.SetFrameLevel, slot.button, level + index)
         slot.text = slot.text or slot.button:CreateFontString(nil, "ARTWORK")
         slot.text:SetWordWrap(false)
@@ -1616,7 +1622,13 @@ end
 function Display.RemainingGateRange(data, trigger)
   trigger = trigger or Display.GetTrigger(data)
   if data.regionType == "icon" or not UsesRemaining(trigger) or Display.RemainingGateProblem(data, trigger) then return end
+  return Display.RemainingRange(trigger)
+end
+
+-- lower, upper (nil for no upper limit) of the Remaining Time window, or nil.
+function Display.RemainingRange(trigger)
   local op, x = Display.RemainingWindow(trigger)
+  if not op then return end
   if op == "<" then return 0, x - REMAIN_EPS
   elseif op == "<=" then return 0, x
   elseif op == ">" then return x + REMAIN_EPS end
@@ -1659,6 +1671,7 @@ local function GateFormatter(lower, upper, fill)
   gateFormatters[key] = formatter
   return formatter
 end
+Display.GateFormatter = GateFormatter
 
 -- The gate text covers the whole clip area: its font size gives the height
 -- and a run of wide characters the width. An empty text has no size, so the

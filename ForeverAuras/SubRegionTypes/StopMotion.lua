@@ -1,4 +1,4 @@
--- Modified for ForeverAuras, 2026-09-18.
+-- Modified for ForeverAuras, 2026-10-07.
 if not WeakAuras.IsLibsOK() then return end
 ---@type string
 local AddonName = ...
@@ -84,6 +84,7 @@ Private.subRegionPrototype.AddColorFromBooleanProperty(properties, "stopmotion",
 local funcs = {
   OnSizeChanged = function(self)
     local w, h = self:GetSize()
+    if issecretvalue(w) or issecretvalue(h) then return end
     self.stopMotion:SetSize(w * self.scale, h * self.scale)
   end,
   SetDesaturated = function(self, b)

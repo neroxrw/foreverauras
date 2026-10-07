@@ -581,6 +581,11 @@ local function createOptions(id, data)
         end
       end,
     },
+    blizzardFlowNormalNote = {
+      type = "description", order = 0.612, width = "full", fontSize = "small",
+      name = "|TInterface\\common\\help-i:16:16|t Auras without an Aura (Modern) trigger always sit at the start of the row.",
+      hidden = function() return FlowOff() or Display.FlowGrid(data) or data.blizzardFlowFrames ~= nil end,
+    },
     blizzardFlowGridType = {
       type = "select", width = WeakAuras.normalWidth, order = 0.631, name = L["Grid direction"],
       values = OptionsPrivate.Private.grid_types,
@@ -632,26 +637,20 @@ local function createOptions(id, data)
     },
     blizzardFlowSpacingSpace = {type = "description", name = "", order = 0.645, width = WeakAuras.normalWidth,
       hidden = function() return FlowOff() or Display.FlowGrid(data) end},
-    blizzardFlowSort = {
-      type = "select", width = WeakAuras.normalWidth, order = 0.65, name = L["Sort"], hidden = FlowOff,
-      values = function()
-        local values = CopyTable(Display.sortMethods)
-        values.UnitFrameDebuff = nil
-        return values
+    blizzardFlowSortMode = {
+      type = "select", width = WeakAuras.doubleWidth, order = 0.65, name = L["Sort"], hidden = FlowOff,
+      values = Display.flowSortModes,
+      sorting = Display.flowSortOrder,
+      desc = "Ascending and Descending sort by remaining time. Aura(s) Found displays with the same unit and filters share one sorted row, with the first one's look.",
+      get = function() return Display.FlowSortMode(data) end,
+      set = function(_, v)
+        data.blizzardFlowSort, data.blizzardFlowReverse, data.blizzardFlowMerge = nil, nil, nil
+        SaveFlow("blizzardFlowSortMode", v)
       end,
-      sorting = {"Default", "ExpirationOnly", "Expiration", "NameOnly", "Name", "ImportantOnly", "BigDefensive", "AuraInstanceIDOnly"},
-      desc = "The order of the auras inside each display.",
-      get = function() return data.blizzardFlowSort or "Default" end,
-      set = function(_, v) SaveFlow("blizzardFlowSort", v) end,
-    },
-    blizzardFlowReverse = {
-      type = "toggle", width = WeakAuras.normalWidth, order = 0.66, name = "Reverse Sort", hidden = FlowOff,
-      get = function() return data.blizzardFlowReverse or false end,
-      set = function(_, v) SaveFlow("blizzardFlowReverse", v or nil) end,
     },
     blizzardFlowUseLimit = {
       type = "toggle", width = WeakAuras.normalWidth, order = 0.67, name = L["Limit"], hidden = FlowOff,
-      desc = "The most auras each display shows.",
+      desc = "The most auras each display, or each sorted row, shows.",
       get = function() return data.blizzardFlowUseLimit or false end,
       set = function(_, v) SaveFlow("blizzardFlowUseLimit", v or nil) end,
     },

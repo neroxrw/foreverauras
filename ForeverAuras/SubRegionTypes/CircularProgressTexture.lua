@@ -1,4 +1,4 @@
--- Modified for ForeverAuras, 2026-09-18.
+-- Modified for ForeverAuras, 2026-10-07.
 if not WeakAuras.IsLibsOK() then return end
 ---@type string
 local AddonName = ...
@@ -248,6 +248,7 @@ local funcs = {
   end,
   OnSizeChanged = function(self)
     local w, h = self:GetSize()
+    if issecretvalue(w) or issecretvalue(h) then return end
     self.circularTexture:SetWidth(w)
     self.circularTexture:SetHeight(h)
     self.circularTexture:UpdateTextures()

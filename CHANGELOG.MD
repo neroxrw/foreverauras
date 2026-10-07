@@ -1,6 +1,30 @@
 # Changelog
 
 ## Versions
+## 0.64.1
+Modern Aura Group
+- Displays hidden by other triggers no longer break the row. The row closes the gap, in and out of combat.
+- Normal (non-Modern) auras can now be in a Modern Aura Group. They lead the row, followed by the Aura (Modern) displays.
+- New Sort dropdown, like a Dynamic Group's: None, Ascending, Descending, plus Blizzard's own sort options. Any sort except None puts Aura(s) Found displays with the same unit and filters into one sorted row.
+- Clearer warnings when an aura can't join the row.
+- Remaining Time now works in a Modern Aura Group (except Grid): an icon only takes space in the row while its time-left condition is met, in and out of combat.
+
+Power and Health
+- Power and Health filters that can never work in combat are removed from the trigger, but they can still be used in Conditions.
+- Conditions on Power and Health values can change Alpha and Color, in and out of combat.
+- Max Health and Max Power filters work for the player.
+- Combo Points filters work in combat.
+- Power types now match WoW Forever classes only.
+- Absorb, heal absorb and incoming heal overlays no longer draw wrong values.
+
+Fixes
+- Character Stats triggers now update in combat.
+- Cooldown icons re-saturate when a cooldown ends in combat.
+- Fixed a "script ran too long" error when opening options with many auras.
+- Fixed the class icon showing twice in load conditions.
+- Fixed Pixel Glow running counter-clockwise.
+- A newly added Alpha condition change now has a default value.
+
 ## 0.60.2
 - Character Stats trigger is now properly functional throughout
 - Fixed Pixel Glow growing in the incorrect direction

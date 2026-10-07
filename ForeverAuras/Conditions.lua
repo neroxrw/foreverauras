@@ -1226,6 +1226,18 @@ local function UsesCurveVariable(check, triggernum, kind)
   return check.trigger == triggernum and IsCurveVariable(kind, check.variable)
 end
 
+local function UsesAbsoluteCurveValue(check, triggernum, kind)
+  if type(check) ~= "table" then return false end
+  if check.variable == "AND" or check.variable == "OR" then
+    for _, subcheck in ipairs(check.checks or {}) do
+      if UsesAbsoluteCurveValue(subcheck, triggernum, kind) then return true end
+    end
+    return false
+  end
+  local names = Private.ExecEnv.PowerCurve.kinds[kind]
+  return check.trigger == triggernum and names ~= nil and (check.variable == names.value or check.variable == names.deficit)
+end
+
 local function PropertyName(propertyData, property)
   local display = propertyData and propertyData.display
   if type(display) == "table" then display = table.concat(display, " ") end
@@ -1247,12 +1259,14 @@ function Private.CurveCombatReport(data, triggernum)
   local trigger = data.triggers[triggernum].trigger
   local prototype = Private.event_prototypes[trigger.event]
   local friendly = {player = true, pet = true, group = true, party = true, raid = true}
-  local works, outOfCombat, never = {}, {}, {}
+  local works, outOfCombat, secret, never, enemies = {}, {}, {}, {}, {}
   for _, arg in ipairs(prototype and prototype.args or {}) do
     local name = arg.name
     local selected = name and trigger["use_" .. name]
     local enabled = arg.enable == nil or arg.enable == true or (type(arg.enable) == "function" and arg.enable(trigger))
-    if name and arg.display and not arg.hidden and arg.test ~= "true" and arg.type ~= "description" and arg.type ~= "header"
+    local hidden = arg.hidden
+    if type(hidden) == "function" then hidden = hidden(trigger) end
+    if name and arg.display and not hidden and arg.test ~= "true" and arg.type ~= "description" and arg.type ~= "header"
       and enabled and selected ~= nil and (selected ~= false or arg.type == "tristate") then
       local label = arg.display
       if arg.type == "number" and arg.multiEntry and type(trigger[name]) == "table" then
@@ -1263,24 +1277,39 @@ function Private.CurveCombatReport(data, triggernum)
         end
         if #parts > 0 then label = table.concat(parts, ", ") end
       end
-      if arg.combat == "never" then
+      if arg.filterEnable then
+        works[#works + 1] = label
+      elseif arg.combat == "never" then
         never[#never + 1] = label
-      elseif arg.secretCurve or arg.combat == "secret" then
+      elseif arg.secretCurve then
         outOfCombat[#outOfCombat + 1] = label
+      elseif arg.combat == "secret" then
+        secret[#secret + 1] = label
       elseif (name == "namerealm" or name == "npcId") and not friendly[trigger.unit] then
-        outOfCombat[#outOfCombat + 1] = label .. " (enemies in instances)"
+        enemies[#enemies + 1] = label
       else
         works[#works + 1] = label
       end
     end
   end
   if #works > 0 then report.works[#report.works + 1] = table.concat(works, ", ") end
+  report.filters = {}
+  local value = kind == "power" and "power" or "health"
   if #outOfCombat > 0 then
-    report.notes[#report.notes + 1] = "Out of combat only: " .. table.concat(outOfCombat, ", ")
-      .. ". Use a Condition to change Alpha or Color in combat."
+    report.filters[#report.filters + 1] = "|cffff9933Out of combat only:|r " .. table.concat(outOfCombat, ", ")
+      .. ". In combat the aura hides while this filter is set. To fade or hide by " .. value
+      .. " in combat, remove the filter and add a Condition that changes Alpha."
+  end
+  if #secret > 0 then
+    report.filters[#report.filters + 1] = "|cffff9933Out of combat only:|r " .. table.concat(secret, ", ")
+      .. ". In combat the aura hides while this filter is set; this can't be checked in combat."
+  end
+  if #enemies > 0 then
+    report.filters[#report.filters + 1] = "|cffff9933In combat, won't match enemies in instances:|r " .. table.concat(enemies, ", ") .. "."
   end
   if #never > 0 then
-    report.fails[#report.fails + 1] = table.concat(never, ", ") .. " on the trigger (always hidden; use a Condition)"
+    report.filters[#report.filters + 1] = "|cffff2020Never works as a filter:|r " .. table.concat(never, ", ")
+      .. ". The game always hides this from addons. Remove the filter and add a Condition that changes Alpha; that works in and out of combat."
   end
 
   for conditionNumber, condition in ipairs(data.conditions or {}) do
@@ -1289,7 +1318,11 @@ function Private.CurveCombatReport(data, triggernum)
       local linked = condition.linked
       local expression = not other and not linked
         and PowerCurveExpression(data, condition.check, templates, triggernum, kind)
-      if other then
+      local word = kind == "power" and "Power" or "Health"
+      if (trigger.unit or "player") ~= "player" and UsesAbsoluteCurveValue(condition.check, triggernum, kind) then
+        report.fails[#report.fails + 1] = label .. " (exact " .. word .. " and " .. word .. " Deficit need Max " .. word
+          .. ", which the game only shows for you; use " .. word .. " (%) instead)"
+      elseif other then
         report.fails[#report.fails + 1] = label .. " (only one Power or Health trigger per aura can be checked in combat)"
       elseif linked then
         report.fails[#report.fails + 1] = label .. " (Else If conditions can't be checked in combat)"
@@ -1307,10 +1340,11 @@ function Private.CurveCombatReport(data, triggernum)
             local list = ok and good or bad
             local name = PropertyName(propertyData, property)
             if mixed[property] and supported[property] then name = name .. " (also set by a Boolean condition)" end
+            if value == nil and propertyData.type == "number" then name = name .. " (no value set)" end
             list[#list + 1] = name
           end
         end
-        if #good > 0 then report.works[#report.works + 1] = label .. ": " .. table.concat(good, ", ") end
+        if #good > 0 then report.conditionsWork = true end
         if #bad > 0 then report.fails[#report.fails + 1] = label .. ": " .. table.concat(bad, ", ") end
       end
     end

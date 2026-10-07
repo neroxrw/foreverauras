@@ -511,7 +511,8 @@ local function SyncSounds(region)
   if not native then return end
   -- Unchanged units, spells and sound actions: the registrations stand.
   local signature
-  if native.active and region:IsShown() and not IsPreview() then
+  local live = native.active and Display.GetTrigger(native.data) ~= nil and region:IsShown() and not IsPreview()
+  if live then
     local trigger = Display.GetTrigger(native.data)
     local actions = native.data.actions or {}
     local parts = {}
@@ -531,7 +532,7 @@ local function SyncSounds(region)
   native.soundIDs = {}
   local data = native.data
   SoundWarning(data)
-  if not native.active or not region:IsShown() or IsPreview() then return end
+  if not live then return end
   local actions = data.actions or {}
   if not ((actions.start or {}).do_sound or (actions.finish or {}).do_sound) then return end
   if not C_UnitAuras or not C_UnitAuras.AddAuraSound or not C_UnitAuras.RemoveAuraSound
@@ -853,7 +854,7 @@ local function SpellIDMap(values)
   return next(ids) and ids or nil
 end
 
-local function CandidateFilters(data)
+local function RawCandidateFilters(data)
   local trigger = Display.GetTrigger(data)
   -- Total Duration: "<=" is Blizzard's own limit; "=" also narrows the
   -- candidates before the gate (StyleDurationGate) picks the exact one.
@@ -875,6 +876,11 @@ local function CandidateFilters(data)
   end
   -- Approximate Match swaps spell IDs for learned properties (SecretAuraSingle.lua).
   return Display.ApproximateFilters(trigger, filters)
+end
+Display.RawCandidateFilters = RawCandidateFilters
+
+local function CandidateFilters(data)
+  return Display.MergedCandidateFilters and Display.MergedCandidateFilters(data) or RawCandidateFilters(data)
 end
 
 -- The editor always renders public samples; live containers remain disabled.
@@ -1345,7 +1351,7 @@ end
 
 -- The display's frames stay shown (their contents cannot be known in combat),
 -- so a Dynamic Group keeps its place even when no aura is there.
-Display.dynamicGroupWarning = "Aura (Modern) in a Dynamic Group: It keeps its position even when no aura is shown. Use a Modern Aura Group with other Modern Aura triggers to keep dynamic behaviour."
+Display.dynamicGroupWarning = "Aura (Modern) in a Dynamic Group: It keeps its position even when no aura is shown. Use a Modern Aura Group to keep dynamic behaviour."
 local function DynamicGroupWarning(data)
   local inGroup = Display.Enabled(data) and Display.InDynamicGroup(data)
   Private.AuraWarnings.UpdateWarning(data.uid, "blizzard_aura_dynamicgroup", inGroup and "warning" or nil,
@@ -1396,6 +1402,7 @@ local function FinishApply(region, data)
   -- Where the next display in a Modern Aura Group starts, then the whole chain.
   local single = native.instances[1] and native.instances[1].single
   Display.EnsureFlowShadows(region, data)
+  Display.EnsureFlowRemaining(region, data)
   Display.SetFlowEnd(region, data, single and single.missing and single.missing.active and single.missing.presenceActive and single.missing.presence)
   Display.RechainFlow(Display.FlowGroup(data))
   RefreshUnits(region)
@@ -1682,9 +1689,8 @@ function Display.CancelEditorApply(region)
 end
 
 function Display.Modify(region, data)
-  local strayMember = Display.FlowGroup(data) ~= nil and not Display.Enabled(data)
-  Private.AuraWarnings.UpdateWarning(data.uid, "blizzard_aura_flow_member", strayMember and "warning" or nil,
-    strayMember and "Only Aura (Modern) trigger driven Auras should be in this group." or nil)
+  local flowProblem = Display.FlowNormalProblem(data)
+  Private.AuraWarnings.UpdateWarning(data.uid, "blizzard_aura_flow_member", flowProblem and "warning" or nil, flowProblem)
   local trigger = Display.GetTrigger(data)
   local key = trigger and (data.progressSource and data.progressSource[1] or -1) or 0
   if key < 0 then key = (data.triggers.activeTriggerMode and data.triggers.activeTriggerMode > 0 and data.triggers.activeTriggerMode)

@@ -1,4 +1,4 @@
--- Modified for ForeverAuras, 2026-09-18.
+-- Modified for ForeverAuras, 2026-10-07.
 if not WeakAuras.IsLibsOK() then return end
 ---@type string
 local AddonName = ...
@@ -188,7 +188,9 @@ local funcs = {
   end,
   OnSizeChanged = function(self)
     -- WORKAROUND clipping being broken on the SL beta with some setups with bars of zero width
-    if self:GetWidth() < 1 or self:GetHeight() < 1 then
+    local width, height = self:GetWidth(), self:GetHeight()
+    if issecretvalue(width) or issecretvalue(height) then return end
+    if width < 1 or height < 1 then
       self.toosmall = true
     else
       self.toosmall = false

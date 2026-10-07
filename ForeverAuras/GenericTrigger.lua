@@ -278,6 +278,9 @@ function ConstructTest(trigger, arg, preambleGroups)
   local test
   local preamble
   local name = arg.name;
+  if arg.filterEnable and not (arg.filterEnable(trigger) and trigger["use_" .. name]) then
+    return nil
+  end
 
   if arg.preamble then
     if not arg.preambleGroup or not preambleGroups[arg.preambleGroup] then
@@ -495,15 +498,15 @@ local function RunOverlayFuncs(event, state, id, errorHandler)
       additionalProgress.durationObject = nil;
       additionalProgress.durationObjectUseRemaining = nil;
     elseif (type(a) == "string") then
-      if (additionalProgress.direction ~= a) then
+      if hasanysecretvalues(additionalProgress.direction, a) or additionalProgress.direction ~= a then
         additionalProgress.direction = a;
         changed = true;
       end
-      if (additionalProgress.width ~= b) then
+      if hasanysecretvalues(additionalProgress.width, b) or additionalProgress.width ~= b then
         additionalProgress.width = b;
         changed = true;
       end
-      if (additionalProgress.offset ~= c) then
+      if hasanysecretvalues(additionalProgress.offset, c) or additionalProgress.offset ~= c then
         additionalProgress.offset = c;
         changed = true;
       end
@@ -518,11 +521,11 @@ local function RunOverlayFuncs(event, state, id, errorHandler)
       additionalProgress.min = nil;
       additionalProgress.max = nil;
     else
-      if (additionalProgress.min ~= a) then
+      if hasanysecretvalues(additionalProgress.min, a) or additionalProgress.min ~= a then
         additionalProgress.min = a;
         changed = true;
       end
-      if (additionalProgress.max ~= b) then
+      if hasanysecretvalues(additionalProgress.max, b) or additionalProgress.max ~= b then
         additionalProgress.max = b;
         changed = true;
       end
@@ -2527,7 +2530,7 @@ do
           or (not hasanysecretvalues(detail.charges, detail.chargesMax, detail.count, charges, maxCharges, count)
             and (detail.charges ~= charges or detail.chargesMax ~= maxCharges or detail.count ~= count))
         detail.ready = ready
-        if ready == false then
+        if ready ~= true then
           secretPolled[effectiveSpellId] = true
           secretPoller:Show()
         else

@@ -338,6 +338,14 @@ local function convertToProgress(rprogress, additionalProgress, adjustMin, total
         endProgress = 1 - endProgress;
       end
     end
+  elseif additionalProgress.direction == "fromMax" then
+    if totalWidth ~= 0 then
+      startProgress = 1 - (additionalProgress.width or 0) / totalWidth
+      endProgress = 1
+      if inverse then
+        startProgress, endProgress = 1 - startProgress, 0
+      end
+    end
   elseif (additionalProgress.direction) then
     local forwardDirection = (additionalProgress.direction or "forward") == "forward";
     if (inverse) then
@@ -364,6 +372,14 @@ local function convertToProgress(rprogress, additionalProgress, adjustMin, total
   return startProgress, endProgress;
 end
 
+local function HasSecretOverlay(self, additionalProgress, min, max)
+  if hasanysecretvalues(min, max, self.progress) then return true end
+  for _, entry in ipairs(additionalProgress) do
+    if hasanysecretvalues(entry.min, entry.max, entry.width, entry.offset) then return true end
+  end
+  return false
+end
+
 local function ApplyAdditionalProgressLinear(self, additionalProgress, min, max, inverse)
   self.additionalProgress = additionalProgress;
   self.additionalProgressMin = min;
@@ -372,7 +388,9 @@ local function ApplyAdditionalProgressLinear(self, additionalProgress, min, max,
 
   local effectiveInverse = (inverse and not self.inverseDirection) or (not inverse and self.inverseDirection);
 
-  if (additionalProgress) then
+  if additionalProgress and HasSecretOverlay(self, additionalProgress, min, max) then
+    hideExtraTextures(self.extraTextures, 1);
+  elseif (additionalProgress) then
     ensureExtraTextures(self, #additionalProgress);
     local totalWidth = max - min;
     for index, additionalProgress in ipairs(additionalProgress) do
@@ -409,7 +427,9 @@ local function ApplyAdditionalProgressCircular(self, additionalProgress, min, ma
 
   local effectiveInverse = (inverse and not self.inverseDirection) or (not inverse and self.inverseDirection);
 
-  if (additionalProgress) then
+  if additionalProgress and HasSecretOverlay(self, additionalProgress, min, max) then
+    hideExtraTextures(self.extraSpinners, 1);
+  elseif (additionalProgress) then
     ensureExtraSpinners(self, #additionalProgress);
     local totalWidth = max - min;
     for index, additionalProgress in ipairs(additionalProgress) do

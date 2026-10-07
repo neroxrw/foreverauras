@@ -6303,7 +6303,9 @@ function Private.AnchorFrame(data, region, parent, force)
       end
     end
 
-    region:SetAnchor(data.selfPoint, anchorParent, anchorPoint);
+    if not Private.BlizzardAuraDisplay.AnchorFlowNormal(data, region, anchorParent, anchorPoint) then
+      region:SetAnchor(data.selfPoint, anchorParent, anchorPoint);
+    end
 
     if(data.frameStrata == 1) then
       region:SetFrameStrata(region:GetParent():GetFrameStrata());
