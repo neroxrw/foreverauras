@@ -273,7 +273,7 @@ local function BindText(button, text, value, config, prefix, data, baseColor, pr
     local options
     if format ~= nil and format ~= -1 then
       options = {textFormatter = Private.GetDurationTextFormatter(config[prefix .. "p_time_legacy_floor"] and 0 or 99,
-        config[prefix .. "p_time_dynamic_threshold"] or 3, config[prefix .. "p_time_precision"] or 1, format == -2)}
+        config[prefix .. "p_time_dynamic_threshold"] or 3, config[prefix .. "p_time_precision"] or 1, format == -2, format)}
     end
     local color = Display.DurationColorCondition(data, baseColor, property, window)
     if color then

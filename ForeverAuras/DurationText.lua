@@ -1,4 +1,4 @@
--- Modified for ForeverAuras, 2026-09-18.
+-- Modified for ForeverAuras, 2026-10-07.
 if not WeakAuras.IsLibsOK() then return end
 local _, Private = ...
 
@@ -29,9 +29,51 @@ function Private.UsesDurationText(state)
   return state.progressType == "durationObject" and WeakAuras.IsDurationObject(state.durationObject)
 end
 
-function Private.GetDurationTextFormatter(format, threshold, precision, secondsOnly)
-  local key = format .. ":" .. threshold .. ":" .. precision .. ":" .. tostring(secondsOnly == true)
+-- Below the threshold (or a minute): seconds, with decimals below the threshold.
+local function SecondRules(threshold, precision, rounding, suffix)
+  local rules = {{threshold = 0, format = ""}, {threshold = 0.000001, format = "%d" .. suffix, step = 1, rounding = rounding}}
+  if threshold > 0 then
+    rules[2] = {threshold = 0.000001, format = "%." .. precision .. "f"}
+    if threshold < 60 then rules[3] = {threshold = threshold, format = "%d" .. suffix, step = 1, rounding = rounding} end
+  end
+  return rules
+end
+
+local function Part(div, mod, rounding)
+  return {div = div, mod = mod, step = 1, rounding = rounding}
+end
+
+-- Old Blizzard: 2h | 3m | 10s.
+local function ShortRules(threshold, precision, rounding)
+  local rules = SecondRules(threshold, precision, rounding, "s")
+  rules[#rules + 1] = {threshold = math.max(60, threshold), format = "%dm", components = {Part(60, nil, rounding)}}
+  rules[#rules + 1] = {threshold = 3600, format = "%dh", components = {Part(3600, nil, rounding)}}
+  rules[#rules + 1] = {threshold = 86400, format = "%dd", components = {Part(86400, nil, rounding)}}
+  return rules
+end
+
+-- Modern Blizzard: 1h 3m | 3m 7s | 10s.
+local function ModernRules(threshold, precision, rounding)
+  local down = Enum.NumericRuleFormatRounding.Down
+  local rules = SecondRules(threshold, precision, rounding, "s")
+  rules[#rules + 1] = {threshold = math.max(60, threshold), format = "%dm %ds", components = {Part(60, nil, down), Part(nil, 60, down)}}
+  rules[#rules + 1] = {threshold = 3600, format = "%dh %dm", components = {Part(3600, nil, down), Part(60, 60, down)}}
+  rules[#rules + 1] = {threshold = 86400, format = "%dd %dh", components = {Part(86400, nil, down), Part(3600, 24, down)}}
+  return rules
+end
+
+local styledRules = {[-3] = ShortRules, [-4] = ModernRules}
+
+function Private.GetDurationTextFormatter(format, threshold, precision, secondsOnly, style)
+  local Rules = styledRules[style]
+  local key = format .. ":" .. threshold .. ":" .. precision .. ":" .. tostring(secondsOnly == true) .. ":" .. tostring(Rules and style)
   local formatter = formatters[key]
+  if not formatter and Rules then
+    formatter = C_StringUtil.CreateNumericRuleFormatter()
+    local rounding = Enum.NumericRuleFormatRounding
+    formatter:SetBreakpoints(Rules(threshold, precision, format == 99 and rounding.Up or rounding.Down))
+    formatters[key] = formatter
+  end
   if not formatter then
     formatter = C_StringUtil.CreateNumericRuleFormatter()
     local rounding = Enum.NumericRuleFormatRounding

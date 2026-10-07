@@ -212,7 +212,7 @@ function OptionsPrivate.PrepareSecretDisplayOptions(data, groups)
           elseif formatKey == "p_format" then
             option.values = {timed = "Time Format"}
           elseif formatKey == "p_time_format" then
-            option.values = {[-1] = "Blizzard Default", [0] = "Minutes and seconds", [-2] = "Seconds"}
+            option.values = {[-1] = "Blizzard Default", [-3] = "Old Blizzard (2h | 3m | 10s)", [-4] = "Modern Blizzard (1h 3m | 3m 7s | 10s)", [0] = "Minutes and seconds", [-2] = "Seconds"}
           end
         end
       end

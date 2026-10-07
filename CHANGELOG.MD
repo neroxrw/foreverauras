@@ -1,6 +1,11 @@
 # Changelog
 
 ## Versions
+## 0.64.4
+- Added Old Blizzard (2h | 3m | 10s) and Modern Blizzard (1h 3m | 3m 7s | 10s) time formats for %p on Aura (Modern) displays
+- Round Up now applies to the Old Blizzard format
+- Remaining Time Aura (Modern) icons now show their swipe
+
 ## 0.64.1
 Modern Aura Group
 - Displays hidden by other triggers no longer break the row. The row closes the gap, in and out of combat.
