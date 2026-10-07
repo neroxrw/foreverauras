@@ -2322,6 +2322,14 @@ local function CastSpellNeverSecret(value)
   return ok and not issecretvalue(secrecy) and secrecy == Enum.SecrecyLevel.NeverSecret
 end
 
+function Private.PowerFilterable(trigger)
+  return trigger.use_powertype == true and trigger.powertype == 4
+end
+
+function Private.PlayerUnitTrigger(trigger)
+  return (trigger.unit or "player") == "player"
+end
+
 function Private.CurveCombatStatus(kind, trigger, data, triggernum)
   trigger = type(trigger) == "table" and trigger or {}
   if kind == "power" and trigger.use_powertype and trigger.powertype == 99 then
@@ -2330,12 +2338,13 @@ function Private.CurveCombatStatus(kind, trigger, data, triggernum)
   local report = data and triggernum and Private.CurveCombatReport(data, triggernum)
   if not report then return "|cff33ff99Works in combat.|r" end
   local lines = {}
+  local filters = report.filters or {}
   if #report.works > 0 then
     lines[#lines + 1] = "|cff33ff99Works in combat:|r " .. table.concat(report.works, "; ") .. "."
-  elseif #report.fails == 0 then
-    lines[#lines + 1] = "|cff33ff99Works in combat.|r |cffff9933In combat, " .. (kind == "power" and "Power" or "Health (%)")
-      .. " Conditions can change Alpha and Color.|r"
   end
+  lines[#lines + 1] = "|cff33ff99You can use Conditions on " .. (kind == "power" and "Power" or "Health")
+    .. " values to change Alpha and Color, in and out of combat.|r"
+  for _, line in ipairs(filters) do lines[#lines + 1] = line end
   if #report.notes > 0 then lines[#lines + 1] = "|cffff9933" .. table.concat(report.notes, " ") .. "|r" end
   if #report.fails > 0 then
     lines[#lines + 1] = "|cffff2020Won't work in combat:|r " .. table.concat(report.fails, "; ") .. "."
@@ -3256,7 +3265,7 @@ Private.event_prototypes = {
         test = "true", store = true,
       },
       {
-        name = "health", display = L["Health"], type = "number", secretCurve = true,
+        name = "health", display = L["Health"], type = "number", secretCurve = true, hidden = true, test = "true",
         init = "UnitHealth(unit)", store = true, conditionType = "number",
         multiEntry = {operator = "and", limit = 2}, progressTotal = "maxhealth", formatter = "BigNumber",
       },
@@ -3264,17 +3273,18 @@ Private.event_prototypes = {
       { name = "total", hidden = true, init = "UnitHealthMax(unit)", store = true, test = "true" },
       { name = "progressType", hidden = true, init = "'static'", store = true, test = "true" },
       {
-        name = "percenthealth", display = L["Health (%)"], type = "number", secretCurve = true, combat = "never",
+        name = "percenthealth", display = L["Health (%)"], type = "number", secretCurve = true, hidden = true, test = "true",
         init = "UnitHealthPercent(unit, true, CurveConstants.ScaleTo100)", store = true, conditionType = "number",
         multiEntry = {operator = "and", limit = 2}, formatter = "Number",
       },
       {
-        name = "deficit", display = L["Health Deficit"], type = "number", secretCurve = true,
+        name = "deficit", display = L["Health Deficit"], type = "number", secretCurve = true, hidden = true, test = "true",
         init = "UnitHealthMissing(unit)", store = true, conditionType = "number",
         multiEntry = {operator = "and", limit = 2}, progressTotal = "total", formatter = "BigNumber",
       },
       {
-        name = "maxhealth", display = L["Max Health"], type = "number", combat = "secret",
+        name = "maxhealth", display = L["Max Health"], type = "number",
+        hidden = function(trigger) return not Private.PlayerUnitTrigger(trigger) end, filterEnable = Private.PlayerUnitTrigger,
         init = "total", store = true, conditionType = "number",
         multiEntry = {operator = "and", limit = 2}, formatter = "BigNumber",
       },
@@ -3298,13 +3308,13 @@ Private.event_prototypes = {
         enable = function(trigger) return trigger.use_showHealAbsorb end, hidden = UnitGetTotalHealAbsorbs == nil,
       },
       {
-        name = "absorb", type = "number", display = L["Absorb"], combat = "secret",
+        name = "absorb", type = "number", display = L["Absorb"], hidden = true, test = "true",
         init = "UnitGetTotalAbsorbs(unit)", store = true, conditionType = "number",
         enable = function(trigger) return trigger.use_showAbsorb end, hidden = UnitGetTotalAbsorbs == nil,
         multiEntry = {operator = "and", limit = 2}, progressTotal = "total",
       },
       {
-        name = "healabsorb", type = "number", display = L["Heal Absorb"], combat = "secret",
+        name = "healabsorb", type = "number", display = L["Heal Absorb"], hidden = true, test = "true",
         init = "UnitGetTotalHealAbsorbs(unit)", store = true, conditionType = "number",
         enable = function(trigger) return trigger.use_showHealAbsorb end, hidden = UnitGetTotalHealAbsorbs == nil,
         multiEntry = {operator = "and", limit = 2},
@@ -3314,7 +3324,7 @@ Private.event_prototypes = {
         enable = UnitGetIncomingHeals ~= nil, hidden = UnitGetIncomingHeals == nil,
       },
       {
-        name = "healprediction", type = "number", display = L["Incoming Heal"], combat = "secret",
+        name = "healprediction", type = "number", display = L["Incoming Heal"], hidden = true, test = "true",
         init = "UnitGetIncomingHeals(unit)", store = true, conditionType = "number",
         enable = function(trigger) return trigger.use_showIncomingHeal end, hidden = UnitGetIncomingHeals == nil,
         multiEntry = {operator = "and", limit = 2},
@@ -3488,30 +3498,28 @@ Private.event_prototypes = {
       {
         name = L["Absorb"],
         func = function(trigger, state)
-          local absorb, total = state.absorb, state.total
-          if not absorb or hasanysecretvalues(absorb, total) then return end
+          local absorb = state.absorb
+          if not issecretvalue(absorb) and absorb == nil then return end
           if trigger.absorbMode == "OVERLAY_FROM_START" then
             return 0, absorb
           elseif trigger.absorbMode == "OVERLAY_FROM_END" then
             return "forward", absorb
           end
-          if not total then return end
-          return total - absorb, total
+          return "fromMax", absorb
         end,
         enable = function(trigger) return trigger.use_showAbsorb end
       },
       {
         name = L["Heal Absorb"],
         func = function(trigger, state)
-          local healabsorb, total = state.healabsorb, state.total
-          if not healabsorb or hasanysecretvalues(healabsorb, total) then return end
+          local healabsorb = state.healabsorb
+          if not issecretvalue(healabsorb) and healabsorb == nil then return end
           if trigger.absorbHealMode == "OVERLAY_FROM_START" then
             return 0, healabsorb
           elseif trigger.absorbHealMode == "OVERLAY_FROM_END" then
             return "forward", healabsorb
           end
-          if not total then return end
-          return total - healabsorb, total
+          return "fromMax", healabsorb
         end,
         enable = function(trigger) return trigger.use_showHealAbsorb end
       },
@@ -3519,7 +3527,7 @@ Private.event_prototypes = {
         name = L["Incoming Heal"],
         func = function(trigger, state)
           local heal = state.healprediction
-          if heal == nil or issecretvalue(heal) then return end
+          if not issecretvalue(heal) and heal == nil then return end
           return "forward", heal
         end,
         enable = function(trigger) return trigger.use_showIncomingHeal end
@@ -3763,6 +3771,8 @@ Private.event_prototypes = {
       },
       {
         name = "power",
+        hidden = function(trigger) return not Private.PowerFilterable(trigger) end,
+        filterEnable = Private.PowerFilterable,
         display = L["Power"],
         type = "number",
         secretCurve = true,
@@ -3805,10 +3815,12 @@ Private.event_prototypes = {
       },
       {
         name = "percentpower",
+        hidden = function(trigger) return not Private.PowerFilterable(trigger) end,
+        filterEnable = Private.PowerFilterable,
         display = L["Power (%)"],
         type = "number",
         secretCurve = true,
-        init = "powerType ~= 99 and UnitPowerPercent(unit, powerType, false, CurveConstants.ScaleTo100) or (not hasanysecretvalues(power, total) and total ~= 0 and (power / total) * 100 or nil)",
+        init = "(not hasanysecretvalues(power, total) and total ~= 0) and (power / total) * 100 or (powerType ~= 99 and UnitPowerPercent(unit, powerType, false, CurveConstants.ScaleTo100) or nil)",
         store = true,
         conditionType = "number",
         multiEntry = {
@@ -3819,10 +3831,12 @@ Private.event_prototypes = {
       },
       {
         name = "deficit",
+        hidden = function(trigger) return not Private.PowerFilterable(trigger) end,
+        filterEnable = Private.PowerFilterable,
         display = L["Power Deficit"],
         type = "number",
         secretCurve = true,
-        init = "powerType ~= 99 and UnitPowerMissing(unit, powerType) or (not hasanysecretvalues(power, total) and total ~= 0 and (total - power) or nil)",
+        init = "(not hasanysecretvalues(power, total) and total ~= 0) and (total - power) or (powerType ~= 99 and UnitPowerMissing(unit, powerType) or nil)",
         store = true,
         conditionType = "number",
         multiEntry = {
@@ -3835,7 +3849,8 @@ Private.event_prototypes = {
         name = "maxpower",
         display = WeakAuras.newFeatureString .. L["Max Power"],
         type = "number",
-        combat = "secret",
+        hidden = function(trigger) return not Private.PlayerUnitTrigger(trigger) end,
+        filterEnable = Private.PlayerUnitTrigger,
         init = "total",
         store = true,
         conditionType = "number",

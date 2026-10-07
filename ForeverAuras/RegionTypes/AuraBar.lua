@@ -506,7 +506,13 @@ local barPrototype = {
 
           abar.offsetBar1:ClearAllPoints();
           abar.offsetBar2:ClearAllPoints();
-          if min and max then
+          local fromMax = direction == "fromMax" and (issecretvalue(width) or width ~= nil)
+          if fromMax then
+            abar.offsetBar1:SetAllPoints(self);
+            abar.offsetBar2:SetAllPoints(self);
+            abar.offsetBar1:SetValue(width);
+            abar.offsetBar2:SetValue(self.additionalBarsMax);
+          elseif min and max then
             abar.offsetBar1:SetAllPoints(self);
             abar.offsetBar2:SetAllPoints(self);
 
@@ -591,21 +597,23 @@ local barPrototype = {
           end
 
           abar:ClearAllPoints();
+          local flipStart = fromMax and (self.horizontal and flipPointX or flipPointY) or nil
+          local function StartPoint(point) return flipStart and flipStart[point] or point end
           if (self.orientation == "HORIZONTAL" and not effectiveReverseFill) or (self.orientation == "HORIZONTAL_INVERSE" and not effectiveReverseFill) then
-            abar:SetPoint("TOPLEFT", abar.offsetBar1:GetStatusBarTexture(), "TOPRIGHT");
+            abar:SetPoint("TOPLEFT", abar.offsetBar1:GetStatusBarTexture(), StartPoint("TOPRIGHT"));
             abar:SetPoint("BOTTOMRIGHT", abar.offsetBar2:GetStatusBarTexture(), "BOTTOMRIGHT");
           elseif (self.orientation == "HORIZONTAL_INVERSE" and effectiveReverseFill) or (self.orientation == "HORIZONTAL" and effectiveReverseFill) then
             abar:SetPoint("TOPLEFT", abar.offsetBar2:GetStatusBarTexture(), "TOPLEFT");
-            abar:SetPoint("BOTTOMRIGHT", abar.offsetBar1:GetStatusBarTexture(), "BOTTOMLEFT");
+            abar:SetPoint("BOTTOMRIGHT", abar.offsetBar1:GetStatusBarTexture(), StartPoint("BOTTOMLEFT"));
           elseif (self.orientation == "VERTICAL" and effectiveReverseFill) or (self.orientation == "VERTICAL_INVERSE" and effectiveReverseFill) then
-            abar:SetPoint("TOPLEFT", abar.offsetBar1:GetStatusBarTexture(), "BOTTOMLEFT");
+            abar:SetPoint("TOPLEFT", abar.offsetBar1:GetStatusBarTexture(), StartPoint("BOTTOMLEFT"));
             abar:SetPoint("BOTTOMRIGHT", abar.offsetBar2:GetStatusBarTexture(), "BOTTOMRIGHT");
           elseif (self.orientation == "VERTICAL_INVERSE" and not effectiveReverseFill) or (self.orientation == "VERTICAL" and not effectiveReverseFill) then
             abar:SetPoint("TOPLEFT", abar.offsetBar2:GetStatusBarTexture(), "TOPLEFT");
-            abar:SetPoint("BOTTOMRIGHT", abar.offsetBar1:GetStatusBarTexture(), "TOPRIGHT");
+            abar:SetPoint("BOTTOMRIGHT", abar.offsetBar1:GetStatusBarTexture(), StartPoint("TOPRIGHT"));
           end
 
-          abar.offsetBar1:SetReverseFill(effectiveReverseFill);
+          abar.offsetBar1:SetReverseFill(fromMax and not effectiveReverseFill or (not fromMax and effectiveReverseFill));
           abar.offsetBar2:SetReverseFill(effectiveReverseFill);
           abar:SetReverseFill(effectiveReverseFill);
 

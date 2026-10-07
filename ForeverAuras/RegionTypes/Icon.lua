@@ -1,4 +1,4 @@
--- Modified for ForeverAuras, 2026-09-19.
+-- Modified for ForeverAuras, 2026-10-07.
 if not WeakAuras.IsLibsOK() then return end
 ---@type string
 local AddonName = ...
@@ -264,6 +264,9 @@ local function create(parent, data)
     else
       iconWidth = region:GetWidth()
       iconHeight = region:GetHeight()
+    end
+    if issecretvalue(iconWidth) or issecretvalue(iconHeight) then
+      iconWidth, iconHeight = width, height
     end
 
     if region.inner then

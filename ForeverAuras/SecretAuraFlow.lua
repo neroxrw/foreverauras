@@ -87,12 +87,38 @@ function Display.FlowFrameMode(data)
   if mode == "UNITFRAME" or mode == "NAMEPLATE" then return mode end
 end
 
+Display.flowSortModes = {
+  none = "None", ascending = "Ascending", descending = "Descending",
+  expiration = "Remaining time (Blizzard priority)", name = "Name", namePriority = "Name (Blizzard priority)",
+  blizzard = "Blizzard default", important = "Importance only", bigDefensive = "Big defensives", applied = "Aura instance ID",
+}
+Display.flowSortOrder = {"ascending", "descending", "expiration", "name", "namePriority", "blizzard", "important", "bigDefensive", "applied", "none"}
+local sortModeMethods = {
+  none = "Default", ascending = "ExpirationOnly", descending = "ExpirationOnly", expiration = "Expiration",
+  name = "NameOnly", namePriority = "Name", blizzard = "Default", important = "ImportantOnly",
+  bigDefensive = "BigDefensive", applied = "AuraInstanceIDOnly",
+}
+local legacySortModes = {
+  Expiration = "expiration", Name = "namePriority", NameOnly = "name", ImportantOnly = "important",
+  BigDefensive = "bigDefensive", AuraInstanceIDOnly = "applied",
+}
+
+function Display.FlowSortMode(group)
+  if not group then return "none" end
+  if Display.flowSortModes[group.blizzardFlowSortMode] then return group.blizzardFlowSortMode end
+  local legacy = group.blizzardFlowSort
+  if legacy == "ExpirationOnly" then return group.blizzardFlowReverse and "descending" or "ascending" end
+  return legacySortModes[legacy] or "none"
+end
+
 -- The group's sort order for every display in it, else the trigger's own.
 function Display.SortOrder(data, trigger)
   local group = Display.FlowGroup(data)
   local method, reverse
   if group then
-    method, reverse = group.blizzardFlowSort, group.blizzardFlowReverse
+    local mode = Display.FlowSortMode(group)
+    method = sortModeMethods[mode]
+    reverse = mode == "descending"
   else
     method, reverse = trigger.sortMethod, trigger.sortReverse
   end
@@ -121,7 +147,7 @@ end
 function Display.FlowProblem(data, trigger)
   if not Display.FlowGroup(data) then return end
   if not Display.missingTypes[data.regionType] then return "In a Modern Aura Group, use an Icon, Progress Bar, Progress Texture or Text display." end
-  if Display.RemainingWindow(trigger) then return "In a Modern Aura Group, Remaining Time is not available yet." end
+  if Display.RemainingWindow(trigger) and Display.FlowGrid(Display.FlowGroup(data)) then return "In a Grid, Remaining Time is not available." end
   local mode = Display.FlowFrameMode(data)
   if mode then
     if Display.IsSingle(trigger) and not Display.NeedsMissing(trigger) then return "Grouped by unit frame or nameplate, use Show On: Aura(s) Found." end
@@ -166,6 +192,7 @@ function Display.EnsureFlowStart(region, data)
     if native.flow then native.flow.start:Hide(); native.flow = nil end
     return
   end
+  Display.WatchFlowVisibility(region)
   local flow = native.flow or {}
   native.flow = flow
   if not flow.start then
@@ -194,7 +221,9 @@ function Display.SetFlowEnd(region, data, presence)
   local _, spacing = Display.FlowGrowth(data)
   local width, height = Display.Dimensions(data)
   local showOn = Display.ShowOn(trigger)
-  if showOn == "showOnMissing" and presence then
+  if flow.remain then
+    flow.endFrame, flow.endPoint, flow.x, flow.y = flow.remain, g.far, 0, 0
+  elseif showOn == "showOnMissing" and presence then
     flow.endFrame, flow.endPoint, flow.x, flow.y = presence, g.start, 0, 0
   -- A gate (Total Duration or Stack Count) keeps the candidates on one spot.
   elseif showOn == "showOnActive" and not Display.UsesGate(data) and native.instances[1] then
@@ -281,6 +310,120 @@ local function MeasureContainer(existing, region, data, g, layout, maxCount, fil
   return container
 end
 
+---------------------------------------------------------------------------- sort across displays
+function Display.MergesAcross(group)
+  return group and group.blizzardFlow and Display.FlowSortMode(group) ~= "none" and not Display.FlowGrid(group) or false
+end
+
+local function Serialize(value)
+  if type(value) ~= "table" then return tostring(value) end
+  local keys = {}
+  for key in pairs(value) do keys[#keys + 1] = key end
+  table.sort(keys, function(a, b) return tostring(a) < tostring(b) end)
+  local parts = {}
+  for _, key in ipairs(keys) do parts[#parts + 1] = tostring(key) .. "=" .. Serialize(value[key]) end
+  return "{" .. table.concat(parts, ",") .. "}"
+end
+
+function Display.MergeKey(data)
+  local trigger = Display.GetTrigger(data)
+  if type(trigger) ~= "table" or Display.ShowOn(trigger) ~= "showOnActive" or Display.IsSingle(trigger, data)
+    or Display.UsesGate(data) or Display.UsesApproximate(trigger)
+    or not (Display.UsesSpellIDs(trigger) or Display.UsesRankSpellIDs(trigger)) then return end
+  local filters = CopyTable(Display.RawCandidateFilters(data))
+  filters.includeSpellIDs = nil
+  return table.concat({tostring(trigger.unit), tostring((Display.SpecificUnit(trigger))), tostring((Display.IncludesPets(trigger))),
+    Display.FilterString(trigger), Serialize(filters)}, "|")
+end
+
+local merged = setmetatable({}, {__mode = "k"})
+
+local function MergedFor(data)
+  local entry = data and Private.regions[data.id]
+  return entry and entry.region and merged[entry.region]
+end
+
+function Display.MergedCandidateFilters(data)
+  local info = MergedFor(data)
+  return info and info.filters
+end
+
+function Display.MergedMaxAuras(data)
+  local info = MergedFor(data)
+  return info and info.max
+end
+
+local function PushFilters(region, data, filters, max)
+  local native = region.blizzardAuraDisplay
+  local ok = true
+  for _, instance in ipairs(native and native.instances or {}) do
+    ok = pcall(instance.container.SetAuraGroupCandidateFilters, instance.container, "Auras", filters) and ok
+    ok = pcall(instance.container.SetAuraGroupMaxFrameCount, instance.container, "Auras", max) and ok
+    if instance.flowShadowActive and instance.flowShadow then
+      ok = pcall(instance.flowShadow.SetAuraGroupCandidateFilters, instance.flowShadow, SHADOW_GROUP, filters) and ok
+      ok = pcall(instance.flowShadow.SetAuraGroupMaxFrameCount, instance.flowShadow, SHADOW_GROUP, max) and ok
+    end
+  end
+  return ok
+end
+
+function Display.RefreshFlowMerge(group)
+  local sets, order = {}, {}
+  if Display.MergesAcross(group) then
+    for _, childID in ipairs(group.controlledChildren or {}) do
+      local entry = Private.regions[childID]
+      local region = entry and entry.region
+      local native = region and region.blizzardAuraDisplay
+      if native and native.active and native.data and region:IsShown() then
+        local key = Display.MergeKey(native.data)
+        if key then
+          if not sets[key] then sets[key] = {}; order[#order + 1] = key end
+          table.insert(sets[key], region)
+        end
+      end
+    end
+  end
+  local wanted = {}
+  local limit = group.blizzardFlowUseLimit and math.max(1, math.floor(tonumber(group.blizzardFlowLimit) or 5)) or nil
+  for _, key in ipairs(order) do
+    local set = sets[key]
+    if #set > 1 then
+      local host = set[1]
+      local filters = CopyTable(Display.RawCandidateFilters(host.blizzardAuraDisplay.data))
+      local union, total = {}, 0
+      for _, region in ipairs(set) do
+        local data = region.blizzardAuraDisplay.data
+        for id in pairs(Display.RawCandidateFilters(data).includeSpellIDs or {}) do union[id] = true end
+        total = total + Display.RawMaxAuras(data)
+      end
+      filters.includeSpellIDs = union
+      wanted[host] = {filters = filters, max = limit or math.min(total, 40)}
+      for index = 2, #set do
+        local own = CopyTable(Display.RawCandidateFilters(set[index].blizzardAuraDisplay.data))
+        own.includeSpellIDs = {}
+        wanted[set[index]] = {filters = own, max = 1}
+      end
+    end
+  end
+  for _, childID in ipairs(group.controlledChildren or {}) do
+    local entry = Private.regions[childID]
+    local region = entry and entry.region
+    local native = region and region.blizzardAuraDisplay
+    if native and native.data then
+      local info, old = wanted[region], merged[region]
+      local signature = info and Serialize(info) or nil
+      if signature ~= (old and old.signature) then
+        if info then
+          info.signature = signature
+          if PushFilters(region, native.data, info.filters, info.max) then merged[region] = info end
+        elseif PushFilters(region, native.data, Display.RawCandidateFilters(native.data), Display.RawMaxAuras(native.data)) then
+          merged[region] = nil
+        end
+      end
+    end
+  end
+end
+
 local function HideShadow(holder, key)
   local container = holder and holder[key]
   if container then
@@ -346,6 +489,100 @@ function Display.EnsureFlowShadows(region, data)
   end
 end
 
+-- Remaining Time: a hidden countdown text on its own aura slot is one display
+-- (plus spacing) long inside the time window and empty outside it, or when
+-- the aura is gone, so the next display follows the window.
+local FLOW_REMAIN, FLOW_REMAIN_SHADOW = "FAFlowRemain", "FAFlowRemainShadow"
+local measureCurve
+
+local function MeasureText(instance, key, data, trigger, g, startFrame, length, lower, upper)
+  local container, store = instance.container, instance.flowRemainSlots
+  local entry = store[key]
+  if not entry then
+    entry = {}
+    local ok = pcall(container.AddAuraSlot, container, key, Display.FilterString(trigger), {
+      candidateFilters = Display.CandidateFilters(data),
+      initializeFrame = function(button)
+        entry.button = button
+        button:EnableMouse(false)
+        button:SetAlpha(0)
+        button:SetSize(1, 1)
+      end,
+    })
+    if not ok or not entry.button then return end
+    entry.text = entry.button:CreateFontString(nil, "ARTWORK")
+    store[key] = entry
+  end
+  container:SetAuraSlotEnabled(key, false)
+  container:SetAuraSlotFilterString(key, Display.FilterString(trigger))
+  container:SetAuraSlotCandidateFilters(key, Display.CandidateFilters(data))
+  container:SetAuraSlotSortMethod(key, Display.SortOrder(data, trigger))
+  entry.button:ClearAllPoints()
+  pcall(entry.button.SetPoint, entry.button, g.start, startFrame, g.start)
+  local text = entry.text
+  text:SetFont(STANDARD_TEXT_FONT, 12, "")
+  text:SetWordWrap(false)
+  text:SetJustifyH(g.sign[1] < 0 and "RIGHT" or "LEFT")
+  text:ClearAllPoints()
+  if not pcall(text.SetPoint, text, g.start, startFrame, g.start) then return end
+  local along = g.sign[1] ~= 0
+  length = math.max(1, math.floor(length + 0.5))
+  local fill = ("|TInterface\\Buttons\\WHITE8X8:%d:%d|t"):format(along and 1 or length, along and length or 1)
+  local formatter = Display.GateFormatter(lower, upper, fill)
+  if not formatter then return end
+  if not measureCurve then
+    measureCurve = C_CurveUtil.CreateColorCurve()
+    measureCurve:SetType(Enum.LuaCurveType.Step)
+    measureCurve:AddPoint(0, CreateColor(0, 0, 0, 0))
+  end
+  local property = Enum.DurationTextBindingProperty.RemainingDuration
+  if not pcall(entry.button.SetDurationText, entry.button, text, {
+    textFormat = {formatString = "{}", components = {{property = property, formatter = formatter}}},
+    textColor = {curve = measureCurve, property = property},
+  }) then return end
+  text:Show()
+  container:SetAuraSlotEnabled(key, true)
+  return entry
+end
+
+local function DisableMeasure(instance, key)
+  local entry = instance and instance.flowRemainSlots and instance.flowRemainSlots[key]
+  if entry then pcall(instance.container.SetAuraSlotEnabled, instance.container, key, false) end
+end
+
+-- Called by Apply after the flow shadows, before the display's end is recorded.
+function Display.EnsureFlowRemaining(region, data)
+  local native = region.blizzardAuraDisplay
+  local flow = native and native.flow
+  local instance = native and native.instances[1]
+  local trigger = Display.GetTrigger(data)
+  local lower, upper
+  if flow and instance and trigger and not Display.FlowFrameMode(data) and not Display.FlowGrid(Display.FlowGroup(data)) then
+    lower, upper = Display.RemainingRange(trigger)
+  end
+  if flow then flow.remain, flow.shadowRemain = nil, nil end
+  if not lower then
+    DisableMeasure(instance, FLOW_REMAIN)
+    DisableMeasure(instance, FLOW_REMAIN_SHADOW)
+    return
+  end
+  instance.flowRemainSlots = instance.flowRemainSlots or {}
+  local _, spacing = Display.FlowGrowth(data)
+  local width, height = Display.Dimensions(data)
+  local g = flow.growth
+  local size = ((g.sign[1] ~= 0) and width or height) + spacing
+  local main = MeasureText(instance, FLOW_REMAIN, data, trigger, g, flow.start, size, lower, upper)
+  flow.remain = main and main.text
+  local shadow = main and g.shadow and flow.shadowStart
+    and MeasureText(instance, FLOW_REMAIN_SHADOW, data, trigger, g.shadow, flow.shadowStart, size / 2, lower, upper)
+  if shadow then
+    HideShadow(instance, "flowShadow")
+    flow.shadowKind, flow.shadowList, flow.shadowRemain = "remain", nil, shadow.text
+  else
+    DisableMeasure(instance, FLOW_REMAIN_SHADOW)
+  end
+end
+
 -- Keeps a display's list shadow on the same unit as its aura area.
 function Display.RefreshFlowShadow(instance, unit, shown)
   local container = instance.flowShadowActive and instance.flowShadow
@@ -367,13 +604,20 @@ local function ChainShadows(flow)
   if flow.shadowKind == "list" then
     for index, container in ipairs(flow.shadowList) do
       container:ClearAllPoints()
+      local ok
       if index == 1 then
-        pcall(container.SetPoint, container, sh.start, flow.shadowStart, sh.start)
+        ok = pcall(container.SetPoint, container, sh.start, flow.shadowStart, sh.start)
       else
-        pcall(container.SetPoint, container, sh.start, flow.shadowList[index - 1], sh.listEnd, sh.pixel[1], sh.pixel[2])
+        ok = pcall(container.SetPoint, container, sh.start, flow.shadowList[index - 1], sh.listEnd, sh.pixel[1], sh.pixel[2])
+      end
+      if not ok then
+        container:ClearAllPoints()
+        container:SetPoint(sh.start, flow.region, sh.start)
       end
     end
     return {flow.shadowList[#flow.shadowList], sh.listEnd, sh.pixel[1], sh.pixel[2]}
+  elseif flow.shadowKind == "remain" then
+    return {flow.shadowRemain, sh.far, 0, 0}
   elseif flow.shadowKind == "missing" then
     local single = flow.region.blizzardAuraDisplay.instances[1].single.missing
     return {single.flowShadow, sh.start, 0, 0}
@@ -660,6 +904,28 @@ function Display.FlowPreviewFrame(group)
   return PreviewFrame(group, unit or "player")
 end
 
+function Display.FlowNormalProblem(data)
+  local group = Display.FlowGroup(data)
+  if not group or Display.Enabled(data) or Display.FlowNormal(data) then return end
+  for _, entry in ipairs(data.triggers or {}) do
+    if type(entry) == "table" and type(entry.trigger) == "table" and entry.trigger.type == "secretAura" then return end
+  end
+  if data.regionType == "group" or data.regionType == "dynamicgroup" then
+    return "Groups inside a Modern Aura Group keep their own position."
+  end
+  if group.blizzardFlowFrames ~= nil or Display.FlowGrid(group) then
+    return "With Grid or Group by Frame, only Aura (Modern) displays line up. This display keeps its own position."
+  end
+  return "Anchored to a unit frame, nameplate, the mouse or a custom anchor, this display keeps its own position."
+end
+
+local function NormalSize(region, data)
+  local width, height = region.width, region.height
+  if type(width) ~= "number" or issecretvalue(width) then width = tonumber(data.width) or 1 end
+  if type(height) ~= "number" or issecretvalue(height) then height = tonumber(data.height) or 1 end
+  return width * math.abs(region.scalex or 1), height * math.abs(region.scaley or 1)
+end
+
 -- Options preview: the samples are plain frames of known size, so they are
 -- lined up in the group's order: per unit on its frame (or on the nameplate
 -- stand-in) when grouped by frame, else starting at the first display.
@@ -694,6 +960,10 @@ function Display.ArrangeFlowPreview(group)
           cross[key] = math.max(cross[key] or 0, along and height or width)
         end
       end
+    elseif region and region.flowNormal and region.flowNormal.active and region:IsShown() and not g.shadow then
+      local width, height = NormalSize(region, region.flowNormal.data)
+      length[""] = (length[""] or 0) + (along and width or height) + spacing
+      cross[""] = math.max(cross[""] or 0, along and height or width)
     end
   end
   local function Offset(key)
@@ -703,45 +973,64 @@ function Display.ArrangeFlowPreview(group)
   end
   local previous = {}
   local onFrame = false
+  local function PlaceNormal(region)
+    local home = region.flowNormal.home
+    if not g.shadow and previous[""] then
+      region:SetAnchor(g.start, previous[""], g.far)
+      region:SetOffset(g.sign[1] * spacing, g.sign[2] * spacing)
+    else
+      region:SetAnchor(g.start, home, g.start)
+      region:SetOffset(0, 0)
+    end
+    if not g.shadow then previous[""] = region end
+  end
+  local function PlaceSamples(region)
+    local moved = false
+    for _, sample in ipairs(region.secretAuraSamples or {}) do
+      local button = sample.button
+      if button:IsShown() then
+        local key = Key(sample)
+        local frame = framed and PreviewFrame(group, sample.previewUnit or nil)
+        local ox, oy = Offset(key)
+        -- The group's anchor point only places the row on a frame; on the
+        -- screen the row sits on the first display's box, as the live auras do.
+        local start, far = g.start, g.far
+        if framed then
+          local alignedStart, _, alignedFar = AlignedPoints(group, g)
+          start, far = alignedStart, alignedFar
+        end
+        button:ClearAllPoints()
+        if previous[key] then
+          button:SetPoint(start, previous[key], far, g.sign[1] * spacing, g.sign[2] * spacing)
+        elseif frame then
+          button:SetPoint(start, frame, point, frameX + ox, frameY + oy)
+        elseif g.shadow then
+          button:SetPoint(g.start, region, g.centerPoint, ox, oy)
+        else
+          button:SetPoint(g.start, region, g.start)
+        end
+        -- On a frame, the display's own box follows its first icon.
+        if frame and not moved then
+          MovePreviewRegion(region, button)
+          moved = true
+        end
+        onFrame = onFrame or frame ~= nil and frame ~= false
+        previous[key] = button
+      end
+    end
+    if not moved then Display.RestorePreviewRegion(region) end
+  end
   for _, childID in ipairs(group.controlledChildren or {}) do
     local entry = Private.regions[childID]
     local region = entry and entry.region
-    if region and region.secretAuraSamplesActive then
-      local moved = false
-      for _, sample in ipairs(region.secretAuraSamples or {}) do
-        local button = sample.button
-        if button:IsShown() then
-          local key = Key(sample)
-          local frame = framed and PreviewFrame(group, sample.previewUnit or nil)
-          local ox, oy = Offset(key)
-          -- The group's anchor point only places the row on a frame; on the
-          -- screen the row sits on the first display's box, as the live auras do.
-          local start, far = g.start, g.far
-          if framed then
-            local alignedStart, _, alignedFar = AlignedPoints(group, g)
-            start, far = alignedStart, alignedFar
-          end
-          button:ClearAllPoints()
-          if previous[key] then
-            button:SetPoint(start, previous[key], far, g.sign[1] * spacing, g.sign[2] * spacing)
-          elseif frame then
-            button:SetPoint(start, frame, point, frameX + ox, frameY + oy)
-          elseif g.shadow then
-            button:SetPoint(g.start, region, g.centerPoint, ox, oy)
-          else
-            button:SetPoint(g.start, region, g.start)
-          end
-          -- On a frame, the display's own box follows its first icon.
-          if frame and not moved then
-            MovePreviewRegion(region, button)
-            moved = true
-          end
-          onFrame = onFrame or frame ~= nil and frame ~= false
-          previous[key] = button
-        end
-      end
-      if not moved then Display.RestorePreviewRegion(region) end
+    if region and not region.secretAuraSamplesActive and region.flowNormal and region.flowNormal.active and region:IsShown() then
+      PlaceNormal(region)
     end
+  end
+  for _, childID in ipairs(group.controlledChildren or {}) do
+    local entry = Private.regions[childID]
+    local region = entry and entry.region
+    if region and region.secretAuraSamplesActive then PlaceSamples(region) end
   end
   if onFrame and firstKey then
     local ox, oy = Offset(firstKey)
@@ -751,6 +1040,126 @@ function Display.ArrangeFlowPreview(group)
   else
     Display.RestoreGroupPreview(group)
   end
+end
+
+local afterCombat, queued = {}, {}
+local combatWatcher = CreateFrame("Frame")
+combatWatcher:RegisterEvent("PLAYER_REGEN_ENABLED")
+combatWatcher:SetScript("OnEvent", function()
+  local groups = afterCombat
+  afterCombat = {}
+  for group in pairs(groups) do Display.RechainFlow(group) end
+end)
+
+local function FlushQueued()
+  local groups = queued
+  queued = {}
+  for group in pairs(groups) do Display.RechainFlow(group) end
+end
+
+local function QueueRechain(region)
+  local native = region.blizzardAuraDisplay
+  local normal = region.flowNormal
+  local data = native and native.active and native.data or normal and normal.active and normal.data
+  local group = data and Display.FlowGroup(data)
+  if not group then return end
+  if not next(queued) then C_Timer.After(0, FlushQueued) end
+  queued[group] = true
+end
+
+function Display.WatchFlowVisibility(region)
+  if region.flowVisibilityHooked then return end
+  region.flowVisibilityHooked = true
+  region:HookScript("OnShow", QueueRechain)
+  region:HookScript("OnHide", QueueRechain)
+  region:HookScript("OnSizeChanged", QueueRechain)
+end
+
+function Display.FlowNormal(data)
+  if not data or data.regionType == "group" or data.regionType == "dynamicgroup" or Display.Enabled(data) then return end
+  for _, entry in ipairs(data.triggers or {}) do
+    if type(entry) == "table" and type(entry.trigger) == "table" and entry.trigger.type == "secretAura" then return end
+  end
+  local anchor = data.anchorFrameType
+  if anchor == "UNITFRAME" or anchor == "NAMEPLATE" or anchor == "CUSTOM" or anchor == "MOUSE" then return end
+  local group = Display.FlowGroup(data)
+  if group and group.blizzardFlowFrames == nil and not Display.FlowGrid(group) then return group end
+end
+
+local function SizeFlowNormal(region, normal, g, group)
+  local flow = normal.flow
+  local width, height = NormalSize(region, normal.data)
+  local spacing = tonumber(group.blizzardFlowSpacing) or 2
+  local along = g.sign[1] ~= 0
+  local size = (along and width or height) + spacing
+  flow.growth, flow.endFrame, flow.endPoint = g, flow.start, g.start
+  flow.x, flow.y = g.sign[1] * size, g.sign[2] * size
+  normal.home:SetSize(width, height)
+  if g.shadow then
+    if not flow.shadowStart then
+      flow.shadowStart = CreateFrame("Frame", nil, region, "DisableUntrustedLayoutScriptsTemplate")
+      flow.shadowStart:EnableMouse(false)
+      flow.shadowStart:SetSize(1, 1)
+    end
+    flow.shadowStart:Show()
+    flow.shadowKind, flow.shadowList, flow.half = "fixed", nil, size / 2
+  else
+    if flow.shadowStart then flow.shadowStart:Hide() end
+    flow.shadowKind = nil
+  end
+end
+
+local function NormalWarning(normal, message)
+  local uid = normal.data and normal.data.uid
+  if uid then Private.AuraWarnings.UpdateWarning(uid, "flow_normal", message and "warning" or nil, message) end
+end
+
+local function PlaceNormalRegion(region, normal, origin, x, y)
+  local g = normal.flow.growth
+  if not g or WeakAuras.IsOptionsOpen() then return end
+  region:SetOffset(x or 0, y or 0)
+  region:SetAnchor(g.start, origin or normal.home, g.start)
+end
+
+function Display.AnchorFlowNormal(data, region, anchorParent, anchorPoint)
+  local normal = region.flowNormal
+  local group = Display.FlowNormal(data)
+  if not group then
+    if normal and normal.active then
+      normal.active = false
+      NormalWarning(normal, nil)
+      if normal.flow.shadowStart then normal.flow.shadowStart:Hide() end
+      local old = Display.FlowGroup(normal.data) or normal.group
+      normal.group = nil
+      if old then Display.RechainFlow(old) end
+    end
+    return false
+  end
+  if not normal then
+    normal = {}
+    normal.home = CreateFrame("Frame", nil, UIParent)
+    normal.home:EnableMouse(false)
+    normal.flow = {start = CreateFrame("Frame", nil, region, "DisableUntrustedLayoutScriptsTemplate")}
+    normal.flow.start:EnableMouse(false)
+    normal.flow.start:SetSize(1, 1)
+    region.flowNormal = normal
+  end
+  normal.data, normal.group, normal.active = data, group, true
+  normal.home:ClearAllPoints()
+  normal.home:SetPoint(data.selfPoint or "CENTER", anchorParent, anchorPoint or "CENTER", data.xOffset or 0, data.yOffset or 0)
+  local g = GROWTH[group.blizzardFlowGrowth] or GROWTH.RIGHT
+  SizeFlowNormal(region, normal, g, group)
+  Display.WatchFlowVisibility(region)
+  if WeakAuras.IsOptionsOpen() then
+    region:SetAnchor(g.start, normal.home, g.start)
+    region:SetOffset(0, 0)
+    Display.ArrangeFlowPreview(group)
+  else
+    if not normal.flow.start:GetPoint() then normal.flow.start:SetPoint(g.start, normal.home, g.start) end
+    if not region.relativeTo then PlaceNormalRegion(region, normal) end
+  end
+  QueueRechain(region)
+  return true
 end
 
 local staleRebuilds = {}
@@ -764,6 +1173,7 @@ end
 -- Re-anchors every child of a Modern Aura Group in the group's child order.
 function Display.RechainFlow(group)
   if not group then return end
+  Display.RefreshFlowMerge(group)
   Display.RebuildGrid(group)
   if Display.FlowGrid(group) then return end
   if group.blizzardFlowFrames == "UNITFRAME" or group.blizzardFlowFrames == "NAMEPLATE" then
@@ -782,21 +1192,38 @@ function Display.RechainFlow(group)
     Display.RelinkFlowUnits(group)
     return
   end
-  if InCombatLockdown() then return end
-  local flows = {}
+  local combat = InCombatLockdown()
+  if combat then afterCombat[group] = true end
+  local flows, modernFlows = {}, {}
   local g = GROWTH[group.blizzardFlowGrowth] or GROWTH.RIGHT
   for _, childID in ipairs(group.controlledChildren or {}) do
     local entry = Private.regions[childID]
     local region = entry and entry.region
     local native = region and region.blizzardAuraDisplay
+    local normal = region and region.flowNormal
     local flow = native and native.active and native.flow
+    if not flow and normal and normal.active and Display.FlowNormal(normal.data) == group then
+      SizeFlowNormal(region, normal, g, group)
+      flow = normal.flow
+      flow.home = normal.home
+    end
     -- A display not yet rebuilt for the group's current growth joins the
     -- chain when its own rebuild runs.
-    if flow and flow.endFrame and flow.growth == g then
+    if flow and flow.endFrame and flow.growth == g and region:IsShown() then
       flow.region = region
-      flows[#flows + 1] = flow
+      if not flow.home then
+        modernFlows[#modernFlows + 1] = flow
+      elseif g.shadow then
+        NormalWarning(normal, "Centered growth only lines up Aura (Modern) displays. This display keeps its own position.")
+        PlaceNormalRegion(region, normal)
+      else
+        NormalWarning(normal, nil)
+        flow.normal = normal
+        flows[#flows + 1] = flow
+      end
     end
   end
+  for _, flow in ipairs(modernFlows) do flows[#flows + 1] = flow end
   -- Centred: the shadows run backwards from the first display's centre point,
   -- and the visible row starts where they end, half a spacing on.
   local previous, shadowEnd
@@ -807,7 +1234,7 @@ function Display.RechainFlow(group)
         flow.shadowStart:ClearAllPoints()
         if not (shadowEnd and pcall(flow.shadowStart.SetPoint, flow.shadowStart, g.shadow.start, shadowEnd[1], shadowEnd[2], shadowEnd[3], shadowEnd[4])) then
           flow.shadowStart:ClearAllPoints()
-          flow.shadowStart:SetPoint(g.shadow.start, flows[1].region, g.centerPoint)
+          flow.shadowStart:SetPoint(g.shadow.start, flows[1].home or flows[1].region, g.centerPoint)
         end
         shadowEnd = ChainShadows(flow)
       end
@@ -817,16 +1244,32 @@ function Display.RechainFlow(group)
         x = shadowEnd[3] + g.sign[1] * spacing / 2, y = shadowEnd[4] + g.sign[2] * spacing / 2}
     end
   end
+  local origin, lead = nil, 0
   for _, flow in ipairs(flows) do
     local region = flow.region
-    do
+    if flow.home then
+      origin = origin or flow.home
+      local x, y = g.sign[1] * lead, g.sign[2] * lead
+      if not combat then flow.start:ClearAllPoints() end
+      flow.start:SetPoint(g.start, origin, g.start, x, y)
+      PlaceNormalRegion(region, flow.normal, origin, x, y)
+      lead = lead + math.abs(flow.x) + math.abs(flow.y)
+      previous = flow
+    elseif combat then
+      if previous then
+        pcall(flow.start.SetPoint, flow.start, flow.growth.start, previous.endFrame, previous.endPoint, previous.x, previous.y)
+      else
+        flow.start:SetPoint(flow.growth.start, flow.home or region, flow.growth.start)
+      end
+      previous = flow
+    else
       flow.start:ClearAllPoints()
       local chained = previous and pcall(flow.start.SetPoint, flow.start, flow.growth.start,
         previous.endFrame, previous.endPoint, previous.x, previous.y)
       if not chained then
         -- First display, or Blizzard refused the anchor: start at the region.
         flow.start:ClearAllPoints()
-        flow.start:SetPoint(flow.growth.start, region, flow.growth.start)
+        flow.start:SetPoint(flow.growth.start, flow.home or region, flow.growth.start)
       end
       previous = flow
     end

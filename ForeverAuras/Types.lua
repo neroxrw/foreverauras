@@ -1651,21 +1651,7 @@ Private.power_types = {
   [2] = POWER_TYPE_FOCUS,
   [3] = POWER_TYPE_ENERGY,
   [4] = COMBO_POINTS,
-  [6] = RUNIC_POWER,
-  [7] = SOUL_SHARDS_POWER,
-  [8] = POWER_TYPE_LUNAR_POWER,
-  [9] = HOLY_POWER,
-  [11] = POWER_TYPE_MAELSTROM,
-  [12] = CHI_POWER,
-  [13] = POWER_TYPE_INSANITY,
-  [16] = POWER_TYPE_ARCANE_CHARGES,
-  [17] = POWER_TYPE_FURY_DEMONHUNTER,
-  [18] = POWER_TYPE_PAIN
 }
-do
-  Private.power_types[99] = STAGGER
-  Private.power_types[19] = POWER_TYPE_ESSENCE
-end
 
 ---@type table<string, string>
 Private.miss_types = {
@@ -2028,8 +2014,9 @@ local function update_specs()
       if tabName then
         tinsert(WeakAuras.spec_types_specific[classFileName], "|T"..(icon or "error")..":0|t "..(tabName or "error"));
         local classColor = WA_GetClassColor(classFileName)
+        local specIcon = numSpecs > 1 and "|T"..(icon or "error")..":0|t " or " "
         Private.spec_types_all[specId] = CreateAtlasMarkup(GetClassAtlas(classFileName:lower()))
-        .. "|T"..(icon or "error")..":0|t "..(WrapTextInColorCode(tabName, classColor) or "error");
+        .. specIcon..(WrapTextInColorCode(tabName, classColor) or "error");
         tinsert(Private.specs_sorted, specId)
       end
     end

@@ -330,6 +330,9 @@ local function addControlsForChange(args, order, data, conditionVariable, totalA
       end
 
       local default = allProperties.propertyMap[property].default;
+      if default == nil and allProperties.propertyMap[property].type == "number" then
+        default = allProperties.propertyMap[property].min or 0
+      end
       if (data.controlledChildren) then
         for id, reference in pairs(conditions[i].changes[j].references) do
           local auraData = WeakAuras.GetData(id);
