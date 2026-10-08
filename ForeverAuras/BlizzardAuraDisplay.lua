@@ -1,4 +1,4 @@
--- Modified for ForeverAuras, 2026-09-30.
+-- Modified for ForeverAuras, 2026-10-08.
 if not WeakAuras.IsLibsOK() then return end
 local _, Private = ...
 local SharedMedia = LibStub("LibSharedMedia-3.0")
@@ -1052,7 +1052,12 @@ local function Layout(native, region, data)
   local spacing = flowSpacing or settings.spacing or 6
   -- A Modern Aura Group measures a list by its container, so it uses the compact
   -- layout whose width is exactly the icons shown.
-  local compact = not centered and (CompactUnits(data) or flowSpacing ~= nil)
+  -- Only an Aura(s) Found list without a gate or Remaining Time is measured that way;
+  -- a fixed icon keeps slots of exactly its size.
+  local trigger = Display.GetTrigger(data)
+  local measured = trigger and Display.ShowOn(trigger) == "showOnActive" and not Display.UsesGate(data)
+    and not (Display.RemainingRange and Display.RemainingRange(trigger))
+  local compact = not centered and (CompactUnits(data) or flowSpacing ~= nil and measured)
   -- The Total Duration and Stack Count gates stack every candidate on the same
   -- spot: only the one that passes is drawn, so the others must not take space.
   if Display.UsesGate(data) then spacing = -(vertical and height or width) end
@@ -1086,6 +1091,9 @@ local function BuildButton(container, button)
   native.border:SetAllPoints(button)
   local base = ElementFrame(native, "sharedBase")
   native.icon = base:CreateTexture(nil, "ARTWORK")
+  -- Placed like the icons of other displays (not rounded to whole pixels), so rows line up.
+  native.icon:SetSnapToPixelGrid(false)
+  native.icon:SetTexelSnappingBias(0)
   button:SetIcon(native.icon)
   native.cooldown = CreateFrame("Cooldown", nil, base, "CooldownFrameTemplate")
   native.cooldown:SetAllPoints(native.icon)
