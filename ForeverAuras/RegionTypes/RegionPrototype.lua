@@ -1,4 +1,5 @@
 -- Modified for ForeverAuras, 2026-10-07.
+-- Modifications Copyright (C) 2026 ForeverAuras. Licensed under the GNU GPL v2 (see LICENSE).
 if not WeakAuras.IsLibsOK() then return end
 ---@type string
 local AddonName = ...
@@ -1014,8 +1015,18 @@ local frameForFrameTick = CreateFrame("Frame");
 Private.frames["Frame Tick Frame"] = frameForFrameTick
 
 Private.FrameTick = Private.CreateSubscribableObject()
+local TEXT_TICK = 1 / 30
+local nextTextTick = 0
+function Private.ThrottledTextTick(func)
+  return function(...)
+    if Private.FrameTick.textDue then return func(...) end
+  end
+end
 Private.FrameTick.OnUpdateHandler = function()
   Private.StartProfileSystem("frame tick")
+  local now = GetTime()
+  Private.FrameTick.textDue = now >= nextTextTick
+  if Private.FrameTick.textDue then nextTextTick = now + TEXT_TICK end
   Private.FrameTick:Notify("Tick")
   Private.StopProfileSystem("frame tick")
 end

@@ -1,3 +1,4 @@
+-- Copyright (C) 2026 ForeverAuras. Part of ForeverAuras, licensed under the GNU GPL v2 (see LICENSE).
 -- Keep hiding limited to opacity. Calling Edit Mode setting updaters from addon
 -- code taints Blizzard's aura refresh path; visibility/tooltips must be set in its UI.
 if not WeakAuras.IsLibsOK() then return end

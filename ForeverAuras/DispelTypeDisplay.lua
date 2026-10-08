@@ -1,3 +1,4 @@
+-- Copyright (C) 2026 ForeverAuras. Part of ForeverAuras, licensed under the GNU GPL v2 (see LICENSE).
 -- Shared geometry for independently positioned, Blizzard-coloured dispel borders.
 if not WeakAuras.IsLibsOK() then return end
 local _, Private = ...

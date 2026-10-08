@@ -1,4 +1,5 @@
 -- Modified for ForeverAuras; generic templates for the Forever client.
+-- Modifications Copyright (C) 2026 ForeverAuras. Licensed under the GNU GPL v2 (see LICENSE).
 local _, TemplatePrivate = ...
 if not WeakAuras.IsLibsOK() then return end
 local L = WeakAuras.L

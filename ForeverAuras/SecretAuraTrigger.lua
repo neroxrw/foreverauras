@@ -1,4 +1,5 @@
 -- Modified for ForeverAuras, 2026-09-30.
+-- Modifications Copyright (C) 2026 ForeverAuras. Licensed under the GNU GPL v2 (see LICENSE).
 if not WeakAuras.IsLibsOK() then return end
 local _, Private = ...
 local Display = Private.BlizzardAuraDisplay
@@ -193,3 +194,5 @@ function Trigger.GetTriggerDescription(data, triggernum, lines)
 end
 
 WeakAuras.RegisterTriggerSystem({"secretAura"}, Trigger)
+
+unitFrame:SetScript("OnEvent", Private.Profiled("aura (modern) - trigger", unitFrame:GetScript("OnEvent")))

@@ -1,3 +1,4 @@
+-- Copyright (C) 2026 ForeverAuras. Part of ForeverAuras, licensed under the GNU GPL v2 (see LICENSE).
 -- Glow elements on Aura (Modern) displays: Action Button Glow, Pixel Glow,
 -- Autocast Shine and Proc Glow, using the Glow element's settings.
 --

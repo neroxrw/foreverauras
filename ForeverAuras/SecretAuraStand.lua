@@ -1,3 +1,4 @@
+-- Copyright (C) 2026 ForeverAuras. Part of ForeverAuras, licensed under the GNU GPL v2 (see LICENSE).
 -- Stand-ins for displays that are not Aura (Modern) in a Modern Aura Group.
 -- Only frames created with DisableUntrustedLayoutScriptsTemplate may follow an
 -- aura container, so such a display is drawn by copies made inside its chain
@@ -60,7 +61,11 @@ local function Hook(source, methods)
   for _, method in ipairs(methods) do
     if source[method] and not source.faStandHooked[method] then
       source.faStandHooked[method] = true
-      hooksecurefunc(source, method, function(self, ...) Forward(self, method, ...) end)
+      hooksecurefunc(source, method, function(self, ...)
+        Private.StartProfileSystem("aura (modern) - group copies")
+        Forward(self, method, ...)
+        Private.StopProfileSystem("aura (modern) - group copies")
+      end)
     end
   end
 end

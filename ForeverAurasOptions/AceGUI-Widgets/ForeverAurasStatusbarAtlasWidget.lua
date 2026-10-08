@@ -1,4 +1,5 @@
 -- Modified for ForeverAuras, 2026-09-18.
+-- Modifications Copyright (C) 2026 ForeverAuras. Licensed under the GNU GPL v2 (see LICENSE).
 -- Widget is based on the AceGUIWidget-DropDown.lua supplied with AceGUI-3.0
 -- Original Widget created by Yssaril, modified by ForeverAuras Team to handle Atlas
 

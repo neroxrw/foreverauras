@@ -1,3 +1,4 @@
+-- Copyright (C) 2026 ForeverAuras. Part of ForeverAuras, licensed under the GNU GPL v2 (see LICENSE).
 -- Native widgets consume restricted progress without exposing it to Lua geometry.
 if not WeakAuras.IsLibsOK() then return end
 local _, Private = ...

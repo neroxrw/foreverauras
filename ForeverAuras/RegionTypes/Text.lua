@@ -1,4 +1,5 @@
 -- Modified for ForeverAuras, 2026-10-07.
+-- Modifications Copyright (C) 2026 ForeverAuras. Licensed under the GNU GPL v2 (see LICENSE).
 if not WeakAuras.IsLibsOK() then return end
 ---@type string
 local AddonName = ...
@@ -386,7 +387,7 @@ local function modify(parent, region, data)
     end
 
     self.Update = Update
-    self.FrameTick = FrameTick
+    self.FrameTick = FrameTick and Private.ThrottledTextTick(FrameTick)
 
     if not UpdateText then
       local textStr = self.displayText

@@ -1,4 +1,5 @@
 -- Modified for ForeverAuras, 2026-10-08.
+-- Modifications Copyright (C) 2026 ForeverAuras. Licensed under the GNU GPL v2 (see LICENSE).
 if not WeakAuras.IsLibsOK() then return end
 ---@type string
 local AddonName = ...
@@ -257,6 +258,40 @@ function Private.ExecEnv.ScheduleConditionCheck(time, uid, cloneId)
     end, time - GetTime())
     conditionChecksTimers.recheckTime[uid][cloneId] = time;
   end
+end
+
+-- Restricted timers' Alpha and Color curves are rechecked together, ten times
+-- a second, by one frame rather than a timer per display.
+local curveTicks, curveFrame = {}, nil
+function Private.ExecEnv.ScheduleCurveCheck(uid, cloneId)
+  local clones = curveTicks[uid]
+  if not clones then clones = {}; curveTicks[uid] = clones end
+  clones[cloneId] = true
+  if not curveFrame then
+    curveFrame = CreateFrame("Frame")
+    curveFrame.elapsed = 0
+    curveFrame:SetScript("OnUpdate", function(self, elapsed)
+      self.elapsed = self.elapsed + elapsed
+      if self.elapsed < 0.1 then return end
+      self.elapsed = 0
+      Private.StartProfileSystem("timer conditions")
+      local due = curveTicks
+      curveTicks = {}
+      for dueUid, dueClones in pairs(due) do
+        for dueClone in pairs(dueClones) do
+          local region = Private.GetRegionByUID(dueUid, dueClone)
+          if region and region.toShow and checkConditions[dueUid] then
+            Private.ActivateAuraEnvironmentForRegion(region)
+            xpcall(checkConditions[dueUid], geterrorhandler(), region)
+            Private.ActivateAuraEnvironment()
+          end
+        end
+      end
+      Private.StopProfileSystem("timer conditions")
+      if not next(curveTicks) then self:Hide() end
+    end)
+  end
+  curveFrame:Show()
 end
 
 function Private.ExecEnv.CallCustomConditionTest(uid, testFunctionNumber, ...)
@@ -1394,7 +1429,7 @@ local function TimerCurveCode(data, properties, allConditionsTemplate)
   table.insert(ret, "      local varies = PC.Apply(ctx, region, propertyChanges, newActiveConditions, sets, plan)\n")
   table.insert(ret, "      for property in pairs(plan.forced) do propertyChanges[property] = true end\n")
   table.insert(ret, "      region.timerCurveActive = true\n")
-  table.insert(ret, "      if varies then Private.ExecEnv.ScheduleConditionCheck(now + 0.1, uid, cloneId) end\n")
+  table.insert(ret, "      if varies then Private.ExecEnv.ScheduleCurveCheck(uid, cloneId) end\n")
   table.insert(ret, "    elseif region.timerCurveActive then\n")
   table.insert(ret, "      PC.RestoreSteps(region, propertyChanges, plan, newActiveConditions, 'timerCurveActive')\n")
   table.insert(ret, "      PC.RestoreForced(propertyChanges, plan, newActiveConditions)\n")
@@ -2015,8 +2050,13 @@ local function handleDynamicConditionsPerUnit(self, event, unit)
 end
 
 local lastDynamicConditionsUpdateCheck;
+local nextFrameConditions = 0
 local function handleDynamicConditionsOnUpdate(self)
-  handleDynamicConditions(self, "FRAME_UPDATE");
+  local now = GetTime()
+  if now >= nextFrameConditions then
+    nextFrameConditions = now + 1 / 30
+    handleDynamicConditions(self, "FRAME_UPDATE");
+  end
   if (not lastDynamicConditionsUpdateCheck or GetTime() - lastDynamicConditionsUpdateCheck > 0.2) then
     lastDynamicConditionsUpdateCheck = GetTime();
     handleDynamicConditions(self, "WA_SPELL_RANGECHECK");
