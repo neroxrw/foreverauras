@@ -413,6 +413,8 @@ function Display.StyleAppearance(native, data, ElementFrame, StyleText, StyleGlo
   Display.ResetPandemicGlows(native)
   native.sharedElements = native.sharedElements or {}
   local base = ElementFrame(native, "sharedBase")
+  -- Masque measures the frame it skins whenever it can read its size.
+  base:SetSize(width, height)
   base:SetFrameLevel(button:GetFrameLevel() + 1); base:Show()
   native.icon:ClearAllPoints(); native.icon:SetAllPoints(button)
   native.icon:SetDesaturated(data.desaturate == true)

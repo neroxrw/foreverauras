@@ -1,6 +1,9 @@
 # Changelog
 
 ## Versions
+## 0.70.12
+- Possible Masque fix
+
 ## 0.70.11
 - Performance Improvements
 - Fix Offsets Appearing on Modern Groups
