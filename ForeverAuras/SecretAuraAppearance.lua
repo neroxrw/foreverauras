@@ -49,6 +49,33 @@ end
 local MSQ = LibStub("Masque", true)
 local masqueMembers = setmetatable({}, {__mode = "k"})
 
+-- Masque sizes its skin from Frame:GetSize() on every (re)skin, falling back to
+-- the last readable value when the frame's geometry is secret. For buttons
+-- laid out by Blizzard's aura containers (and ordinary Icons inside secret
+-- geometry) that readable value is whatever the frame measured at the moment
+-- it was skinned (unlaid-out, template default or restricted), not the size
+-- the display is configured to. Pin the configured size on the button so every
+-- later ReSkin, including Masque's own, scales from it. Explicit sizes passed
+-- through Group:SetFrameSize() still update the pin.
+function Private.MasquePinSize(button, width, height)
+  local cfg = button and button._MSQ_CFG
+  if not cfg or type(width) ~= "number" or type(height) ~= "number"
+    or hasanysecretvalues(width, height)
+  then
+    return
+  end
+  cfg.FrameWidth, cfg.FrameHeight = width, height
+  if not cfg.faPinnedSize then
+    cfg.faPinnedSize = true
+    cfg.SetFrameSize = function(self, w, h)
+      if type(w) == "number" and type(h) == "number" and not hasanysecretvalues(w, h) then
+        self.FrameWidth, self.FrameHeight = w, h
+      end
+      -- Called without arguments from Masque's ForceUpdate(): keep the pin.
+    end
+  end
+end
+
 -- Re-reads the skin's crop and applies the display's own on top.
 local function ApplyMasqueCrop(native, group)
   local base = native.elementFrames.sharedBase
@@ -103,6 +130,7 @@ local function SkinWithMasque(native, data, base)
   -- Frames placed by Blizzard's containers can report secret sizes; Masque
   -- takes the configured size instead.
   local width, height = Display.Dimensions(data)
+  Private.MasquePinSize(base, width, height)
   if group.SetFrameSize then group:SetFrameSize(width, height, base) end
   group:ReSkin(base)
   ApplyMasqueCrop(native, group)

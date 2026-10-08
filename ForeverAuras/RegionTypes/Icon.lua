@@ -382,6 +382,12 @@ local function modify(parent, region, data)
       button:SetWidth(width);
       button:SetHeight(height);
       button:SetAllPoints();
+      -- Masque scales its skin from button:GetSize(), which is secret or
+      -- unreliable inside secret geometry. Pin the configured size instead;
+      -- the ReSkin in UpdateTexCoords() below picks it up.
+      if region.MSQGroup and Private.MasquePinSize then
+        Private.MasquePinSize(button, width, height)
+      end
     end
     region:UpdateTexCoords();
   end
