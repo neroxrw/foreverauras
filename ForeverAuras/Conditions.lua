@@ -1,4 +1,4 @@
--- Modified for ForeverAuras, 2026-10-07.
+-- Modified for ForeverAuras, 2026-10-08.
 if not WeakAuras.IsLibsOK() then return end
 ---@type string
 local AddonName = ...
@@ -355,8 +355,8 @@ function PowerCurve.Leaf(ctx, variable, op, value)
     if op == ">=" then return {{value, huge}}
     elseif op == ">" then return {{value + 1e-3, huge}}
     -- A finished timer (0) is not "remaining less than".
-    elseif op == "<=" then return {{1e-6, value + 1e-3}}
-    elseif op == "<" then return {{1e-6, value}}
+    elseif op == "<=" then return {{1e-3, value + 1e-3}}
+    elseif op == "<" then return {{1e-3, value}}
     end
     return PowerCurve.NONE
   end
@@ -478,15 +478,18 @@ local function Curve(pieces, component, top)
   end
   key = table.concat(key, ";")
   if curves[key] then return curves[key] end
+  -- Steps hold each value until the next point; nearly equal points in a
+  -- linear curve get merged and fade between values instead.
   local curve = C_CurveUtil.CreateCurve()
-  curve:SetType(Enum.LuaCurveType.Linear)
-  for k, piece in ipairs(pieces) do
+  curve:SetType(Enum.LuaCurveType.Step)
+  for _, piece in ipairs(pieces) do
     local value = piece[2]
     if component then value = value[component] or 1 end
-    local nextX = pieces[k + 1] and pieces[k + 1][1] or top
     curve:AddPoint(piece[1], value)
-    curve:AddPoint(nextX - (pieces[k + 1] and 1e-7 or 0), value)
   end
+  local last = pieces[#pieces][2]
+  if component then last = last[component] or 1 end
+  curve:AddPoint(top, last)
   curves[key] = curve
   return curve
 end

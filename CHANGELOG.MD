@@ -1,6 +1,9 @@
 # Changelog
 
 ## Versions
+## 0.70.3
+- Fix remaining time text condition coloring
+
 ## 0.70.1
 - Normal auras (icons and texts) in Modern Aura Groups now line up anywhere in the row, in and out of combat, including with Centered growth.
 - Clickable auras in Modern Aura Groups keep working.

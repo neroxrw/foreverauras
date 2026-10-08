@@ -419,6 +419,8 @@ function Display.StyleAppearance(native, data, ElementFrame, StyleText, StyleGlo
   native.icon:SetVertexColor(unpack(data.regionType == "aurabar" and data.icon_color or data.color or {1, 1, 1, 1}))
   if data.regionType == "icon" or (data.regionType == "aurabar" and data.icon) then
     if data.iconSource == 0 and data.displayIcon and data.displayIcon ~= "" then native.icon:SetTexture(data.displayIcon) else button:SetIcon(native.icon) end
+    native.icon:SetSnapToPixelGrid(false)
+    native.icon:SetTexelSnappingBias(0)
     native.icon:Show()
   end
   if data.regionType == "icon" and data.cooldown ~= false then

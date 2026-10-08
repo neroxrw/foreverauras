@@ -47,6 +47,9 @@ function Display.CreateSampleNative(parent)
   base:SetAllPoints(button)
   native.elementFrames = {sharedBase = base}
   native.icon = base:CreateTexture(nil, "ARTWORK")
+  -- Placed like the icons of other displays (not rounded to whole pixels), so rows line up.
+  native.icon:SetSnapToPixelGrid(false)
+  native.icon:SetTexelSnappingBias(0)
   native.cooldown = CreateFrame("Cooldown", nil, base, "CooldownFrameTemplate")
   native.cooldown:SetAllPoints(native.icon)
   native.cooldown:SetDrawBling(false)
