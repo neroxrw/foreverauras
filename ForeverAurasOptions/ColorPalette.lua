@@ -1,3 +1,4 @@
+-- Copyright (C) 2026 ForeverAuras. Part of ForeverAuras, licensed under the GNU GPL v2 (see LICENSE).
 -- ForeverAuras colour palette, 2026-09-18. The native picker owns preview, opacity and cancellation.
 if not WeakAuras.IsLibsOK() then return end
 local _, OptionsPrivate = ...

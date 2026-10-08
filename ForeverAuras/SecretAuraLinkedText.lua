@@ -1,4 +1,5 @@
 -- Modified for ForeverAuras
+-- Modifications Copyright (C) 2026 ForeverAuras. Licensed under the GNU GPL v2 (see LICENSE).
 if not WeakAuras.IsLibsOK() then return end
 local _, Private = ...
 local Display = Private.BlizzardAuraDisplay
@@ -148,3 +149,5 @@ events:SetScript("OnEvent", function(_, event, unit)
     if native.wanted then native.container:UpdateAllAuras() end
   end
 end)
+
+events:SetScript("OnEvent", Private.Profiled("aura (modern) - linked text", events:GetScript("OnEvent")))

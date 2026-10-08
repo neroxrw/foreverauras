@@ -1,3 +1,4 @@
+-- Copyright (C) 2026 ForeverAuras. Part of ForeverAuras, licensed under the GNU GPL v2 (see LICENSE).
 -- Modern Aura Group: a normal Group whose Aura (Modern) children grow together.
 --
 -- Nothing in Lua can know in combat which of these displays has an aura, so
@@ -1311,12 +1312,30 @@ end
 
 -- The cut: from well before the row start (glows and texts of the first icon)
 -- to the end of the last display within the limit plus its spacing.
+-- How far to move the cut so its corner lands on a whole screen pixel: a cut
+-- between pixels redraws what it holds blurred. 0 when the anchor's place is unknown.
+local function PixelNudge(clip, anchor, point, offsetX, offsetY)
+  local factor = PixelUtil and PixelUtil.GetPixelToUIUnitFactor and PixelUtil.GetPixelToUIUnitFactor()
+  if not factor or factor <= 0 then return 0, 0 end
+  local ok, x, y = pcall(function()
+    return point:find("LEFT") and anchor:GetLeft() or anchor:GetRight(), point:find("TOP") and anchor:GetTop() or anchor:GetBottom()
+  end)
+  if not ok or type(x) ~= "number" or type(y) ~= "number" or issecretvalue(x) or issecretvalue(y) then return 0, 0 end
+  local anchorScale, clipScale = anchor:GetEffectiveScale(), clip:GetEffectiveScale()
+  local function Nudge(value, offset)
+    local pixels = (value * anchorScale + offset * clipScale) / factor
+    return (math.floor(pixels + 0.5) - pixels) * factor / clipScale
+  end
+  return Nudge(x, offsetX), Nudge(y, offsetY)
+end
+
 local function SetWindow(clip, g, point, anchor, length, width, height, spacing)
   local after = length + math.max(0, spacing or 0) + CLIP_MARGIN
   local horizontal = point:find("LEFT") and -1 or 1
   local vertical = point:find("TOP") and 1 or -1
+  local nudgeX, nudgeY = PixelNudge(clip, anchor, point, horizontal * CLIP_MARGIN, vertical * CLIP_MARGIN)
   clip:ClearAllPoints()
-  clip:SetPoint(point, anchor, point, horizontal * CLIP_MARGIN, vertical * CLIP_MARGIN)
+  clip:SetPoint(point, anchor, point, horizontal * CLIP_MARGIN + nudgeX, vertical * CLIP_MARGIN + nudgeY)
   if g.sign[1] ~= 0 then
     clip:SetSize(after, height + 2 * CLIP_MARGIN)
   else
@@ -1375,6 +1394,7 @@ function Display.UpdateFlowClip(group, flows, g)
 end
 
 local afterCombat, queued = {}, {}
+local loadScan = 0
 local combatWatcher = CreateFrame("Frame")
 combatWatcher:RegisterEvent("PLAYER_REGEN_ENABLED")
 combatWatcher:SetScript("OnEvent", function()
@@ -1401,8 +1421,18 @@ local function QueueRechain(region)
   if not next(queued) then C_Timer.After(0, FlushQueued) end
   queued[group] = true
   -- Entering combat: displays that unload now must leave the row before the
-  -- lockdown, which may keep it from moving until combat ends.
-  if not InCombatLockdown() and UnitAffectingCombat("player") then FlushQueued() end
+  -- lockdown, which may keep it from moving until combat ends. During a load
+  -- scan that happens once, at its end (Display.EndFlowLoad).
+  if loadScan == 0 and not InCombatLockdown() and UnitAffectingCombat("player") then FlushQueued() end
+end
+
+function Display.BeginFlowLoad()
+  loadScan = loadScan + 1
+end
+
+function Display.EndFlowLoad()
+  loadScan = math.max(0, loadScan - 1)
+  if loadScan == 0 and next(queued) then FlushQueued() end
 end
 
 function Display.WatchFlowVisibility(region)
@@ -1512,7 +1542,11 @@ function Display.AnchorFlowNormal(data, region, anchorParent, anchorPoint)
     region.flowNormal = normal
   end
   normal.data, normal.group, normal.active = data, group, true
-  if not InCombatLockdown() then normal.home:ClearAllPoints() end
+  if not InCombatLockdown() then
+    local parent = region:GetParent() or UIParent
+    if normal.home:GetParent() ~= parent then normal.home:SetParent(parent) end
+    normal.home:ClearAllPoints()
+  end
   Place(normal.home, data.selfPoint or "CENTER", anchorParent, anchorPoint or "CENTER", data.xOffset or 0, data.yOffset or 0)
   local g = GROWTH[group.blizzardFlowGrowth] or GROWTH.RIGHT
   if Display.UsesStand and Display.UsesStand(data) then
@@ -1551,6 +1585,7 @@ end
 -- Re-anchors every child of a Modern Aura Group in the group's child order.
 function Display.RechainFlow(group)
   if not group then return end
+  if loadScan > 0 then queued[group] = true; return end
   Display.RefreshFlowMerge(group)
   Display.RebuildGrid(group)
   if Display.FlowGrid(group) then Display.UpdateFlowClip(group) return end
@@ -1669,3 +1704,5 @@ function Display.RechainFlow(group)
   end
   Display.UpdateFlowClip(group, flows, g)
 end
+
+Display.RechainFlow = Private.Profiled("aura (modern) - group layout", Display.RechainFlow)

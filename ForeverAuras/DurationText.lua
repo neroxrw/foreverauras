@@ -1,4 +1,5 @@
 -- Modified for ForeverAuras, 2026-10-07.
+-- Modifications Copyright (C) 2026 ForeverAuras. Licensed under the GNU GPL v2 (see LICENSE).
 if not WeakAuras.IsLibsOK() then return end
 local _, Private = ...
 
@@ -130,6 +131,15 @@ local function TokenTrigger(data, text)
   local mode = data.triggers and data.triggers.activeTriggerMode
   if type(mode) == "number" and mode >= 1 then return mode end
   if data.triggers and #data.triggers == 1 then return 1 end
+  -- Otherwise the one trigger with a cooldown or cast timer, if only one has one.
+  local found
+  for triggerIndex = 1, #(data.triggers or {}) do
+    if Private.RestrictedTimerTrigger(data, triggerIndex) then
+      if found then return end
+      found = triggerIndex
+    end
+  end
+  return found
 end
 
 -- The text's own timer conditions, or nil. element: the sub text's settings

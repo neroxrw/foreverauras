@@ -1,4 +1,5 @@
 -- Modified for ForeverAuras, 2026-09-30.
+-- Modifications Copyright (C) 2026 ForeverAuras. Licensed under the GNU GPL v2 (see LICENSE).
 --[[ GenericTrigger.lua
 This file contains the generic trigger system. That is every trigger except the aura triggers.
 
@@ -1004,6 +1005,9 @@ function WeakAuras.ScanUnitEvents(event, unit, ...)
   scannerFrame:Queue(Private.ScanUnitEvents, event, unit, ...)
 end
 
+-- Range checks need no answer more often than this.
+local rangeThrottles = {["Range Check"] = 0.1, ["Spell in Range"] = 0.1}
+
 local function checkOnUpdateThrottle(data)
   if data.onUpdateThrottle then
     local now = GetTime()
@@ -1923,7 +1927,7 @@ function GenericTrigger.Add(data, region)
           statesParameter = statesParameter,
           event = trigger.event,
           events = trigger_events,
-          onUpdateThrottle = trigger.onUpdateThrottle,
+          onUpdateThrottle = trigger.onUpdateThrottle or (trigger.type ~= "custom" and rangeThrottles[trigger.event]) or nil,
           ignorePartyUnitsInRaid = ignorePartyUnitsInRaid,
           internal_events = internal_events,
           loadInternalEventFunc = loadInternalEventFunc,
@@ -2287,6 +2291,7 @@ do
     self.elapsed = self.elapsed + elapsed
     if self.elapsed < SECRET_POLL_INTERVAL then return end
     self.elapsed = 0
+    Private.StartProfileSystem("spell cooldown poll")
     SpellDetails.quietSecretCheck = true
     for id in pairs(secretPolled) do
       if SpellDetails.data[id] then
@@ -2300,6 +2305,7 @@ do
       end
     end
     SpellDetails.quietSecretCheck = nil
+    Private.StopProfileSystem("spell cooldown poll")
     if not next(secretPolled) then self:Hide() end
   end)
 

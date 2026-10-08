@@ -1,4 +1,5 @@
 -- Modified for ForeverAuras, 2026-09-18.
+-- Modifications Copyright (C) 2026 ForeverAuras. Licensed under the GNU GPL v2 (see LICENSE).
 --[[ Transmission.lua
 This file contains all transmission related functionality, e.g. import/export and chat links.
 For that it hooks into the chat frame and addon message channels.

@@ -1,6 +1,11 @@
 # Changelog
 
 ## Versions
+## 0.70.11
+- Performance Improvements
+- Fix Offsets Appearing on Modern Groups
+- Backend fixes
+
 ## 0.70.3
 - Fix remaining time text condition coloring
 

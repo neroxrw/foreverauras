@@ -1,4 +1,5 @@
 -- Modified for ForeverAuras, 2026-09-19.
+-- Modifications Copyright (C) 2026 ForeverAuras. Licensed under the GNU GPL v2 (see LICENSE).
 --[=[ BuffTrigger2.lua
 This file contains the "aura2" trigger for buffs and debuffs. It has replaced the older Bufftrigger 1, which is now gone.
 

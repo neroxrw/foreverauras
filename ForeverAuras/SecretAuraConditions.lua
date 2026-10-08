@@ -1,3 +1,4 @@
+-- Copyright (C) 2026 ForeverAuras. Part of ForeverAuras, licensed under the GNU GPL v2 (see LICENSE).
 -- Public trigger conditions can style native widgets without observing secret aura state.
 if not WeakAuras.IsLibsOK() then return end
 local _, Private = ...

@@ -1,3 +1,4 @@
+-- Copyright (C) 2026 ForeverAuras. Part of ForeverAuras, licensed under the GNU GPL v2 (see LICENSE).
 -- Editor-only sample frames reuse native appearance styling without binding live auras.
 if not WeakAuras.IsLibsOK() then return end
 local _, Private = ...

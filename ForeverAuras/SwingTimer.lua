@@ -1,3 +1,4 @@
+-- Copyright (C) 2026 ForeverAuras. Part of ForeverAuras, licensed under the GNU GPL v2 (see LICENSE).
 -- Player swing timing supplied by Blizzard; no combat-log reconstruction.
 if not WeakAuras.IsLibsOK() then return end
 local swings, timers = {}, {}

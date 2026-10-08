@@ -1,4 +1,5 @@
 -- Modified for ForeverAuras, 2026-10-07.
+-- Modifications Copyright (C) 2026 ForeverAuras. Licensed under the GNU GPL v2 (see LICENSE).
 if not WeakAuras.IsLibsOK() then return end
 local _, Private = ...
 

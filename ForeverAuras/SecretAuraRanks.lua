@@ -1,3 +1,4 @@
+-- Copyright (C) 2026 ForeverAuras. Part of ForeverAuras, licensed under the GNU GPL v2 (see LICENSE).
 -- Bundled Forever beta rank data; no client database enumeration or metadata queries.
 -- Source: https://talentsforever.com/data.json, generated 2026-09-24.
 -- Adapted under CC BY 4.0: beta IDs grouped by class, spell, and rank; named variants kept separate.

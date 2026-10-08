@@ -1,3 +1,4 @@
+-- Copyright (C) 2026 ForeverAuras. Part of ForeverAuras, licensed under the GNU GPL v2 (see LICENSE).
 -- Player-only load conditions inferred from learned final-tier talent spells.
 -- Catalog: Forever beta data from talentsforever.com and Wowhead talent records.
 -- See SpecializationData-LICENSE.txt for sources and attribution.

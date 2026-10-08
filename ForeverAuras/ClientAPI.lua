@@ -1,4 +1,5 @@
 -- Modified for ForeverAuras, 2026-09-18.
+-- Modifications Copyright (C) 2026 ForeverAuras. Licensed under the GNU GPL v2 (see LICENSE).
 -- Narrow adapter for restriction-state access. Missing/erroring APIs remain restricted.
 local _, Private = ...
 Private.ClientAPI = {}

@@ -1,4 +1,5 @@
--- Modified for ForeverAuras, 2026-09-29.
+-- Modified for ForeverAuras, 2026-10-08.
+-- Modifications Copyright (C) 2026 ForeverAuras. Licensed under the GNU GPL v2 (see LICENSE).
 ---@type string
 local AddonName = ...
 ---@class Private
@@ -1819,7 +1820,12 @@ function Private.ScanForLoads(toCheck, event, arg1, ...)
   if not WeakAuras.IsLoginFinished() then
     return
   end
-  scanForLoadsImpl(toCheck, event, arg1, ...)
+  -- Modern Aura Groups re-anchor once for all displays this scan loads or unloads.
+  local flow = Private.BlizzardAuraDisplay
+  if flow.BeginFlowLoad then flow.BeginFlowLoad() end
+  local ok, err = pcall(scanForLoadsImpl, toCheck, event, arg1, ...)
+  if flow.EndFlowLoad then flow.EndFlowLoad() end
+  if not ok then geterrorhandler()(err) end
 end
 
 local loadFrame = CreateFrame("Frame");

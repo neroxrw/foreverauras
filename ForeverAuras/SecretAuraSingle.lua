@@ -1,3 +1,4 @@
+-- Copyright (C) 2026 ForeverAuras. Part of ForeverAuras, licensed under the GNU GPL v2 (see LICENSE).
 -- Show On, Remaining Time, Total Duration and Approximate Match for the
 -- Aura (Modern) trigger.
 --
@@ -610,11 +611,13 @@ local function ApplyTimerSource(region, missing, data, source)
     elapsed = elapsed + delta
     if elapsed < FOLLOW_TEXT_INTERVAL then return end
     elapsed = 0
+    Private.StartProfileSystem("aura (modern) - missing text")
     for _, entry in ipairs(texts) do
       local formatter = entry.options and entry.options.textFormatter or fallback
       local ok, text = pcall(duration.FormatRemainingDuration, duration, formatter, modifier)
       entry.widget:SetText(ok and text or "")
     end
+    Private.StopProfileSystem("aura (modern) - missing text")
   end)
 end
 
@@ -890,8 +893,8 @@ local function StyleRemainingSwipe(single, instance, region, data, trigger, leve
   if not (C_StringUtil and C_StringUtil.CreateNumericRuleFormatter and Enum.DurationTextBindingProperty) then swipe.used = false; return end
   local lower, upper = Display.RemainingRange(trigger)
   local width, height = Display.Dimensions(data)
-  width, height = math.max(1, math.floor(width + 0.5)), math.max(1, math.floor(height + 0.5))
-  local formatter = lower and Display.GateFormatter(lower, upper, ("|TInterface\\Buttons\\WHITE8X8:%d:%d|t"):format(height, width))
+  local size, fill, margin = Display.GateFill(width, height)
+  local formatter = lower and Display.GateFormatter(lower, upper, fill)
   if not formatter then swipe.used = false; return end
   if not swipeCurve then
     swipeCurve = C_CurveUtil.CreateColorCurve()
@@ -899,11 +902,10 @@ local function StyleRemainingSwipe(single, instance, region, data, trigger, leve
     swipeCurve:AddPoint(0, CreateColor(0, 0, 0, 0))
   end
   local gate, clip, cooldown, button = swipe.gate, swipe.clip, swipe.cooldown, swipe.button
-  gate:SetFont(STANDARD_TEXT_FONT, 12, "")
+  gate:SetFont(STANDARD_TEXT_FONT, size, "")
   gate:SetWordWrap(false)
-  gate:SetJustifyH("LEFT")
-  gate:ClearAllPoints()
-  gate:SetPoint("TOPLEFT", button, "TOPLEFT")
+  gate:SetWidth(0)
+  Display.PlaceGateText(gate, button, margin)
   local property = Enum.DurationTextBindingProperty.RemainingDuration
   button:ClearDurationText()
   if not pcall(button.SetDurationText, button, gate, {
@@ -1750,6 +1752,7 @@ local function PlaceGateText(text, button, margin)
   text:SetJustifyH("LEFT")
   text:SetPoint("LEFT", button, "LEFT", -margin - 2, 0)
 end
+Display.GateFill, Display.PlaceGateText = GateFill, PlaceGateText
 
 -- Stack Count "=": the hidden stack text decides the clip, so every drawn
 -- aura has exactly n stacks. Returns true when drawn.
@@ -2101,3 +2104,5 @@ function Display.RefreshSingle(instance, unit, shown)
   missing.clip:SetAlpha(missing.unitExists and not instance.statusHidden and 1 or 0)
   if shown then container:UpdateAllAuras() end
 end
+
+learnEvents:SetScript("OnEvent", Private.Profiled("aura (modern) - learning", learnEvents:GetScript("OnEvent")))

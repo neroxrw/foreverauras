@@ -1,3 +1,4 @@
+-- Copyright (C) 2026 ForeverAuras. Part of ForeverAuras, licensed under the GNU GPL v2 (see LICENSE).
 -- Shared font setup for addon-owned text, including native aura text bindings.
 if not WeakAuras.IsLibsOK() then return end
 local _, Private = ...

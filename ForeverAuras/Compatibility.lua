@@ -1,4 +1,5 @@
 -- Modified for ForeverAuras, 2026-09-19.
+-- Modifications Copyright (C) 2026 ForeverAuras. Licensed under the GNU GPL v2 (see LICENSE).
 -- This file is only for base functions that work differently or are deprecated in some versions of wow
 
 if not WeakAuras.IsLibsOK() then return end

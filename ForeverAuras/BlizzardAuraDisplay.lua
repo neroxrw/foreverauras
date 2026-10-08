@@ -1,10 +1,14 @@
 -- Modified for ForeverAuras, 2026-10-08.
+-- Modifications Copyright (C) 2026 ForeverAuras. Licensed under the GNU GPL v2 (see LICENSE).
 if not WeakAuras.IsLibsOK() then return end
 local _, Private = ...
 local SharedMedia = LibStub("LibSharedMedia-3.0")
 local Display = {}
 Private.BlizzardAuraDisplay = Display
 local pending = setmetatable({}, {__mode = "k"})
+-- Containers locked in combat: hidden, or given their units, once it ends.
+local lockedHide = setmetatable({}, {__mode = "k"})
+local lockedUnits = setmetatable({}, {__mode = "k"})
 local pendingSounds = {}
 local activeRegions = {}
 local unitGlowFrameLevel = 8
@@ -725,7 +729,7 @@ function Display.Release(region)
     native.instanceQueue = nil
     for _, instance in ipairs(native.instances) do
       if Locked(instance.container) then
-        pending[region] = native.data
+        lockedHide[region] = true
       else
         instance.container:SetEnabled(false)
         instance.container:Hide()
@@ -1227,7 +1231,7 @@ local function RefreshUnits(region, removedUnit, changedUnit)
     local container = instance.container
     local unit = units[index]
     if Locked(container) then
-      pending[region] = data
+      lockedUnits[region] = true
     elseif not changedUnit or unit == changedUnit then
       -- In a Modern Aura Group the group's mode decides (screen, unit frames or
       -- nameplates); the display's own anchor is not used for its auras.
@@ -1503,7 +1507,12 @@ end
 local ApplyDisplay
 function Display.Apply(region, data)
   local profile = Private.loadProfile
-  if not profile or profile.done then return ApplyDisplay(region, data) end
+  if not profile or profile.done then
+    Private.StartProfileSystem("aura (modern) - build")
+    ApplyDisplay(region, data)
+    Private.StopProfileSystem("aura (modern) - build")
+    return
+  end
   local started = debugprofilestop()
   ApplyDisplay(region, data)
   profile.modern[data.id] = (profile.modern[data.id] or 0) + debugprofilestop() - started
@@ -1550,7 +1559,7 @@ function ApplyDisplay(region, data)
       Display.HideUnitGlows(region)
       for _, instance in ipairs(native.instances) do
         if Locked(instance.container) then
-          pending[region] = native.data
+          lockedHide[region] = true
         else
           instance.container:SetEnabled(false)
           instance.container:Hide()
@@ -1872,6 +1881,22 @@ events:SetScript("OnEvent", function(_, event, unit)
     for region in pairs(activeRegions) do Display.RefreshConditionAppearance(region) end
   end
   for region in pairs(pendingSounds) do SyncSounds(region) end
+  for region in pairs(lockedHide) do
+    lockedHide[region] = nil
+    local native = region.blizzardAuraDisplay
+    if native and not (native.active and region:IsShown()) then
+      for _, instance in ipairs(native.instances) do
+        if not Locked(instance.container) then
+          instance.container:SetEnabled(false)
+          instance.container:Hide()
+        end
+      end
+    end
+  end
+  for region in pairs(lockedUnits) do
+    lockedUnits[region] = nil
+    if region.blizzardAuraDisplay and region.blizzardAuraDisplay.active then RefreshUnits(region) end
+  end
   if next(pending) and not draining then
     draining = true
     DrainPending()
@@ -1881,3 +1906,7 @@ events:SetScript("OnEvent", function(_, event, unit)
     C_Timer.After(0, DrainInstanceQueues)
   end
 end)
+
+for _, frame in ipairs({events, statusEvents}) do
+  frame:SetScript("OnEvent", Private.Profiled("aura (modern) - events", frame:GetScript("OnEvent")))
+end
