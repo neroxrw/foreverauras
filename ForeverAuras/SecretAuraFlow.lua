@@ -309,7 +309,7 @@ local function MeasureContainer(existing, region, data, g, layout, maxCount, fil
         button:EnableMouse(false)
       end,
     })
-    if not ok then container:Hide(); return nil end
+    if not ok then container:Hide(); Display.RetireFrame(container); return nil end
   else
     container:SetAuraGroupFilterString(SHADOW_GROUP, filter)
     container:SetAuraGroupCandidateFilters(SHADOW_GROUP, candidates)
@@ -355,7 +355,13 @@ local merged = setmetatable({}, {__mode = "k"})
 
 local function MergedFor(data)
   local entry = data and Private.regions[data.id]
-  return entry and entry.region and merged[entry.region]
+  local info = entry and entry.region and merged[entry.region]
+  -- A display that left its merging group draws with its own filters again.
+  if info and not Display.MergesAcross(Display.FlowGroup(data)) then
+    merged[entry.region] = nil
+    return
+  end
+  return info
 end
 
 function Display.MergedCandidateFilters(data)
@@ -831,7 +837,7 @@ function Display.RelinkFlowUnits(group)
         for _, instance in ipairs(native.instances) do
           local unit = instance.visible and instance.boundUnit
           local shadow = unit and instance.flowShadowActive and instance.flowShadow
-          if shadow then
+          if shadow and not Busy(shadow) then
             shadow:ClearAllPoints()
             local linked = lastShadow[unit] and Place(shadow, shStart, lastShadow[unit], shEnd, sh.pixel[1], sh.pixel[2])
             local frame = not linked and UnitAnchor(mode, unit)
@@ -852,7 +858,7 @@ function Display.RelinkFlowUnits(group)
       local along = g.sign[1] ~= 0
       for _, instance in ipairs(native.instances) do
         local unit = instance.visible and instance.boundUnit
-        if unit then
+        if unit and not Busy(instance.container) then
           local container = instance.container
           container:ClearAllPoints()
           local previous = last[unit]
@@ -1028,6 +1034,23 @@ function Display.ArrangeFlowPreview(group)
   end
   local previous = {}
   local onFrame = false
+  -- A centred row starts half its length back, which can fall between two
+  -- pixels; nothing here is secret, so the start is put on a whole pixel.
+  local function WholePixel(object, frame, anchor, ox, oy)
+    local factor = PixelUtil and PixelUtil.GetPixelToUIUnitFactor and PixelUtil.GetPixelToUIUnitFactor()
+    if not factor or factor <= 0 or not object.GetEffectiveScale then return ox, oy end
+    local ok, left, bottom, width, height = pcall(frame.GetRect, frame)
+    if not ok or type(left) ~= "number" or issecretvalue(left) or issecretvalue(bottom)
+      or issecretvalue(width) or issecretvalue(height) then return ox, oy end
+    local frameScale, objectScale = frame:GetEffectiveScale(), object:GetEffectiveScale()
+    local x = anchor:find("LEFT") and left or anchor:find("RIGHT") and left + width or left + width / 2
+    local y = anchor:find("TOP") and bottom + height or anchor:find("BOTTOM") and bottom or bottom + height / 2
+    local function Round(position, offset)
+      local pixels = (position * frameScale + offset * objectScale) / factor
+      return offset + (math.floor(pixels + 0.5) - pixels) * factor / objectScale
+    end
+    return Round(x, ox), Round(y, oy)
+  end
   -- Where the first display's box is, so its sample can start there while the
   -- box itself moves onto the sample.
   local function Origin(region)
@@ -1053,6 +1076,7 @@ function Display.ArrangeFlowPreview(group)
       region:SetOffset(g.sign[1] * spacing, g.sign[2] * spacing)
     elseif inRow and g.shadow then
       local ox, oy = Offset("")
+      ox, oy = WholePixel(region, normal.home, g.centerPoint, ox, oy)
       region:SetAnchor(g.start, normal.home, g.centerPoint)
       region:SetOffset(ox, oy)
     else
@@ -1084,7 +1108,9 @@ function Display.ArrangeFlowPreview(group)
         elseif frame then
           button:SetPoint(start, frame, point, frameX + ox, frameY + oy)
         elseif g.shadow then
-          button:SetPoint(g.start, Origin(region), g.centerPoint, ox, oy)
+          local origin = Origin(region)
+          ox, oy = WholePixel(button, origin, g.centerPoint, ox, oy)
+          button:SetPoint(g.start, origin, g.centerPoint, ox, oy)
         else
           button:SetPoint(g.start, Origin(region), g.start)
         end
@@ -1382,8 +1408,11 @@ function Display.UpdateFlowClip(group, flows, g)
     if not InCombatLockdown() then
       for _, child in ipairs({clip:GetChildren()}) do Reparent(child, groupRegion or clip:GetParent()) end
     end
-    clip:SetClipsChildren(false)
-    clip:Hide()
+    -- In combat the displays may still be inside it; they leave after combat.
+    if not InCombatLockdown() then
+      clip:SetClipsChildren(false)
+      clip:Hide()
+    end
     return
   end
   if not InCombatLockdown() then

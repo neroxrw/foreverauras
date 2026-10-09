@@ -292,10 +292,13 @@ function Display.EnsureStand(region, normal)
       if sub.type == "subborder" and sub.GetBackdrop and copy.SetBackdrop then
         Pass(copy, "SetBackdrop", sub, "GetBackdrop")
         Pass(copy, "SetBackdropBorderColor", sub, "GetBackdropBorderColor")
+        copy.faBorderSource = sub
         MatchBorderScale(sub, copy)
         if not copy.faBorderScaleHooked and copy.SetBackdrop then
           copy.faBorderScaleHooked = true
-          hooksecurefunc(copy, "SetBackdrop", function() MatchBorderScale(sub, copy) end)
+          hooksecurefunc(copy, "SetBackdrop", function(self)
+            if self.faBorderSource then MatchBorderScale(self.faBorderSource, self) end
+          end)
         end
       end
     end

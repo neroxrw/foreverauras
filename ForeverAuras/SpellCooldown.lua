@@ -61,6 +61,7 @@ end
 function Private.GetSpellCooldownData(spellID, track, showGCD, showLossOfControl, into)
   local info = C_Spell.GetSpellCooldown(spellID)
   local charges = C_Spell.GetSpellCharges(spellID)
+  if not info then knownOnCooldown[spellID] = nil end
   if not info and not charges then return end
 
   -- Keep the fresh filtered timer even if a cached GCD flag disagrees.
