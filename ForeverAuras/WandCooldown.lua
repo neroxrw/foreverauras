@@ -52,7 +52,10 @@ local function NoteShot()
 end
 
 local function OnEvent(_, event, unit, baseSpellID, spellID)
-  if event == "PLAYER_ENTERING_WORLD" then
+  if event == "PLAYER_REGEN_DISABLED" or event == "PLAYER_REGEN_ENABLED" then
+    -- Copies taken across a combat change may be stale restricted timers.
+    wipe(snapshots)
+  elseif event == "PLAYER_ENTERING_WORLD" then
     Clear()
     Refresh()
   elseif event == "UNIT_SPELLCAST_SUCCEEDED" and unit == "player" then
@@ -117,6 +120,8 @@ frame:SetScript("OnEvent", OnEvent)
 frame:RegisterUnitEvent("UNIT_SPELLCAST_SUCCEEDED", "player")
 frame:RegisterEvent("SPELL_UPDATE_COOLDOWN")
 frame:RegisterEvent("PLAYER_ENTERING_WORLD")
+frame:RegisterEvent("PLAYER_REGEN_DISABLED")
+frame:RegisterEvent("PLAYER_REGEN_ENABLED")
 
 local equipment = CreateFrame("Frame")
 equipment:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
