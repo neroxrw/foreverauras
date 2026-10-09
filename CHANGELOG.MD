@@ -1,8 +1,17 @@
 # Changelog
-
 ## Versions
+## 0.70.28
+- Fixed: in a centred Modern Aura Group, Aura (Modern) icons could sit 1 pixel off from other icons at some group positions.
+- Fixed: in the options preview, Aura (Modern) icons in a centred Modern Aura Group could sit 1 pixel off with odd icon sizes.
+- Fixed: a display removed from a sorted Modern Aura Group could keep the group’s merged filters until /reload.
+- Fixed: Modern Aura Groups anchored to unit frames could try to move protected frames in combat.
+- Fixed: a spell could be treated as still on cooldown after it was briefly unavailable.
+- Fixed: border copies could follow the wrong border after elements were reordered.
+- Fixed: a hidden helper frame could be recreated repeatedly when the game refused it.
+- Fixed: turning off Limit in combat could hide the row until combat ended.
+
 ## 0.70.26
-- Fixed: in a centred Modern Aura Group, Aura (Modern) icons could sit 1 pixel off from the other icons at some group positions.
+- Fixed: in a centered Modern Aura Group, Aura (Modern) icons could sit 1 pixel off from the other icons at some group positions.
 - Fixed: Show On Cooldown spell displays could disappear when entering combat during a global cooldown.
 - Fixed: Thrown was missing from the weapon item types in triggers and Load options.
 - Fixed: Alpha and Color set by an already-true condition were reset to default after combat when the aura also had a Health or Power condition.
