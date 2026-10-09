@@ -1,5 +1,8 @@
 # Changelog
 ## Versions
+## 0.70.35
+- Fixed clones of a display stacking on top of each other in Modern Aura Groups.
+
 ## 0.70.34
 - Fixed auras in Modern Aura Groups drawing above other windows regardless of their strata setting.
 - Fixed spell cooldown timer text sometimes showing blank with "Show GCD text" off.
