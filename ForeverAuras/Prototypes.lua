@@ -10966,6 +10966,12 @@ Private.dynamic_texts = {
     get = function(state)
       -- Apply GCD text policy before reading any timer, including unformatted %p.
       if not state or Private.ShouldHideDurationText(state) then return nil end
+      -- Readable timing formats in Lua; restricted timers use the duration object.
+      if state.progressType == "timed" and not state.paused and state.expirationTime and state.duration
+        and not hasanysecretvalues(state.expirationTime, state.duration) then
+        local remaining = state.expirationTime - GetTime()
+        return remaining >= 0 and remaining or nil
+      end
       if Private.UsesDurationText(state) then
         return Private.GetTextDuration(state):GetRemainingDuration()
       end

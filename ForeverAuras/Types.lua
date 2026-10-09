@@ -576,8 +576,10 @@ Private.format_types = {
           if not state or (state.progressType ~= "timed" and state.progressType ~= "durationObject") then
             return value
           end
-          if Private.UsesDurationText(state) and timeStyles[format] then
-            return Private.FormatDurationText(Private.GetTextDuration(state), sym == "t", format == 0 and 0 or 99, threshold, precision, modRate, tint, timeStyles[format])
+          if Private.UsesDurationText(state) and timeStyles[format]
+            and (state.progressType ~= "timed" or issecretvalue(value)) then
+            local ok, text = pcall(Private.FormatDurationText, Private.GetTextDuration(state), sym == "t", format == 0 and 0 or 99, threshold, precision, modRate, tint, timeStyles[format])
+            return ok and text or ""
           end
           return formatter(value, state, trigger)
         end, next(timePointProperty) ~= nil

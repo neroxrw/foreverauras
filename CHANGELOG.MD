@@ -1,5 +1,11 @@
 # Changelog
 ## Versions
+## 0.70.29
+- Fixed spell cooldown timer text sometimes showing blank.
+- Timer text now uses ForeverAuras' own formatting whenever the time is readable, which is always the case out of combat.
+- A failed Blizzard text format now shows an empty text instead of erroring.
+- Saved wand-shot timers are now cleared when entering or leaving combat.
+
 ## 0.70.28
 - Fixed: in a centered Modern Aura Group, Aura (Modern) icons could sit 1 pixel off from other icons at some group positions.
 - Fixed: in the options preview, Aura (Modern) icons in a centered Modern Aura Group could sit 1 pixel off with odd icon sizes.
