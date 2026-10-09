@@ -1713,10 +1713,18 @@ function Display.RechainFlow(group)
   if combat then afterCombat[group] = true end
   local flows, modernFlows = {}, {}
   local g = GROWTH[group.blizzardFlowGrowth] or GROWTH.RIGHT
+  -- Each child's own region, then its clones (multi-state triggers) in a stable order.
+  local members = {}
   for _, childID in ipairs(group.controlledChildren or {}) do
     local entry = Private.regions[childID]
-    local region = entry and entry.region
-    local native = region and region.blizzardAuraDisplay
+    if entry and entry.region then members[#members + 1] = entry.region end
+    local cloneIDs = {}
+    for cloneId in pairs(Private.clones and Private.clones[childID] or {}) do cloneIDs[#cloneIDs + 1] = cloneId end
+    table.sort(cloneIDs, function(a, b) return tostring(a) < tostring(b) end)
+    for _, cloneId in ipairs(cloneIDs) do members[#members + 1] = Private.clones[childID][cloneId] end
+  end
+  for _, region in ipairs(members) do
+    local native = region.blizzardAuraDisplay
     local normal = region and region.flowNormal
     local flow = native and native.active and native.flow
     if not flow and normal and normal.active and Display.FlowNormal(normal.data) == group then
