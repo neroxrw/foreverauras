@@ -745,7 +745,7 @@ local function EnsureMissing(single, region, data, trigger, instance)
     -- untrusted layout scripts (Blizzard_CustomAuraContainer). Everything inside
     -- the clip is created in place, never re-parented into it.
     local clip = CreateFrame("Frame", nil, region, "DisableUntrustedLayoutScriptsTemplate")
-    clip:SetClipsChildren(true)
+    Display.ClipChildren(clip)
     clip:EnableMouse(false)
     missing.container, missing.clip = container, clip
     missing.native = Display.CreateSampleNative(clip)
@@ -884,7 +884,7 @@ local swipeCurve
 local function StyleRemainingSwipe(single, instance, region, data, trigger, level)
   local swipe = EnsureSlot(single, instance, region, SLOT_SWIPE, trigger, data, function(button, slot)
     slot.clip = CreateFrame("Frame", nil, button, "DisableUntrustedLayoutScriptsTemplate")
-    slot.clip:SetClipsChildren(true)
+    Display.ClipChildren(slot.clip)
     slot.cooldown = CreateFrame("Cooldown", nil, slot.clip, "CooldownFrameTemplate")
     slot.cooldown:SetDrawBling(false)
     slot.gate = button:CreateFontString(nil, "BACKGROUND")
@@ -1784,7 +1784,7 @@ local function StyleExactStackGate(native, data, n)
     return false
   end
   text:Show()
-  clip:SetClipsChildren(true)
+  Display.ClipChildren(clip)
   clip:ClearAllPoints()
   clip:SetPoint("TOPLEFT", text, "TOPLEFT")
   clip:SetPoint("BOTTOMRIGHT", text, "BOTTOMRIGHT")
@@ -1832,7 +1832,7 @@ local function StyleStackGate(native, data, trigger)
   local max = kind == "atLeast" and n or n + 1
   bar:ClearAllPoints()
   bar:SetSize(max * k, height + 2 * margin)
-  clip:SetClipsChildren(true)
+  Display.ClipChildren(clip)
   clip:ClearAllPoints()
   if kind == "atLeast" then
     -- The bar ends where the clip should end; its fill reaches there at n
@@ -1912,7 +1912,7 @@ function Display.StyleDurationGate(native, data)
     return
   end
   gate:Show()
-  clip:SetClipsChildren(true)
+  Display.ClipChildren(clip)
   clip:ClearAllPoints()
   clip:SetPoint("TOPLEFT", gate, "TOPLEFT")
   clip:SetPoint("BOTTOMRIGHT", gate, "BOTTOMRIGHT")

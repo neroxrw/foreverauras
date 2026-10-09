@@ -510,7 +510,7 @@ end
 local FLOW_REMAIN, FLOW_REMAIN_SHADOW = "FAFlowRemain", "FAFlowRemainShadow"
 local measureCurve
 
-local function MeasureText(instance, key, data, trigger, g, startFrame, length, lower, upper)
+local function MeasureText(instance, key, data, trigger, g, startFrame, length, lower, upper, property)
   local container, store = instance.container, instance.flowRemainSlots
   local entry = store[key]
   if not entry then
@@ -550,11 +550,19 @@ local function MeasureText(instance, key, data, trigger, g, startFrame, length, 
     measureCurve:SetType(Enum.LuaCurveType.Step)
     measureCurve:AddPoint(0, CreateColor(0, 0, 0, 0))
   end
-  local property = Enum.DurationTextBindingProperty.RemainingDuration
-  if not pcall(entry.button.SetDurationText, entry.button, text, {
-    textFormat = {formatString = "{}", components = {{property = property, formatter = formatter}}},
-    textColor = {curve = measureCurve, property = property},
-  }) then return end
+  pcall(entry.button.ClearDurationText, entry.button)
+  pcall(entry.button.ClearApplicationCount, entry.button)
+  if property == "stacks" then
+    -- Stack Count: Blizzard writes the count through the formatter, also 0.
+    text:SetTextColor(0, 0, 0, 0)
+    if not pcall(entry.button.SetApplicationCount, entry.button, text, {formatter = formatter}) then return end
+  else
+    property = Enum.DurationTextBindingProperty[property or "RemainingDuration"]
+    if not pcall(entry.button.SetDurationText, entry.button, text, {
+      textFormat = {formatString = "{}", components = {{property = property, formatter = formatter}}},
+      textColor = {curve = measureCurve, property = property},
+    }) then return end
+  end
   text:Show()
   container:SetAuraSlotEnabled(key, true)
   return entry
@@ -572,8 +580,20 @@ function Display.EnsureFlowRemaining(region, data)
   local instance = native and native.instances[1]
   local trigger = Display.GetTrigger(data)
   local lower, upper
+  local property
   if flow and instance and trigger and not Display.FlowFrameMode(data) and not Display.FlowGrid(Display.FlowGroup(data)) then
     lower, upper = Display.RemainingRange(trigger)
+    -- Gated displays take space only while their gate is open.
+    if not lower then
+      local kind, n = Display.StackGate(data, trigger)
+      if kind == "exactly" then lower, upper, property = n, n, "stacks"
+      elseif kind == "atLeast" then lower, property = n, "stacks"
+      elseif kind == "atMost" then lower, upper, property = 0, n, "stacks" end
+    end
+    if not lower then
+      lower, upper = Display.DurationGate(data, trigger)
+      if lower then property = "TotalDuration" end
+    end
   end
   if flow then flow.remain, flow.shadowRemain = nil, nil end
   if not lower then
@@ -586,10 +606,10 @@ function Display.EnsureFlowRemaining(region, data)
   local width, height = Display.Dimensions(data)
   local g = flow.growth
   local size = ((g.sign[1] ~= 0) and width or height) + spacing
-  local main = MeasureText(instance, FLOW_REMAIN, data, trigger, g, flow.start, size, lower, upper)
+  local main = MeasureText(instance, FLOW_REMAIN, data, trigger, g, flow.start, size, lower, upper, property)
   flow.remain = main and main.text
   local shadow = main and g.shadow and flow.shadowStart
-    and MeasureText(instance, FLOW_REMAIN_SHADOW, data, trigger, g.shadow, flow.shadowStart, size / 2, lower, upper)
+    and MeasureText(instance, FLOW_REMAIN_SHADOW, data, trigger, g.shadow, flow.shadowStart, size / 2, lower, upper, property)
   if shadow then
     HideShadow(instance, "flowShadow")
     flow.shadowKind, flow.shadowList, flow.shadowRemain = "remain", nil, shadow.text
@@ -1208,7 +1228,7 @@ local function EnsureClip(group)
   end
   if not Busy(clip) then
     if clip:GetParent() ~= groupRegion then clip:SetParent(groupRegion) end
-    clip:SetClipsChildren(true)
+    Display.ClipChildren(clip)
     clip:Show()
   end
   return clip
@@ -1665,8 +1685,15 @@ function Display.RechainFlow(group)
       end
     end
     if shadowEnd then
+      -- Half steps can put the row exactly between two pixels, where Blizzard's
+      -- icons and the copies round apart: a tenth of a pixel on breaks the tie.
+      local tie = 0
+      local factor = PixelUtil and PixelUtil.GetPixelToUIUnitFactor and PixelUtil.GetPixelToUIUnitFactor()
+      local origin = flows[1].home or flows[1].region
+      local scale = origin and origin.GetEffectiveScale and origin:GetEffectiveScale()
+      if factor and scale and scale > 0 then tie = 0.1 * factor / scale end
       previous = {endFrame = shadowEnd[1], endPoint = shadowEnd[2],
-        x = shadowEnd[3] + g.sign[1] * spacing / 2, y = shadowEnd[4] + g.sign[2] * spacing / 2}
+        x = shadowEnd[3] + g.sign[1] * spacing / 2 + tie, y = shadowEnd[4] + g.sign[2] * spacing / 2 - tie}
       previous = CapRowStart(group, g, flows, previous, combat)
     end
   end

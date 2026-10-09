@@ -4447,9 +4447,8 @@ Private.event_prototypes = {
         elseif spellCount and spellCount > 0 then
           stacks = spellCount
         end
-        local cooldownData = Private.ExecEnv.GetSpellCooldownData(effectiveSpellId, track, showgcd, showlossofcontrol)
+        local cooldownData = Private.ExecEnv.GetSpellCooldownData(effectiveSpellId, track, showgcd, showlossofcontrol, Private.ExecEnv.spellCooldownTriggerScratch)
         local durationObject = cooldownData and cooldownData.duration
-        local durationObjectNoGCD = WeakAuras.GetSpellCooldownDurationNoGCD(effectiveSpellId, track)
         local isReady = cooldownData and cooldownData.ready
         if showlossofcontrol and startTime and duration then
           local locStart, locDuration = WeakAuras.GetSpellLossOfControlCooldown(spellname);
@@ -4532,7 +4531,7 @@ Private.event_prototypes = {
             state.modRate = modRate;
             state.changed = true;
           end
-          state.durationObject = showgcd and durationObject or durationObjectNoGCD;
+          state.durationObject = showgcd and durationObject or WeakAuras.GetSpellCooldownDurationNoGCD(effectiveSpellId, track);
           state.progressType = 'timed';
         ]=])
       else -- Tracking charges

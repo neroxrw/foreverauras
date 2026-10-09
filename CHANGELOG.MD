@@ -1,6 +1,18 @@
 # Changelog
 
 ## Versions
+## 0.70.26
+- Fixed: in a centred Modern Aura Group, Aura (Modern) icons could sit 1 pixel off from the other icons at some group positions.
+- Fixed: Show On Cooldown spell displays could disappear when entering combat during a global cooldown.
+- Fixed: Thrown was missing from the weapon item types in triggers and Load options.
+- Fixed: Alpha and Color set by an already-true condition were reset to default after combat when the aura also had a Health or Power condition.
+- Fixed: in a Modern Aura Group, displays with a Stack Count or Total Duration filter kept their place in the row even when hidden, which could push other icons past the Limit.
+- Fixed: Aura (Modern) icons and normal icons in a Modern Aura Group could sit 1 pixel apart or look blurry, depending on the group’s position and how many icons were shown.
+- Fixed: Show On Missing, Remaining Time, Total Duration and Stack Count icons could look blurry at some positions, including with Limit on.
+- Fixed: pixel-perfect borders on normal icons in a Modern Aura Group are now drawn exactly like the icon’s own border.
+- Removed: the "Secure frame detected" warning on displays in a Modern Aura Group that contains clickable displays.
+- Improved: lower CPU use for spell cooldown displays in combat, cooldown event handling, Aura (Modern) unit events, and unit frame scanning.
+
 ## 0.70.12
 - Possible Masque fix
 

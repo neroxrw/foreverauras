@@ -58,6 +58,13 @@ Display.booleanFilters = {
 
 -- The saved Aura (Modern) trigger that drives the display. Options write to
 -- this table; GetTrigger below may return a working copy.
+-- A cut that starts between screen pixels redraws what it holds blurred; the
+-- engine rounds it to whole pixels, also where its place cannot be read.
+function Display.ClipChildren(frame)
+  frame:SetClipsChildren(true)
+  if frame.SetRoundLayoutToNearestPixel then frame:SetRoundLayoutToNearestPixel(true) end
+end
+
 function Display.GetSavedTrigger(data)
   if not data or type(data.triggers) ~= "table" then return end
   local source = data.progressSource and data.progressSource[1] or -1
@@ -1083,7 +1090,7 @@ local function BuildButton(container, button)
   -- any element on every display type (StyleDurationGate). It does not
   -- clip while no gate is used.
   native.gateClip = CreateFrame("Frame", nil, button, "DisableUntrustedLayoutScriptsTemplate")
-  native.gateClip:SetClipsChildren(true)
+  Display.ClipChildren(native.gateClip)
   native.gateClip:SetAllPoints(button)
   native.gateText = button:CreateFontString(nil, "BACKGROUND")
   for _, area in ipairs({"inner", "outer"}) do
@@ -1795,7 +1802,8 @@ statusEvents:SetScript("OnEvent", function(_, _, unit)
   if type(unit) ~= "string" then return end
   for region in pairs(activeRegions) do
     local native = region.blizzardAuraDisplay
-    local trigger = Display.GetTrigger(native.data)
+    -- Read only: the saved trigger, without the copy GetTrigger may make.
+    local trigger = Display.GetSavedTrigger(native.data)
     if trigger and (trigger.ignoreDead or trigger.ignoreDisconnected) then
       local single = #native.instances == 1
       for _, instance in ipairs(native.instances) do
@@ -1855,7 +1863,7 @@ events:SetScript("OnEvent", function(_, event, unit)
   -- Modern Aura Groups re-anchor once after all their displays rebound units.
   Display.BeginFlowBatch()
   for region in pairs(activeRegions) do
-    local trigger = Display.GetTrigger(region.blizzardAuraDisplay.data)
+    local trigger = Display.GetSavedTrigger(region.blizzardAuraDisplay.data)
     local mode = trigger and trigger.unit
     if event == "NAME_PLATE_UNIT_ADDED" or event == "NAME_PLATE_UNIT_REMOVED" then
       if Display.UsesNameplates(region.blizzardAuraDisplay.data) then

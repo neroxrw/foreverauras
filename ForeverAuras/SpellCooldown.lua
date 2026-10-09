@@ -5,6 +5,9 @@ local _, Private = ...
 
 local gcdStates = {}
 local gcdStateSince = {}
+-- Spells last seen on a real cooldown: an unreadable moment (a GCD in combat)
+-- keeps them on cooldown until Blizzard reports the cooldown inactive.
+local knownOnCooldown = {}
 
 -- isOnGCD is authoritative only while handling SPELL_UPDATE_COOLDOWN.
 function Private.UpdateSpellCooldownGCD(spellID)
@@ -40,6 +43,7 @@ end
 function Private.ClearSpellCooldownGCD()
   wipe(gcdStates)
   wipe(gcdStateSince)
+  wipe(knownOnCooldown)
 end
 
 -- Clear known GCD-only displays with an owned zero duration; otherwise use Blizzard's timer.
@@ -81,6 +85,11 @@ function Private.GetSpellCooldownData(spellID, track, showGCD, showLossOfControl
   local conditionOnCooldown = onCooldown
   if onCooldown == nil and info and info.isActive and gcdStates[spellID] ~= nil then
     onCooldown = not gcdStates[spellID]
+  end
+  if onCooldown == nil and info and info.isActive and knownOnCooldown[spellID] then
+    onCooldown = true
+  elseif onCooldown ~= nil and info and info.isEnabled then
+    knownOnCooldown[spellID] = onCooldown or nil
   end
   local result = into and wipe(into) or {}
   result.cooldown = cooldown
@@ -138,6 +147,7 @@ function Private.GetSpellCooldownData(spellID, track, showGCD, showLossOfControl
 end
 
 Private.ExecEnv.GetSpellCooldownData = Private.GetSpellCooldownData
+Private.ExecEnv.spellCooldownTriggerScratch = {}
 
 local customStateScratch = {}
 function WeakAuras.SetSpellCooldownState(state, spellID, showGCD, showGCDText)

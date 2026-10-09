@@ -2279,6 +2279,7 @@ do
   secretPoller:Hide()
   local SECRET_POLL_INTERVAL = 0.1
   local secretScratch = {}
+  local chargesScratch = {}
   local SECRET_MIN_COOLDOWN = 1.6
   local function IsWandOnlyTimer(spellID, startTime)
     if not Private.IsWandHeldSpell(spellID) then return false end
@@ -2665,7 +2666,7 @@ do
     GetSpellCharges = function(self, effectiveSpellId, ignoreSpellKnown)
       if C_Secrets.ShouldSpellCooldownBeSecret(effectiveSpellId) then
         if not ignoreSpellKnown and not WeakAuras.IsSpellKnownIncludingPet(effectiveSpellId) then return end
-        local cooldown = Private.GetSpellCooldownData(effectiveSpellId)
+        local cooldown = Private.GetSpellCooldownData(effectiveSpellId, nil, nil, nil, chargesScratch)
         if cooldown then return cooldown.charges, cooldown.maxCharges, cooldown.count end
         return
       end
@@ -2772,8 +2773,13 @@ do
     cdReadyFrame.HandleEvent = function(self, event, ...)
       if event == "SPELL_UPDATE_USABLE" and C_Secrets.ShouldSpellCooldownBeSecret(61304) then return end
       if event == "SPELL_UPDATE_COOLDOWN" then
-        for id in pairs(SpellDetails.data) do
-          Private.UpdateSpellCooldownGCD(id)
+        -- Several events in one frame read the same cooldowns: once is enough.
+        local now = GetTime()
+        if cdReadyFrame.gcdFlagsAt ~= now then
+          cdReadyFrame.gcdFlagsAt = now
+          for id in pairs(SpellDetails.data) do
+            Private.UpdateSpellCooldownGCD(id)
+          end
         end
       elseif event == "PLAYER_LEAVING_WORLD" then
         Private.ClearSpellCooldownGCD()
