@@ -596,10 +596,18 @@ function PowerCurve.RestoreSteps(region, propertyChanges, plan, active, flag)
   end
 end
 
-function PowerCurve.Restore(region, propertyChanges, plan)
+-- Back to what the active conditions say once the value is readable again.
+function PowerCurve.Restore(region, propertyChanges, plan, active)
   region.powerCurveActive = nil
   for property, info in pairs(plan.props) do
-    if propertyChanges[property] == nil then propertyChanges[property] = info.base end
+    if propertyChanges[property] == nil then
+      local value = info.base
+      for _, step in ipairs(plan.steps) do
+        local change = step.changes[property]
+        if change ~= nil and active and active[step.condition] then value = change end
+      end
+      propertyChanges[property] = value
+    end
   end
 end
 
@@ -1299,7 +1307,7 @@ local function PowerCurveCode(data, properties, allConditionsTemplate)
   table.insert(ret, "      PC.Apply(ctx, region, propertyChanges, newActiveConditions, sets, plan)\n")
   table.insert(ret, "    else\n")
   table.insert(ret, string.format("      PC.Remember(curveState, %q)\n", kind))
-  table.insert(ret, "      if region.powerCurveActive then PC.Restore(region, propertyChanges, plan) end\n")
+  table.insert(ret, "      if region.powerCurveActive then PC.Restore(region, propertyChanges, plan, newActiveConditions) end\n")
   table.insert(ret, "    end\n")
   table.insert(ret, "  end\n")
   return table.concat(ret)

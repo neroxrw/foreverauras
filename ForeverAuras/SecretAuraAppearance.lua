@@ -314,7 +314,18 @@ end
 
 -- BackdropTemplate installs resize scripts and reads frame geometry. Native aura
 -- children instead use fixed texture slices sized from the public Display settings.
-local function StyleBorder(entry, parent, target, width, height, element)
+-- In a Modern Aura Group every part of the row snaps to whole pixels the same
+-- way, so icons and borders line up and stay sharp wherever the row starts.
+local defaultBias
+function Display.SnapTexture(texture, snap)
+  if not defaultBias then
+    defaultBias = UIParent:CreateTexture():GetTexelSnappingBias()
+  end
+  texture:SetSnapToPixelGrid(snap)
+  texture:SetTexelSnappingBias(snap and defaultBias or 0)
+end
+
+local function StyleBorder(entry, parent, target, width, height, element, snapRow)
   if not entry.border then
     entry.border = CreateFrame("Frame", nil, parent)
     entry.borderPieces = {}
@@ -332,7 +343,7 @@ local function StyleBorder(entry, parent, target, width, height, element)
   local pixelPerfect = element.border_ppscale == true
   frame:SetIgnoreParentScale(pixelPerfect)
   frame:SetScale(pixelPerfect and PixelUtil.GetPixelToUIUnitFactor() or 1)
-  if frame.SetRoundLayoutToNearestPixel then frame:SetRoundLayoutToNearestPixel(pixelPerfect) end
+  if frame.SetRoundLayoutToNearestPixel then frame:SetRoundLayoutToNearestPixel(pixelPerfect and not snapRow) end
   frame:ClearAllPoints()
   if pixelPerfect then
     size = math.max(1, math.floor((element.border_size or 2) + 0.5))
@@ -349,9 +360,14 @@ local function StyleBorder(entry, parent, target, width, height, element)
     texture:SetTexture(file, "REPEAT", "REPEAT")
     texture:SetVertexColor(unpack(element.border_color or {1, 1, 1, 1}))
     -- Engine-side rounding follows protected anchor movement without Lua geometry reads.
-    texture:SetSnapToPixelGrid(not pixelPerfect)
-    texture:SetTexelSnappingBias(pixelPerfect and 0 or texture.originalSnappingBias or 0)
-    if texture.SetRoundLayoutToNearestPixel then texture:SetRoundLayoutToNearestPixel(pixelPerfect) end
+    if snapRow then
+      Display.SnapTexture(texture, true)
+      if texture.SetRoundLayoutToNearestPixel then texture:SetRoundLayoutToNearestPixel(false) end
+    else
+      texture:SetSnapToPixelGrid(not pixelPerfect)
+      texture:SetTexelSnappingBias(pixelPerfect and 0 or texture.originalSnappingBias or 0)
+      if texture.SetRoundLayoutToNearestPixel then texture:SetRoundLayoutToNearestPixel(pixelPerfect) end
+    end
   end
   for index, point in ipairs({"TOPLEFT", "TOPRIGHT", "BOTTOMLEFT", "BOTTOMRIGHT"}) do
     local texture = pieces[point]
@@ -422,8 +438,7 @@ function Display.StyleAppearance(native, data, ElementFrame, StyleText, StyleGlo
   native.icon:SetVertexColor(unpack(data.regionType == "aurabar" and data.icon_color or data.color or {1, 1, 1, 1}))
   if data.regionType == "icon" or (data.regionType == "aurabar" and data.icon) then
     if data.iconSource == 0 and data.displayIcon and data.displayIcon ~= "" then native.icon:SetTexture(data.displayIcon) else button:SetIcon(native.icon) end
-    native.icon:SetSnapToPixelGrid(false)
-    native.icon:SetTexelSnappingBias(0)
+    Display.SnapTexture(native.icon, Display.FlowGroup(data) ~= nil)
     native.icon:Show()
   end
   if data.regionType == "icon" and data.cooldown ~= false then
@@ -500,7 +515,7 @@ function Display.StyleAppearance(native, data, ElementFrame, StyleText, StyleGlo
       elseif element.type == "subborder" then
         if not borderSeen and element.border_visible ~= false then
           local target, borderWidth, borderHeight = Area(native, data, element.anchor_area)
-          StyleBorder(entry, frame, target, borderWidth, borderHeight, element)
+          StyleBorder(entry, frame, target, borderWidth, borderHeight, element, Display.FlowGroup(data) ~= nil)
         end
         borderSeen = true
       elseif element.type == "subglow" then

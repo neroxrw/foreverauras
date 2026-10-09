@@ -62,6 +62,7 @@ local function Hook(source, methods)
     if source[method] and not source.faStandHooked[method] then
       source.faStandHooked[method] = true
       hooksecurefunc(source, method, function(self, ...)
+        if not self.faStand then return end
         Private.StartProfileSystem("aura (modern) - group copies")
         Forward(self, method, ...)
         Private.StopProfileSystem("aura (modern) - group copies")
@@ -104,6 +105,32 @@ local function CopyTexture(source, copy)
   Pass(copy, "SetDesaturated", source, "IsDesaturated")
   Pass(copy, "SetVertexColor", source, "GetVertexColor")
   Pass(copy, "SetBlendMode", source, "GetBlendMode")
+end
+
+-- A pixel-perfect border keeps 1 px edges: same scale and snapping as its source.
+local function MatchBorderScale(sub, copy)
+  if not (copy.ForEachPiece and sub.IsIgnoringParentScale) then return end
+  local ok, ignore = pcall(sub.IsIgnoringParentScale, sub)
+  local pixelPerfect = ok and ignore == true
+  local scale = pixelPerfect and sub:GetScale() or 1
+  copy:SetIgnoreParentScale(pixelPerfect)
+  copy:SetScale(scale)
+  -- The pieces follow the frame's scale (scaling them again would shrink the
+  -- edges); hiding and showing makes the new scale take effect.
+  copy:ForEachPiece(function(_, piece)
+    piece:SetIgnoreParentScale(false)
+    piece:SetScale(1)
+    piece:Hide()
+    piece:Show()
+    -- Drawn exactly like the Border element draws it.
+    if pixelPerfect then
+      piece:SetSnapToPixelGrid(false)
+      piece:SetTexelSnappingBias(0)
+    end
+  end)
+  local shown = copy:IsShown()
+  copy:Hide()
+  if shown then copy:Show() end
 end
 
 local function CopyFont(source, copy)
@@ -233,6 +260,8 @@ function Display.EnsureStand(region, normal)
     local icon = Pooled(stand, "icon", function() return frame:CreateTexture(nil, "ARTWORK") end)
     Link(stand, region.icon, icon, TEXTURE)
     CopyTexture(region.icon, icon)
+    -- Snapped like the row's Aura (Modern) icons (Display.SnapTexture).
+    if Display.SnapTexture then Display.SnapTexture(icon, true) end
   end
   if region.cooldown then
     local cooldown = Pooled(stand, "cooldown", function() return CreateFrame("Cooldown", nil, frame, "CooldownFrameTemplate") end)
@@ -246,7 +275,7 @@ function Display.EnsureStand(region, normal)
   for index, sub in ipairs(region.subRegions or {}) do
     if mirrorTypes[sub.type] then
       local copy = Pooled(stand, sub.type .. index, function()
-        return CreateFrame("Frame", nil, frame, sub.type == "subborder" and "BackdropTemplate" or nil)
+        return CreateFrame("Frame", nil, frame, sub.type == "subborder" and "BackdropTemplateWeakAuras" or nil)
       end)
       local methods = FRAME
       if sub.type == "subborder" then
@@ -263,6 +292,11 @@ function Display.EnsureStand(region, normal)
       if sub.type == "subborder" and sub.GetBackdrop and copy.SetBackdrop then
         Pass(copy, "SetBackdrop", sub, "GetBackdrop")
         Pass(copy, "SetBackdropBorderColor", sub, "GetBackdropBorderColor")
+        MatchBorderScale(sub, copy)
+        if not copy.faBorderScaleHooked and copy.SetBackdrop then
+          copy.faBorderScaleHooked = true
+          hooksecurefunc(copy, "SetBackdrop", function() MatchBorderScale(sub, copy) end)
+        end
       end
     end
   end

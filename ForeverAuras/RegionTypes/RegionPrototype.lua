@@ -1073,6 +1073,7 @@ function Private.regionPrototype.AddExpandFunction(data, region, cloneId, parent
   local id = data.id
   local inDynamicGroup = parentRegionType == "dynamicgroup";
   local inGroup = parentRegionType == "group";
+  local inModernGroup = inGroup and Private.BlizzardAuraDisplay.FlowGroup(data) ~= nil
 
   local startMainAnimation = function()
     Private.Animate("display", uid, "main", data.animation.main, region, false, nil, true, cloneId);
@@ -1108,8 +1109,9 @@ function Private.regionPrototype.AddExpandFunction(data, region, cloneId, parent
           L["Cannot change secure frame in combat lockdown. Find more information:\nhttps://github.com/WeakAuras/WeakAuras2/wiki/Protected-Frames"],
             true)
         else
-          Private.AuraWarnings.UpdateWarning(uid, "protected_frame", "warning",
-            L["Secure frame detected. Find more information:\nhttps://github.com/WeakAuras/WeakAuras2/wiki/Protected-Frames"])
+          -- In a Modern Aura Group, clickable displays make the whole row secure; that is expected.
+          Private.AuraWarnings.UpdateWarning(uid, "protected_frame", not inModernGroup and "warning" or nil,
+            not inModernGroup and L["Secure frame detected. Find more information:\nhttps://github.com/WeakAuras/WeakAuras2/wiki/Protected-Frames"] or nil)
           region:Hide()
         end
       else
@@ -1139,8 +1141,9 @@ function Private.regionPrototype.AddExpandFunction(data, region, cloneId, parent
           L["Cannot change secure frame in combat lockdown. Find more information:\nhttps://github.com/WeakAuras/WeakAuras2/wiki/Protected-Frames"],
             true)
         else
-          Private.AuraWarnings.UpdateWarning(uid, "protected_frame", "warning",
-            L["Secure frame detected. Find more information:\nhttps://github.com/WeakAuras/WeakAuras2/wiki/Protected-Frames"])
+          -- In a Modern Aura Group, clickable displays make the whole row secure; that is expected.
+          Private.AuraWarnings.UpdateWarning(uid, "protected_frame", not inModernGroup and "warning" or nil,
+            not inModernGroup and L["Secure frame detected. Find more information:\nhttps://github.com/WeakAuras/WeakAuras2/wiki/Protected-Frames"] or nil)
           region:Hide()
         end
       else
@@ -1192,8 +1195,9 @@ function Private.regionPrototype.AddExpandFunction(data, region, cloneId, parent
             L["Cannot change secure frame in combat lockdown. Find more information:\nhttps://github.com/WeakAuras/WeakAuras2/wiki/Protected-Frames"],
             true)
         else
-          Private.AuraWarnings.UpdateWarning(uid, "protected_frame", "warning",
-            L["Secure frame detected. Find more information:\nhttps://github.com/WeakAuras/WeakAuras2/wiki/Protected-Frames"])
+          -- In a Modern Aura Group, clickable displays make the whole row secure; that is expected.
+          Private.AuraWarnings.UpdateWarning(uid, "protected_frame", not inModernGroup and "warning" or nil,
+            not inModernGroup and L["Secure frame detected. Find more information:\nhttps://github.com/WeakAuras/WeakAuras2/wiki/Protected-Frames"] or nil)
           region:Show()
         end
       else
@@ -1258,8 +1262,9 @@ function Private.regionPrototype.AddExpandFunction(data, region, cloneId, parent
             L["Cannot change secure frame in combat lockdown. Find more information:\nhttps://github.com/WeakAuras/WeakAuras2/wiki/Protected-Frames"],
             true)
         else
-          Private.AuraWarnings.UpdateWarning(uid, "protected_frame", "warning",
-            L["Secure frame detected. Find more information:\nhttps://github.com/WeakAuras/WeakAuras2/wiki/Protected-Frames"])
+          -- In a Modern Aura Group, clickable displays make the whole row secure; that is expected.
+          Private.AuraWarnings.UpdateWarning(uid, "protected_frame", not inModernGroup and "warning" or nil,
+            not inModernGroup and L["Secure frame detected. Find more information:\nhttps://github.com/WeakAuras/WeakAuras2/wiki/Protected-Frames"] or nil)
           region:Show()
         end
       else
