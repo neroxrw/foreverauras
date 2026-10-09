@@ -8,10 +8,16 @@ local formatters = {}
 -- The public GCD-only state is a text policy, not a duration to format. In
 -- particular, a temporarily missing filtered timer must never expose the swipe
 -- through GetTextDuration's fallback. Charge selection clears cdmGCDOnly.
+-- A readable GCD-free timed state formats in Lua, so it needs no duration object.
+local function ReadableTimed(state)
+  return state.progressType == "timed" and state.expirationTime ~= nil and state.duration ~= nil
+    and not hasanysecretvalues(state.expirationTime, state.duration)
+end
+
 function Private.ShouldHideDurationText(state)
   return state and state.cdmHideGCDText == true and not state.cdmTextPreview
     and (state.cdmGCDOnly == true
-      or (state.cdmTextDurationRequired and not state.cdmTextDurationObject))
+      or (state.cdmTextDurationRequired and not state.cdmTextDurationObject and not ReadableTimed(state)))
 end
 
 -- CDM can show a GCD swipe while its text uses only the spell/recharge timer.

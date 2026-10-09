@@ -1,5 +1,13 @@
 # Changelog
 ## Versions
+## 0.70.34
+- Fixed auras in Modern Aura Groups drawing above other windows regardless of their strata setting.
+- Fixed spell cooldown timer text sometimes showing blank with "Show GCD text" off.
+- Fixed `%p` not showing on Aura (Modern) bars, progress textures and texts that use Total Duration or Remaining Time.
+- Sorting Wording on Aura (Modern) Group
+- Fixed timer text missing on buffs in Modern Aura Groups that sort across displays.
+- Only auras that look identical are now drawn together when sorting across displays.
+
 ## 0.70.29
 - Fixed spell cooldown timer text sometimes showing blank.
 - Timer text now uses ForeverAuras' own formatting whenever the time is readable, which is always the case out of combat.
