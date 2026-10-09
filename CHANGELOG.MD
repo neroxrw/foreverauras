@@ -1,6 +1,6 @@
 # Changelog
 ## Versions
-### 0.70.28
+## 0.70.28
 - Fixed: in a centred Modern Aura Group, Aura (Modern) icons could sit 1 pixel off from other icons at some group positions.
 - Fixed: in the options preview, Aura (Modern) icons in a centred Modern Aura Group could sit 1 pixel off with odd icon sizes.
 - Fixed: a display removed from a sorted Modern Aura Group could keep the group’s merged filters until /reload.
