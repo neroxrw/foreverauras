@@ -1,8 +1,8 @@
 # Changelog
 ## Versions
 ## 0.70.28
-- Fixed: in a centred Modern Aura Group, Aura (Modern) icons could sit 1 pixel off from other icons at some group positions.
-- Fixed: in the options preview, Aura (Modern) icons in a centred Modern Aura Group could sit 1 pixel off with odd icon sizes.
+- Fixed: in a centered Modern Aura Group, Aura (Modern) icons could sit 1 pixel off from other icons at some group positions.
+- Fixed: in the options preview, Aura (Modern) icons in a centered Modern Aura Group could sit 1 pixel off with odd icon sizes.
 - Fixed: a display removed from a sorted Modern Aura Group could keep the group’s merged filters until /reload.
 - Fixed: Modern Aura Groups anchored to unit frames could try to move protected frames in combat.
 - Fixed: a spell could be treated as still on cooldown after it was briefly unavailable.
@@ -37,7 +37,7 @@
 - Normal auras (icons and texts) in Modern Aura Groups now line up anywhere in the row, in and out of combat, including with Centered growth.
 - Clickable auras in Modern Aura Groups keep working.
 - Limit now cuts off the whole row after that many icons, normal auras included, with every growth, in combat and in the options preview.
-- Out-of-combat auras leaving as combat starts no longer push a centred row off-centre.
+- Out-of-combat auras leaving as combat starts no longer push a centered row off-centre.
 - Remaining Time conditions on cooldowns and casts can change Alpha and Color in combat.
 - Timer texts can be coloured in several steps, and hidden or shown by Remaining Time, in combat too.
 - Old and Modern Blizzard time formats now work on restricted timers.
