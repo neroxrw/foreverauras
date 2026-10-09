@@ -340,6 +340,32 @@ local function Serialize(value)
   return "{" .. table.concat(parts, ",") .. "}"
 end
 
+-- Merged displays are drawn by one host, so only identical looks may merge.
+local notAppearance = {id = true, uid = true, parent = true, triggers = true, trigger = true, load = true, xOffset = true, yOffset = true,
+  anchorPoint = true, anchorFrameType = true, anchorFrameFrame = true, selfPoint = true, information = true,
+  authorOptions = true, config = true, actions = true, internalVersion = true, tocversion = true, semver = true,
+  url = true, desc = true, version = true, preferToUpdate = true, sortHybridTable = true, controlledChildren = true,
+  frameStrata = true, frameLevel = true, anchorFrameParent = true, anchorFramePoint = true, anchorFrameOffset = true,
+  anchorPerUnit = true, useAnchorPerUnit = true, animation = true, source = true, wagoID = true,
+  ignoreWagoUpdate = true, skipWagoUpdate = true}
+local appearanceKeys = setmetatable({}, {__mode = "k"})
+
+local function AppearanceKey(data)
+  -- Options edit data in place: no keys are kept while they are open.
+  local editing = WeakAuras.IsOptionsOpen()
+  if editing then wipe(appearanceKeys) elseif appearanceKeys[data] then return appearanceKeys[data] end
+  local parts = {}
+  for key, value in pairs(data) do
+    if not notAppearance[key] and not (key == "displayIcon" and data.iconSource ~= 0) then
+      parts[#parts + 1] = tostring(key) .. "=" .. Serialize(value)
+    end
+  end
+  table.sort(parts)
+  local key = table.concat(parts, ",")
+  if not editing then appearanceKeys[data] = key end
+  return key
+end
+
 function Display.MergeKey(data)
   local trigger = Display.GetTrigger(data)
   if type(trigger) ~= "table" or Display.ShowOn(trigger) ~= "showOnActive" or Display.IsSingle(trigger, data)
@@ -347,8 +373,9 @@ function Display.MergeKey(data)
     or not (Display.UsesSpellIDs(trigger) or Display.UsesRankSpellIDs(trigger)) then return end
   local filters = CopyTable(Display.RawCandidateFilters(data))
   filters.includeSpellIDs = nil
+  local op, x = Display.RemainingWindow(trigger)
   return table.concat({tostring(trigger.unit), tostring((Display.SpecificUnit(trigger))), tostring((Display.IncludesPets(trigger))),
-    Display.FilterString(trigger), Serialize(filters)}, "|")
+    Display.FilterString(trigger), Serialize(filters), tostring(op), tostring(x), AppearanceKey(data)}, "|")
 end
 
 local merged = setmetatable({}, {__mode = "k"})
@@ -1242,6 +1269,32 @@ local function Reparent(region, parent)
   if Private.ApplyFrameLevel and region.id then Private.ApplyFrameLevel(region) end
 end
 
+-- A clip draws its children on its own strata, so it takes the lowest strata
+-- its displays are set to; each display keeps its own strata and level.
+local strataRank = {BACKGROUND = 1, LOW = 2, MEDIUM = 3, HIGH = 4, DIALOG = 5, FULLSCREEN = 6, FULLSCREEN_DIALOG = 7, TOOLTIP = 8}
+
+local function MatchClipStrata(clip, groupRegion)
+  local lowest
+  for _, child in ipairs({clip:GetChildren()}) do
+    local data = child.id and WeakAuras.GetData and WeakAuras.GetData(child.id)
+    if data then
+      local strata = Private.frame_strata_types and Private.frame_strata_types[data.frameStrata or 1]
+      if not strataRank[strata] then strata = groupRegion:GetFrameStrata() end
+      if strataRank[strata] and (not lowest or strataRank[strata] < strataRank[lowest]) then lowest = strata end
+    end
+  end
+  lowest = lowest or groupRegion:GetFrameStrata()
+  if clip:GetFrameStrata() == lowest then return end
+  local children = {clip:GetChildren()}
+  local strata = {}
+  for index, child in ipairs(children) do strata[index] = child:GetFrameStrata() end
+  clip:SetFrameStrata(lowest)
+  for index, child in ipairs(children) do
+    child:SetFrameStrata(strata[index])
+    if Private.ApplyFrameLevel and child.id then Private.ApplyFrameLevel(child) end
+  end
+end
+
 local function EnsureClip(group)
   local groupRegion = GroupRegion(group)
   if not groupRegion then return end
@@ -1430,6 +1483,7 @@ function Display.UpdateFlowClip(group, flows, g)
         end
       end
     end
+    MatchClipStrata(clip, groupRegion)
   end
   local first = flows and flows[1]
   -- The options preview places its own cut.

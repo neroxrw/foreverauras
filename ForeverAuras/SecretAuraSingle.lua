@@ -1874,6 +1874,7 @@ function Display.StyleDurationGate(native, data)
   end
   if not lower then
     gate:Hide()
+    native.cooldown:SetUseAuraDisplayTime(false)
     native.cooldown:SetMinimumCountdownDuration(0)
     native.cooldown:SetCountdownFormatter(nil)
     -- A Stack Count filter uses the same clip.
@@ -1916,36 +1917,52 @@ function Display.StyleDurationGate(native, data)
   clip:ClearAllPoints()
   clip:SetPoint("TOPLEFT", gate, "TOPLEFT")
   clip:SetPoint("BOTTOMRIGHT", gate, "BOTTOMRIGHT")
-  -- The %p text lost its binding to the gate. A Text display's own %p text
-  -- is hidden; on Icons with the Total Duration gate the swipe's numbers
-  -- replace %p, other displays have no swipe to take it over.
+  -- The %p text lost its binding to the gate, so it is hidden and a
+  -- cooldown's countdown numbers show the time in its place.
+  local countdown, settings, prefix
   if native.mainText and data.regionType == "text" and Display.TextKind(data.displayText) == "duration" then
     native.mainText:Hide()
+    countdown, prefix = data, "displayText_format_p_time_"
+    settings = {textFont = data.font, textSize = data.fontSize, textColor = data.color, textOutline = data.outline,
+      textJustify = data.justify, textShadowColor = data.shadowColor, textShadowX = data.shadowXOffset, textShadowY = data.shadowYOffset}
   end
-  local countdown
   for index, element in ipairs(data.subRegions or {}) do
     if element.type == "subtext" and Display.TextKind(element.text_text) == "duration" then
       local entry = native.sharedElements and native.sharedElements[index]
       if entry and entry.text then entry.text:Hide() end
-      if element.text_visible ~= false and not countdown then countdown = element end
+      if element.text_visible ~= false and not countdown then
+        countdown, settings, prefix = element, Display.TextSettings(element), "text_text_format_p_time_"
+      end
     end
   end
-  if countdown and data.regionType == "icon" and property == "TotalDuration" then
+  -- Icons with Remaining Time are drawn by the single display, not this gate.
+  if countdown and (data.regionType ~= "icon" or property == "TotalDuration") then
     local cooldown = native.cooldown
     cooldown:Show()
-    -- The numbers without a swipe when the icon's cooldown is turned off.
-    if data.cooldown == false then
+    if data.regionType ~= "icon" then
+      -- Only the numbers: no swipe, over the whole display.
+      cooldown:ClearAllPoints()
+      cooldown:SetAllPoints(button)
+    end
+    if data.regionType ~= "icon" or data.cooldown == false then
+      -- Above every element frame (ElementFrame levels: button + index * 3 + 3).
+      cooldown:SetFrameLevel(button:GetFrameLevel() + #(data.subRegions or {}) * 3 + 6)
       cooldown:SetDrawSwipe(false)
       cooldown:SetDrawEdge(false)
     end
     cooldown:SetHideCountdownNumbers(false)
+    -- Blizzard's numbers carry the time; cooldown text addons cannot read it.
+    if OmniCC and OmniCC.Cooldown and OmniCC.Cooldown.SetNoCooldownCount then
+      pcall(OmniCC.Cooldown.SetNoCooldownCount, cooldown, true)
+    elseif ElvUI and ElvUI[1] and ElvUI[1].ToggleCooldown then
+      pcall(ElvUI[1].ToggleCooldown, ElvUI[1], cooldown, false)
+    end
     cooldown:SetUseAuraDisplayTime(true)
     -- Second guard: no numbers for auras shorter than the range.
-    cooldown:SetMinimumCountdownDuration(lower * 1000)
+    cooldown:SetMinimumCountdownDuration(property == "TotalDuration" and lower * 1000 or 0)
     -- The numbers take the %p text's font, colour, position and time format.
     local numbers = cooldown:GetCountdownFontString()
-    if numbers then Display.StyleText(numbers, native, Display.TextSettings(countdown), "text", 18, "CENTER", 0, 0) end
-    local prefix = "text_text_format_p_time_"
+    if numbers then Display.StyleText(numbers, native, settings, "text", 18, "CENTER", 0, 0) end
     local format = countdown[prefix .. "format"]
     cooldown:SetCountdownFormatter(nil)
     if format ~= nil and format ~= -1 and Private.GetDurationTextFormatter then

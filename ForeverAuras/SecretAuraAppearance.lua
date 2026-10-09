@@ -416,6 +416,8 @@ function Display.StyleAppearance(native, data, ElementFrame, StyleText, StyleGlo
   for _, frame in pairs(native.elementFrames or {}) do frame:Hide() end
   native.border:Hide()
   native.icon:Hide(); native.cooldown:Hide()
+  -- A Total Duration or Remaining Time gate may have moved the numbers' cooldown.
+  native.cooldown:ClearAllPoints(); native.cooldown:SetAllPoints(native.icon)
   if native.bar then native.bar:Hide() end
   if native.progressBackground then native.progressBackground:Hide() end
   if native.mainText then native.mainText:Hide() end

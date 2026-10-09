@@ -584,7 +584,7 @@ local function createOptions(id, data)
     },
     blizzardFlowNormalNote = {
       type = "description", order = 0.612, width = "full", fontSize = "small",
-      name = "|TInterface\\common\\help-i:16:16|t Icons and texts without an Aura (Modern) trigger are copied into the row (no glows or Masque). Other display types sit at the start.",
+      name = "|TInterface\\common\\help-i:16:16|t Icon and Text displays with other triggers join the row as copies, without glows or Masque. Other displays with other triggers stay at the row's start.",
       hidden = function() return FlowOff() or Display.FlowGrid(data) or data.blizzardFlowFrames ~= nil end,
     },
     blizzardFlowGridType = {
@@ -642,12 +642,17 @@ local function createOptions(id, data)
       type = "select", width = WeakAuras.doubleWidth, order = 0.65, name = L["Sort"], hidden = FlowOff,
       values = Display.flowSortModes,
       sorting = Display.flowSortOrder,
-      desc = "Ascending and Descending sort by remaining time. Aura(s) Found displays with the same unit and filters share one sorted row, with the first one's look.",
+      desc = "Ascending and Descending sort by remaining time. Aura(s) Found displays with the same unit, filters and display settings share one sorted row.",
       get = function() return Display.FlowSortMode(data) end,
       set = function(_, v)
         data.blizzardFlowSort, data.blizzardFlowReverse, data.blizzardFlowMerge = nil, nil, nil
         SaveFlow("blizzardFlowSortMode", v)
       end,
+    },
+    blizzardFlowSortNote = {
+      type = "description", width = WeakAuras.doubleWidth, order = 0.66, fontSize = "medium",
+      name = "|cffffd100Auras sort together only when they have the same display settings.|r",
+      hidden = function() return FlowOff() or Display.FlowGrid(data) or Display.FlowSortMode(data) == "none" end,
     },
     blizzardFlowUseLimit = {
       type = "toggle", width = WeakAuras.normalWidth, order = 0.67, name = L["Limit"], hidden = FlowOff,
