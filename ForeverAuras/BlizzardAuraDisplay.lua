@@ -1513,6 +1513,7 @@ end
 
 local ApplyDisplay
 function Display.Apply(region, data)
+  if Display.ForgetAppearanceKey then Display.ForgetAppearanceKey(data) end
   local profile = Private.loadProfile
   if not profile or profile.done then
     Private.StartProfileSystem("aura (modern) - build")

@@ -20,7 +20,7 @@ local FONT = {"ClearAllPoints", "SetPoint", "SetAllPoints", "Show", "Hide", "Set
 local COOLDOWN = {"ClearAllPoints", "SetPoint", "SetAllPoints", "Show", "Hide", "SetShown", "SetAlpha", "SetCooldown",
   "SetCooldownFromDurationObject", "SetCooldownDuration", "Clear", "Pause", "Resume", "SetReverse", "SetDrawSwipe", "SetDrawEdge",
   "SetDrawBling", "SetHideCountdownNumbers", "SetSwipeColor", "SetSwipeTexture", "SetEdgeTexture", "SetUseAuraDisplayTime",
-  "SetCountdownFormatter", "SetMinimumCountdownDuration"}
+  "SetCountdownFormatter", "SetMinimumCountdownDuration", "SetDrawSwipeOrg"}
 local BORDER = {"SetBackdrop", "SetBackdropBorderColor", "SetBackdropColor"}
 local SECURE = {"ClearAllPoints", "SetPoint", "SetAllPoints", "SetSize", "SetWidth", "SetHeight", "SetAlpha", "SetAttribute", "RegisterForClicks"}
 local ATTRIBUTES = {"type", "type1", "type2", "spell", "spell1", "spell2", "item", "item1", "item2", "macro", "macrotext", "macrotext1",
@@ -43,6 +43,8 @@ local function Forward(source, method, ...)
   local link = source.faStand
   if link and link.owner and link.owner:GetParent() ~= link.stand.region then return end
   local copy = link and link.stand.active and link.stand.copies[source]
+  -- Icons mask SetDrawSwipe and draw the swipe through the original setter.
+  if method == "SetDrawSwipeOrg" then method = "SetDrawSwipe" end
   if not copy or not copy[method] then return end
   if link.stand.secure[source] and InCombatLockdown() then return end
   if POINTS[method] then

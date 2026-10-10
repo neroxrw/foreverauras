@@ -13,6 +13,13 @@ local L = WeakAuras.L;
 
 local LSM = LibStub("LibSharedMedia-3.0");
 
+-- Another addon can load a different LibSharedMedia copy: a media registration it
+-- rejects must not stop this file, and every aura, from loading.
+local function Register(...)
+  pcall(LSM.Register, LSM, ...)
+end
+local FONT_LOCALES = (LSM.LOCALE_BIT_western and LSM.LOCALE_BIT_ruRU) and (LSM.LOCALE_BIT_western + LSM.LOCALE_BIT_ruRU) or nil
+
 local wipe, tinsert = wipe, tinsert
 local GetNumShapeshiftForms, GetShapeshiftFormInfo = GetNumShapeshiftForms, GetShapeshiftFormInfo
 local WrapTextInColorCode = WrapTextInColorCode
@@ -160,29 +167,46 @@ Private.unit_realm_name_types = {
   always = L["Always include realm"]
 }
 
+-- Client data read while this file loads is guarded: a client update that changes
+-- or removes one must not stop the rest of this file (and every aura) from loading.
+local function Try(func, ...)
+  if type(func) ~= "function" then return end
+  local results = {pcall(func, ...)}
+  if results[1] then return unpack(results, 2) end
+end
+
 local timeFormatter = {}
-Mixin(timeFormatter, SecondsFormatterMixin)
-timeFormatter:Init(0, SecondsFormatter.Abbreviation.OneLetter)
+if SecondsFormatterMixin then Mixin(timeFormatter, SecondsFormatterMixin) end
+-- Without Blizzard's formatter, a plain fallback keeps time texts working.
+if not timeFormatter.Format then
+  timeFormatter.Format = function(_, value) return SecondsToTime and SecondsToTime(value) or tostring(math.floor(value)) end
+end
+Try(timeFormatter.Init, timeFormatter, 0, SecondsFormatter and SecondsFormatter.Abbreviation and SecondsFormatter.Abbreviation.OneLetter)
 
 -- The default time formatter adds a space between the value and the unit
 -- While there is a API to strip it, that API does not work on all locales, e.g. german
 -- Thus, copy the interval descriptions, strip the whitespace from them
 -- and hack the timeFormatter to use our interval descriptions
-local timeFormatIntervalDescriptionFixed = {}
-timeFormatIntervalDescriptionFixed = CopyTable(SecondsFormatter.IntervalDescription)
-for i, interval in ipairs(timeFormatIntervalDescriptionFixed) do
-  interval.formatString = CopyTable(SecondsFormatter.IntervalDescription[i].formatString)
-  for j, formatString in ipairs(interval.formatString) do
-    interval.formatString[j] = formatString:gsub(" ", "")
+local timeFormatIntervalDescriptionFixed = Try(function()
+  local fixed = CopyTable(SecondsFormatter.IntervalDescription)
+  for i, interval in ipairs(fixed) do
+    interval.formatString = CopyTable(SecondsFormatter.IntervalDescription[i].formatString)
+    for j, formatString in ipairs(interval.formatString) do
+      interval.formatString[j] = formatString:gsub(" ", "")
+    end
   end
-end
+  return fixed
+end)
 
-timeFormatter.GetIntervalDescription = function(self, interval)
-  return timeFormatIntervalDescriptionFixed[interval]
-end
+-- Without the client's interval data the formatter keeps Blizzard's own (spaced) units.
+if timeFormatIntervalDescriptionFixed then
+  timeFormatter.GetIntervalDescription = function(self, interval)
+    return timeFormatIntervalDescriptionFixed[interval]
+  end
 
-timeFormatter.GetMaxInterval = function(self)
-  return #timeFormatIntervalDescriptionFixed
+  timeFormatter.GetMaxInterval = function(self)
+    return #timeFormatIntervalDescriptionFixed
+  end
 end
 
 local AbbreviateNumbers = AbbreviateNumbers
@@ -1381,7 +1405,7 @@ Private.unit_threat_situation_types = {
 
 WeakAuras.class_types = {}
 for _, classID in ipairs({1, 2, 3, 4, 5, 7, 8, 9, 11}) do
-  local classInfo = C_CreatureInfo.GetClassInfo(classID)
+  local classInfo = Try(C_CreatureInfo and C_CreatureInfo.GetClassInfo, classID)
   if classInfo then
     WeakAuras.class_types[classInfo.classFile] = WrapTextInColorCode(classInfo.className, WA_GetClassColor(classInfo.classFile))
   end
@@ -1392,7 +1416,7 @@ do
   -- Skyborne has separate Alliance and Horde race records.
   local races = {1, 2, 3, 4, 5, 6, 7, 8, 95, 96}
   for _, raceId in ipairs(races) do
-    local raceInfo = C_CreatureInfo.GetRaceInfo(raceId)
+    local raceInfo = Try(C_CreatureInfo and C_CreatureInfo.GetRaceInfo, raceId)
     if raceInfo then
       WeakAuras.race_types[raceInfo.clientFileString] = raceInfo.raceName
     end
@@ -2073,13 +2097,13 @@ Private.loss_of_control_types = {
 
 ---@type table<number, string>
 Private.main_spell_schools = {
-  [1] = C_Spell.GetSchoolString(1),
-  [2] = C_Spell.GetSchoolString(2),
-  [4] = C_Spell.GetSchoolString(4),
-  [8] = C_Spell.GetSchoolString(8),
-  [16] = C_Spell.GetSchoolString(16),
-  [32] = C_Spell.GetSchoolString(32),
-  [64] = C_Spell.GetSchoolString(64),
+  [1] = Try(C_Spell and C_Spell.GetSchoolString, 1),
+  [2] = Try(C_Spell and C_Spell.GetSchoolString, 2),
+  [4] = Try(C_Spell and C_Spell.GetSchoolString, 4),
+  [8] = Try(C_Spell and C_Spell.GetSchoolString, 8),
+  [16] = Try(C_Spell and C_Spell.GetSchoolString, 16),
+  [32] = Try(C_Spell and C_Spell.GetSchoolString, 32),
+  [64] = Try(C_Spell and C_Spell.GetSchoolString, 64),
 }
 
 ---@type table<string, table<string, string>>
@@ -2899,7 +2923,7 @@ Private.instance_difficulty_types = {}
 -- Use Forever's client data rather than retail's hard-coded difficulty IDs.
 Private.instance_difficulty_types[0] = L["None"]
 for difficultyID = 1, 240 do
-  local name, instanceType = GetDifficultyInfo(difficultyID)
+  local name, instanceType = Try(GetDifficultyInfo, difficultyID)
   if name then
     Private.instance_difficulty_types[difficultyID] = string.format("%s (%s, %d)", name, instanceType or "?", difficultyID)
   end
@@ -2970,8 +2994,8 @@ Private.classification_types = {
 do
   ---@type table<number, string>
   Private.creature_type_types = {}
-  for _, creatureID in ipairs(C_CreatureInfo.GetCreatureTypeIDs()) do
-    local creatureInfo = C_CreatureInfo.GetCreatureTypeInfo(creatureID)
+  for _, creatureID in ipairs(Try(C_CreatureInfo and C_CreatureInfo.GetCreatureTypeIDs) or {}) do
+    local creatureInfo = Try(C_CreatureInfo.GetCreatureTypeInfo, creatureID)
     if creatureInfo then
       Private.creature_type_types[creatureID] = creatureInfo.name
     end
@@ -2981,8 +3005,8 @@ end
 do
   ---@type table<number, string>
   Private.creature_family_types = {}
-  for _, familyID in ipairs(C_CreatureInfo.GetCreatureFamilyIDs()) do
-    local familyInfo = C_CreatureInfo.GetCreatureFamilyInfo(familyID)
+  for _, familyID in ipairs(Try(C_CreatureInfo and C_CreatureInfo.GetCreatureFamilyIDs) or {}) do
+    local familyInfo = Try(C_CreatureInfo.GetCreatureFamilyInfo, familyID)
     if familyInfo then
       Private.creature_family_types[familyID] = familyInfo.name
     end
@@ -3108,118 +3132,117 @@ Private.cast_types = {
 }
 
 -- register sounds
-LSM:Register("sound", "Heartbeat Single", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\HeartbeatSingle.ogg")
-LSM:Register("sound", "Batman Punch", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\BatmanPunch.ogg")
-LSM:Register("sound", "Bike Horn", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\BikeHorn.ogg")
-LSM:Register("sound", "Boxing Arena Gong", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\BoxingArenaSound.ogg")
-LSM:Register("sound", "Bleat", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\Bleat.ogg")
-LSM:Register("sound", "Cartoon Hop", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\CartoonHop.ogg")
-LSM:Register("sound", "Cat Meow", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\CatMeow2.ogg")
-LSM:Register("sound", "Kitten Meow", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\KittenMeow.ogg")
-LSM:Register("sound", "Robot Blip", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\RobotBlip.ogg")
-LSM:Register("sound", "Sharp Punch", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\SharpPunch.ogg")
-LSM:Register("sound", "Water Drop", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\WaterDrop.ogg")
-LSM:Register("sound", "Air Horn", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\AirHorn.ogg")
-LSM:Register("sound", "Applause", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\Applause.ogg")
-LSM:Register("sound", "Banana Peel Slip", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\BananaPeelSlip.ogg")
-LSM:Register("sound", "Blast", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\Blast.ogg")
-LSM:Register("sound", "Cartoon Voice Baritone", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\CartoonVoiceBaritone.ogg")
-LSM:Register("sound", "Cartoon Walking", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\CartoonWalking.ogg")
-LSM:Register("sound", "Cow Mooing", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\CowMooing.ogg")
-LSM:Register("sound", "Ringing Phone", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\RingingPhone.ogg")
-LSM:Register("sound", "Roaring Lion", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\RoaringLion.ogg")
-LSM:Register("sound", "Shotgun", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\Shotgun.ogg")
-LSM:Register("sound", "Squish Fart", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\SquishFart.ogg")
-LSM:Register("sound", "Temple Bell", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\TempleBellHuge.ogg")
-LSM:Register("sound", "Torch", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\Torch.ogg")
-LSM:Register("sound", "Warning Siren", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\WarningSiren.ogg")
-LSM:Register("sound", "Lich King Apocalypse", 554003) -- Sound\Creature\LichKing\IC_Lich King_Special01.ogg
+Register("sound", "Heartbeat Single", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\HeartbeatSingle.ogg")
+Register("sound", "Batman Punch", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\BatmanPunch.ogg")
+Register("sound", "Bike Horn", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\BikeHorn.ogg")
+Register("sound", "Boxing Arena Gong", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\BoxingArenaSound.ogg")
+Register("sound", "Bleat", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\Bleat.ogg")
+Register("sound", "Cat Meow", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\CatMeow2.ogg")
+Register("sound", "Kitten Meow", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\KittenMeow.ogg")
+Register("sound", "Robot Blip", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\RobotBlip.ogg")
+Register("sound", "Sharp Punch", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\SharpPunch.ogg")
+Register("sound", "Water Drop", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\WaterDrop.ogg")
+Register("sound", "Air Horn", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\AirHorn.ogg")
+Register("sound", "Applause", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\Applause.ogg")
+Register("sound", "Banana Peel Slip", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\BananaPeelSlip.ogg")
+Register("sound", "Blast", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\Blast.ogg")
+Register("sound", "Cartoon Voice Baritone", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\CartoonVoiceBaritone.ogg")
+Register("sound", "Cartoon Walking", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\CartoonWalking.ogg")
+Register("sound", "Cow Mooing", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\CowMooing.ogg")
+Register("sound", "Ringing Phone", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\RingingPhone.ogg")
+Register("sound", "Roaring Lion", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\RoaringLion.ogg")
+Register("sound", "Shotgun", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\Shotgun.ogg")
+Register("sound", "Squish Fart", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\SquishFart.ogg")
+Register("sound", "Temple Bell", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\TempleBellHuge.ogg")
+Register("sound", "Torch", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\Torch.ogg")
+Register("sound", "Warning Siren", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\WarningSiren.ogg")
+Register("sound", "Lich King Apocalypse", 554003) -- Sound\Creature\LichKing\IC_Lich King_Special01.ogg
 -- Sounds from freesound.org, see commits for attributions
-LSM:Register("sound", "Sheep Blerping", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\SheepBleat.ogg")
-LSM:Register("sound", "Rooster Chicken Call", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\RoosterChickenCalls.ogg")
-LSM:Register("sound", "Goat Bleeting", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\GoatBleating.ogg")
-LSM:Register("sound", "Acoustic Guitar", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\AcousticGuitar.ogg")
-LSM:Register("sound", "Synth Chord", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\SynthChord.ogg")
-LSM:Register("sound", "Chicken Alarm", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\ChickenAlarm.ogg")
-LSM:Register("sound", "Xylophone", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\Xylophone.ogg")
-LSM:Register("sound", "Drums", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\Drums.ogg")
-LSM:Register("sound", "Tada Fanfare", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\TadaFanfare.ogg")
-LSM:Register("sound", "Squeaky Toy Short", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\SqueakyToyShort.ogg")
-LSM:Register("sound", "Error Beep", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\ErrorBeep.ogg")
-LSM:Register("sound", "Oh No", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\OhNo.ogg")
-LSM:Register("sound", "Double Whoosh", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\DoubleWhoosh.ogg")
-LSM:Register("sound", "Brass", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\Brass.mp3")
-LSM:Register("sound", "Glass", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\Glass.mp3")
+Register("sound", "Sheep Blerping", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\SheepBleat.ogg")
+Register("sound", "Rooster Chicken Call", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\RoosterChickenCalls.ogg")
+Register("sound", "Goat Bleeting", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\GoatBleating.ogg")
+Register("sound", "Acoustic Guitar", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\AcousticGuitar.ogg")
+Register("sound", "Synth Chord", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\SynthChord.ogg")
+Register("sound", "Chicken Alarm", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\ChickenAlarm.ogg")
+Register("sound", "Xylophone", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\Xylophone.ogg")
+Register("sound", "Drums", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\Drums.ogg")
+Register("sound", "Tada Fanfare", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\TadaFanfare.ogg")
+Register("sound", "Squeaky Toy Short", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\SqueakyToyShort.ogg")
+Register("sound", "Error Beep", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\ErrorBeep.ogg")
+Register("sound", "Oh No", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\OhNo.ogg")
+Register("sound", "Double Whoosh", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\DoubleWhoosh.ogg")
+Register("sound", "Brass", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\Brass.mp3")
+Register("sound", "Glass", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\Glass.mp3")
 
-LSM:Register("sound", "Voice: Adds", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\Adds.ogg")
-LSM:Register("sound", "Voice: Boss", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\Boss.ogg")
-LSM:Register("sound", "Voice: Circle", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\Circle.ogg")
-LSM:Register("sound", "Voice: Cross", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\Cross.ogg")
-LSM:Register("sound", "Voice: Diamond", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\Diamond.ogg")
-LSM:Register("sound", "Voice: Don't Release", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\DontRelease.ogg")
-LSM:Register("sound", "Voice: Empowered", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\Empowered.ogg")
-LSM:Register("sound", "Voice: Focus", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\Focus.ogg")
-LSM:Register("sound", "Voice: Idiot", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\Idiot.ogg")
-LSM:Register("sound", "Voice: Left", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\Left.ogg")
-LSM:Register("sound", "Voice: Moon", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\Moon.ogg")
-LSM:Register("sound", "Voice: Next", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\Next.ogg")
-LSM:Register("sound", "Voice: Portal", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\Portal.ogg")
-LSM:Register("sound", "Voice: Protected", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\Protected.ogg")
-LSM:Register("sound", "Voice: Release", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\Release.ogg")
-LSM:Register("sound", "Voice: Right", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\Right.ogg")
-LSM:Register("sound", "Voice: Run Away", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\RunAway.ogg")
-LSM:Register("sound", "Voice: Skull", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\Skull.ogg")
-LSM:Register("sound", "Voice: Spread", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\Spread.ogg")
-LSM:Register("sound", "Voice: Square", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\Square.ogg")
-LSM:Register("sound", "Voice: Stack", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\Stack.ogg")
-LSM:Register("sound", "Voice: Star", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\Star.ogg")
-LSM:Register("sound", "Voice: Switch", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\Switch.ogg")
-LSM:Register("sound", "Voice: Taunt", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\Taunt.ogg")
-LSM:Register("sound", "Voice: Triangle", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\Triangle.ogg")
+Register("sound", "Voice: Adds", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\Adds.ogg")
+Register("sound", "Voice: Boss", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\Boss.ogg")
+Register("sound", "Voice: Circle", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\Circle.ogg")
+Register("sound", "Voice: Cross", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\Cross.ogg")
+Register("sound", "Voice: Diamond", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\Diamond.ogg")
+Register("sound", "Voice: Don't Release", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\DontRelease.ogg")
+Register("sound", "Voice: Empowered", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\Empowered.ogg")
+Register("sound", "Voice: Focus", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\Focus.ogg")
+Register("sound", "Voice: Idiot", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\Idiot.ogg")
+Register("sound", "Voice: Left", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\Left.ogg")
+Register("sound", "Voice: Moon", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\Moon.ogg")
+Register("sound", "Voice: Next", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\Next.ogg")
+Register("sound", "Voice: Portal", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\Portal.ogg")
+Register("sound", "Voice: Protected", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\Protected.ogg")
+Register("sound", "Voice: Release", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\Release.ogg")
+Register("sound", "Voice: Right", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\Right.ogg")
+Register("sound", "Voice: Run Away", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\RunAway.ogg")
+Register("sound", "Voice: Skull", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\Skull.ogg")
+Register("sound", "Voice: Spread", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\Spread.ogg")
+Register("sound", "Voice: Square", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\Square.ogg")
+Register("sound", "Voice: Stack", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\Stack.ogg")
+Register("sound", "Voice: Star", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\Star.ogg")
+Register("sound", "Voice: Switch", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\Switch.ogg")
+Register("sound", "Voice: Taunt", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\Taunt.ogg")
+Register("sound", "Voice: Triangle", "Interface\\AddOns\\ForeverAuras\\Media\\Sounds\\Triangle.ogg")
 
 local PowerAurasSoundPath = "Interface\\Addons\\ForeverAuras\\PowerAurasMedia\\Sounds\\"
-LSM:Register("sound", "Aggro", PowerAurasSoundPath.."aggro.ogg")
-LSM:Register("sound", "Arrow Swoosh", PowerAurasSoundPath.."Arrow_swoosh.ogg")
-LSM:Register("sound", "Bam", PowerAurasSoundPath.."bam.ogg")
-LSM:Register("sound", "Polar Bear", PowerAurasSoundPath.."bear_polar.ogg")
-LSM:Register("sound", "Big Kiss", PowerAurasSoundPath.."bigkiss.ogg")
-LSM:Register("sound", "Bite", PowerAurasSoundPath.."BITE.ogg")
-LSM:Register("sound", "Burp", PowerAurasSoundPath.."burp4.ogg")
-LSM:Register("sound", "Cat", PowerAurasSoundPath.."cat2.ogg")
-LSM:Register("sound", "Chant Major 2nd", PowerAurasSoundPath.."chant2.ogg")
-LSM:Register("sound", "Chant Minor 3rd", PowerAurasSoundPath.."chant4.ogg")
-LSM:Register("sound", "Chimes", PowerAurasSoundPath.."chimes.ogg")
-LSM:Register("sound", "Cookie Monster", PowerAurasSoundPath.."cookie.ogg")
-LSM:Register("sound", "Electrical Spark", PowerAurasSoundPath.."ESPARK1.ogg")
-LSM:Register("sound", "Fireball", PowerAurasSoundPath.."Fireball.ogg")
-LSM:Register("sound", "Gasp", PowerAurasSoundPath.."Gasp.ogg")
-LSM:Register("sound", "Heartbeat", PowerAurasSoundPath.."heartbeat.ogg")
-LSM:Register("sound", "Hiccup", PowerAurasSoundPath.."hic3.ogg")
-LSM:Register("sound", "Huh?", PowerAurasSoundPath.."huh_1.ogg")
-LSM:Register("sound", "Hurricane", PowerAurasSoundPath.."hurricane.ogg")
-LSM:Register("sound", "Hyena", PowerAurasSoundPath.."hyena.ogg")
-LSM:Register("sound", "Kaching", PowerAurasSoundPath.."kaching.ogg")
-LSM:Register("sound", "Moan", PowerAurasSoundPath.."moan.ogg")
-LSM:Register("sound", "Panther", PowerAurasSoundPath.."panther1.ogg")
-LSM:Register("sound", "Phone", PowerAurasSoundPath.."phone.ogg")
-LSM:Register("sound", "Punch", PowerAurasSoundPath.."PUNCH.ogg")
-LSM:Register("sound", "Rain", PowerAurasSoundPath.."rainroof.ogg")
-LSM:Register("sound", "Rocket", PowerAurasSoundPath.."rocket.ogg")
-LSM:Register("sound", "Ship's Whistle", PowerAurasSoundPath.."shipswhistle.ogg")
-LSM:Register("sound", "Gunshot", PowerAurasSoundPath.."shot.ogg")
-LSM:Register("sound", "Snake Attack", PowerAurasSoundPath.."snakeatt.ogg")
-LSM:Register("sound", "Sneeze", PowerAurasSoundPath.."sneeze.ogg")
-LSM:Register("sound", "Sonar", PowerAurasSoundPath.."sonar.ogg")
-LSM:Register("sound", "Splash", PowerAurasSoundPath.."splash.ogg")
-LSM:Register("sound", "Squeaky Toy", PowerAurasSoundPath.."Squeakypig.ogg")
-LSM:Register("sound", "Sword Ring", PowerAurasSoundPath.."swordecho.ogg")
-LSM:Register("sound", "Throwing Knife", PowerAurasSoundPath.."throwknife.ogg")
-LSM:Register("sound", "Thunder", PowerAurasSoundPath.."thunder.ogg")
-LSM:Register("sound", "Wicked Male Laugh", PowerAurasSoundPath.."wickedmalelaugh1.ogg")
-LSM:Register("sound", "Wilhelm Scream", PowerAurasSoundPath.."wilhelm.ogg")
-LSM:Register("sound", "Wicked Female Laugh", PowerAurasSoundPath.."wlaugh.ogg")
-LSM:Register("sound", "Wolf Howl", PowerAurasSoundPath.."wolf5.ogg")
-LSM:Register("sound", "Yeehaw", PowerAurasSoundPath.."yeehaw.ogg")
+Register("sound", "Aggro", PowerAurasSoundPath.."aggro.ogg")
+Register("sound", "Arrow Swoosh", PowerAurasSoundPath.."Arrow_swoosh.ogg")
+Register("sound", "Bam", PowerAurasSoundPath.."bam.ogg")
+Register("sound", "Polar Bear", PowerAurasSoundPath.."bear_polar.ogg")
+Register("sound", "Big Kiss", PowerAurasSoundPath.."bigkiss.ogg")
+Register("sound", "Bite", PowerAurasSoundPath.."BITE.ogg")
+Register("sound", "Burp", PowerAurasSoundPath.."burp4.ogg")
+Register("sound", "Cat", PowerAurasSoundPath.."cat2.ogg")
+Register("sound", "Chant Major 2nd", PowerAurasSoundPath.."chant2.ogg")
+Register("sound", "Chant Minor 3rd", PowerAurasSoundPath.."chant4.ogg")
+Register("sound", "Chimes", PowerAurasSoundPath.."chimes.ogg")
+Register("sound", "Cookie Monster", PowerAurasSoundPath.."cookie.ogg")
+Register("sound", "Electrical Spark", PowerAurasSoundPath.."ESPARK1.ogg")
+Register("sound", "Fireball", PowerAurasSoundPath.."Fireball.ogg")
+Register("sound", "Gasp", PowerAurasSoundPath.."Gasp.ogg")
+Register("sound", "Heartbeat", PowerAurasSoundPath.."heartbeat.ogg")
+Register("sound", "Hiccup", PowerAurasSoundPath.."hic3.ogg")
+Register("sound", "Huh?", PowerAurasSoundPath.."huh_1.ogg")
+Register("sound", "Hurricane", PowerAurasSoundPath.."hurricane.ogg")
+Register("sound", "Hyena", PowerAurasSoundPath.."hyena.ogg")
+Register("sound", "Kaching", PowerAurasSoundPath.."kaching.ogg")
+Register("sound", "Moan", PowerAurasSoundPath.."moan.ogg")
+Register("sound", "Panther", PowerAurasSoundPath.."panther1.ogg")
+Register("sound", "Phone", PowerAurasSoundPath.."phone.ogg")
+Register("sound", "Punch", PowerAurasSoundPath.."PUNCH.ogg")
+Register("sound", "Rain", PowerAurasSoundPath.."rainroof.ogg")
+Register("sound", "Rocket", PowerAurasSoundPath.."rocket.ogg")
+Register("sound", "Ship's Whistle", PowerAurasSoundPath.."shipswhistle.ogg")
+Register("sound", "Gunshot", PowerAurasSoundPath.."shot.ogg")
+Register("sound", "Snake Attack", PowerAurasSoundPath.."snakeatt.ogg")
+Register("sound", "Sneeze", PowerAurasSoundPath.."sneeze.ogg")
+Register("sound", "Sonar", PowerAurasSoundPath.."sonar.ogg")
+Register("sound", "Splash", PowerAurasSoundPath.."splash.ogg")
+Register("sound", "Squeaky Toy", PowerAurasSoundPath.."Squeakypig.ogg")
+Register("sound", "Sword Ring", PowerAurasSoundPath.."swordecho.ogg")
+Register("sound", "Throwing Knife", PowerAurasSoundPath.."throwknife.ogg")
+Register("sound", "Thunder", PowerAurasSoundPath.."thunder.ogg")
+Register("sound", "Wicked Male Laugh", PowerAurasSoundPath.."wickedmalelaugh1.ogg")
+Register("sound", "Wilhelm Scream", PowerAurasSoundPath.."wilhelm.ogg")
+Register("sound", "Wicked Female Laugh", PowerAurasSoundPath.."wlaugh.ogg")
+Register("sound", "Wolf Howl", PowerAurasSoundPath.."wolf5.ogg")
+Register("sound", "Yeehaw", PowerAurasSoundPath.."yeehaw.ogg")
 
 ---@type table<string, string>
 Private.sound_types = {
@@ -3231,7 +3254,7 @@ Private.sound_types = {
 ---@type table
 Private.sound_file_types = {}
 
-for name, path in next, LSM:HashTable("sound") do
+for name, path in next, LSM:HashTable("sound") or {} do
   Private.sound_types[path] = name
   Private.sound_file_types[path] = name
 end
@@ -3262,26 +3285,26 @@ for _, mediaType in ipairs{"statusbar", "statusbar_atlas"} do
 end
 
 -- register options font
-LSM:Register("font", "Fira Mono Medium", "Interface\\Addons\\ForeverAuras\\Media\\Fonts\\FiraMono-Medium.ttf", LSM.LOCALE_BIT_western + LSM.LOCALE_BIT_ruRU)
+Register("font", "Fira Mono Medium", "Interface\\Addons\\ForeverAuras\\Media\\Fonts\\FiraMono-Medium.ttf", FONT_LOCALES)
 -- Other Fira fonts
-LSM:Register("font", "Fira Sans Black", "Interface\\Addons\\ForeverAuras\\Media\\Fonts\\FiraSans-Heavy.ttf", LSM.LOCALE_BIT_western + LSM.LOCALE_BIT_ruRU)
-LSM:Register("font", "Fira Sans Condensed Black", "Interface\\Addons\\ForeverAuras\\Media\\Fonts\\FiraSansCondensed-Heavy.ttf", LSM.LOCALE_BIT_western + LSM.LOCALE_BIT_ruRU)
-LSM:Register("font", "Fira Sans Condensed Medium", "Interface\\Addons\\ForeverAuras\\Media\\Fonts\\FiraSansCondensed-Medium.ttf", LSM.LOCALE_BIT_western + LSM.LOCALE_BIT_ruRU)
-LSM:Register("font", "Fira Sans Medium", "Interface\\Addons\\ForeverAuras\\Media\\Fonts\\FiraSans-Medium.ttf", LSM.LOCALE_BIT_western + LSM.LOCALE_BIT_ruRU)
-LSM:Register("font", "PT Sans Narrow Regular", "Interface\\Addons\\ForeverAuras\\Media\\Fonts\\PTSansNarrow-Regular.ttf", LSM.LOCALE_BIT_western + LSM.LOCALE_BIT_ruRU)
-LSM:Register("font", "PT Sans Narrow Bold", "Interface\\Addons\\ForeverAuras\\Media\\Fonts\\PTSansNarrow-Bold.ttf", LSM.LOCALE_BIT_western + LSM.LOCALE_BIT_ruRU)
-LSM:Register("font", "Inter", "Interface\\Addons\\ForeverAuras\\Media\\Fonts\\Inter-Regular.ttf", LSM.LOCALE_BIT_western + LSM.LOCALE_BIT_ruRU)
-LSM:Register("font", "Inter Medium", "Interface\\Addons\\ForeverAuras\\Media\\Fonts\\Inter-Medium.ttf", LSM.LOCALE_BIT_western + LSM.LOCALE_BIT_ruRU)
-LSM:Register("font", "Inter SemiBold", "Interface\\Addons\\ForeverAuras\\Media\\Fonts\\Inter-SemiBold.ttf", LSM.LOCALE_BIT_western + LSM.LOCALE_BIT_ruRU)
+Register("font", "Fira Sans Black", "Interface\\Addons\\ForeverAuras\\Media\\Fonts\\FiraSans-Heavy.ttf", FONT_LOCALES)
+Register("font", "Fira Sans Condensed Black", "Interface\\Addons\\ForeverAuras\\Media\\Fonts\\FiraSansCondensed-Heavy.ttf", FONT_LOCALES)
+Register("font", "Fira Sans Condensed Medium", "Interface\\Addons\\ForeverAuras\\Media\\Fonts\\FiraSansCondensed-Medium.ttf", FONT_LOCALES)
+Register("font", "Fira Sans Medium", "Interface\\Addons\\ForeverAuras\\Media\\Fonts\\FiraSans-Medium.ttf", FONT_LOCALES)
+Register("font", "PT Sans Narrow Regular", "Interface\\Addons\\ForeverAuras\\Media\\Fonts\\PTSansNarrow-Regular.ttf", FONT_LOCALES)
+Register("font", "PT Sans Narrow Bold", "Interface\\Addons\\ForeverAuras\\Media\\Fonts\\PTSansNarrow-Bold.ttf", FONT_LOCALES)
+Register("font", "Inter", "Interface\\Addons\\ForeverAuras\\Media\\Fonts\\Inter-Regular.ttf", FONT_LOCALES)
+Register("font", "Inter Medium", "Interface\\Addons\\ForeverAuras\\Media\\Fonts\\Inter-Medium.ttf", FONT_LOCALES)
+Register("font", "Inter SemiBold", "Interface\\Addons\\ForeverAuras\\Media\\Fonts\\Inter-SemiBold.ttf", FONT_LOCALES)
 
 -- register plain white border
-LSM:Register("border", "Square Full White", [[Interface\AddOns\ForeverAuras\Media\Textures\Square_FullWhite.tga]])
+Register("border", "Square Full White", [[Interface\AddOns\ForeverAuras\Media\Textures\Square_FullWhite.tga]])
 
-LSM:Register("statusbar", "Clean", [[Interface\AddOns\ForeverAuras\Media\Textures\Statusbar_Clean]])
-LSM:Register("statusbar", "Stripes", [[Interface\AddOns\ForeverAuras\Media\Textures\Statusbar_Stripes]])
-LSM:Register("statusbar", "Thick Stripes", [[Interface\AddOns\ForeverAuras\Media\Textures\Statusbar_Stripes_Thick]])
-LSM:Register("statusbar", "Thin Stripes", [[Interface\AddOns\ForeverAuras\Media\Textures\Statusbar_Stripes_Thin]])
-LSM:Register("border", "Drop Shadow", [[Interface\AddOns\ForeverAuras\Media\Textures\Border_DropShadow]])
+Register("statusbar", "Clean", [[Interface\AddOns\ForeverAuras\Media\Textures\Statusbar_Clean]])
+Register("statusbar", "Stripes", [[Interface\AddOns\ForeverAuras\Media\Textures\Statusbar_Stripes]])
+Register("statusbar", "Thick Stripes", [[Interface\AddOns\ForeverAuras\Media\Textures\Statusbar_Stripes_Thick]])
+Register("statusbar", "Thin Stripes", [[Interface\AddOns\ForeverAuras\Media\Textures\Statusbar_Stripes_Thin]])
+Register("border", "Drop Shadow", [[Interface\AddOns\ForeverAuras\Media\Textures\Border_DropShadow]])
 
 if PowerBarColor then
   local function capitalizeFirstLetter(str)
@@ -3297,17 +3320,20 @@ if PowerBarColor then
     return table.concat(words, " ")
   end
 
-  for power, data in pairs(PowerBarColor) do
+  -- Client power colours may hold non-table entries; skip anything that is not a colour entry.
+  for power, data in pairs(type(PowerBarColor) == "table" and PowerBarColor or {}) do
     local name, path
-    if type(power) == "string" and data.atlas then
+    if type(data) ~= "table" then
+      -- Not a colour entry.
+    elseif type(power) == "string" and type(data.atlas) == "string" then
       name = "Blizzard " .. capitalizeFirstLetter(power)
       path = data.atlas
-    elseif data.atlasElementName then
+    elseif type(data.atlasElementName) == "string" then
       name = "Blizzard " .. data.atlasElementName
       path = "UI-HUD-UnitFrame-Player-PortraitOff-Bar-" .. data.atlasElementName
     end
     if name and path then
-      LSM:Register("statusbar_atlas", name, path)
+      pcall(LSM.Register, LSM, "statusbar_atlas", name, path)
     end
   end
 end
@@ -3341,9 +3367,9 @@ Private.pet_behavior_types = {
 ---@type table<number, string>
 do
   Private.pet_spec_types = {
-    [1] = select(2, GetSpecializationInfoByID(74)), -- Ferocity
-    [2] = select(2, GetSpecializationInfoByID(81)), -- Tenacity
-    [3] = select(2, GetSpecializationInfoByID(79)) -- Cunning
+    [1] = select(2, Try(GetSpecializationInfoByID, 74)), -- Ferocity
+    [2] = select(2, Try(GetSpecializationInfoByID, 81)), -- Tenacity
+    [3] = select(2, Try(GetSpecializationInfoByID, 79)) -- Cunning
   }
 end
 
@@ -3468,7 +3494,7 @@ local mythic_plus_ignorelist = {
 
 do
   for i = 1, 255 do
-    local r = not mythic_plus_ignorelist[i] and C_ChallengeMode.GetAffixInfo(i)
+    local r = not mythic_plus_ignorelist[i] and Try(C_ChallengeMode and C_ChallengeMode.GetAffixInfo, i)
     if r then
       Private.mythic_plus_affixes[i] = r
     end
