@@ -6928,9 +6928,29 @@ if count == nil then return false end
       local inverse = trigger.use_inverse;
       local ret = {[[
         local form = GetShapeshiftForm()
+        -- Moonkin Form reports 31 to 35 depending on race; Dire Bear Form (8) counts as Bear Form.
+        local formID = GetShapeshiftFormID and GetShapeshiftFormID() or nil
+        if formID and formID >= 31 and formID <= 35 then formID = 31 end
+        if formID == 8 then formID = 5 end
+        -- No form (humanoid) is 0, matching the Humanoid choice.
+        formID = formID or 0
         local active = false
       ]]}
-      if trigger.use_form and trigger.form and trigger.form.single then
+      -- A form chosen by ID works on every character; the bar position is kept for older auras.
+      if trigger.use_formID ~= nil and trigger.formID then
+        local ids = {}
+        if trigger.use_formID and trigger.formID.single then
+          ids[1] = tonumber(trigger.formID.single)
+        elseif trigger.use_formID == false then
+          for id in pairs(trigger.formID.multi or {}) do ids[#ids + 1] = tonumber(id) end
+        end
+        local checks = {}
+        for _, id in ipairs(ids) do checks[#checks + 1] = ("formID == %d"):format(id) end
+        table.insert(ret, ("active = %s\n"):format(#checks > 0 and table.concat(checks, " or ") or "false"))
+        if inverse then
+          table.insert(ret, "active = not active\n")
+        end
+      elseif trigger.use_form and trigger.form and trigger.form.single then
         -- Single selection
         table.insert(ret, ([[
           local trigger_form = %d
@@ -6974,20 +6994,35 @@ if count == nil then return false end
         hidden = not (C_Seasons and C_Seasons.GetActiveSeason and C_Seasons.GetActiveSeason() == 2),
       },
       {
-        name = "form",
+        name = "formID",
         display = L["Form"],
+        desc = L["Works on every character, whether or not the form is learned."],
+        type = "multiselect",
+        values = "form_id_types",
+        sorted = true,
+        sortOrder = Private.form_id_order,
+        test = "active",
+        store = true,
+        conditionType = "select"
+      },
+      {
+        name = "form",
+        display = L["Form (Bar Position)"],
+        desc = L["The form's position on this character's stance bar. Prefer Form, which does not depend on learned forms."],
         type = "multiselect",
         values = "form_types",
         test = "active",
         store = true,
-        conditionType = "select"
+        conditionType = "select",
+        -- Shown for older auras that use it, and while no Form is chosen.
+        hidden = function(trigger) return trigger.use_form == nil and trigger.use_formID ~= nil end,
       },
       {
         name = "inverse",
         display = L["Inverse"],
         type = "toggle",
         test = "true",
-        enable = function(trigger) return type(trigger.use_form) == "boolean" end
+        enable = function(trigger) return type(trigger.use_form) == "boolean" or type(trigger.use_formID) == "boolean" end
       },
     },
     nameFunc = function(trigger)

@@ -1453,8 +1453,39 @@ local function update_forms()
       end
     end
   end
+  -- Imported auras may use positions this character does not have: keep them selectable.
+  for i = 1, 10 do
+    Private.form_types[i] = Private.form_types[i] or (i .. " - " .. L["Not known on this character"])
+  end
   if Private.OptionsFrame and not tCompare(oldForms, Private.form_types) then
     Private.OptionsFrame():ReloadOptions()
+  end
+end
+
+-- Shapeshift form IDs (GetShapeshiftFormID) are the same for every character, unlike
+-- bar positions, so they can be chosen without knowing the form. Names come from the
+-- form's spell; Moonkin Form reports 31 to 35 depending on race and is stored as 31,
+-- and Dire Bear Form (8) counts as Bear Form (5). Listed grouped by class.
+---@type table<number, string>
+Private.form_id_types = {}
+---@type number[]
+Private.form_id_order = {}
+do
+  -- No form at all (GetShapeshiftFormID returns nil) is stored as 0.
+  Private.form_id_types[0] = L["Humanoid"]
+  Private.form_id_order[1] = 0
+  local forms = {
+    {5, 5487, "DRUID", "Bear Form"}, {4, 1066, "DRUID", "Aquatic Form"}, {1, 768, "DRUID", "Cat Form"},
+    {3, 783, "DRUID", "Travel Form"}, {31, 24858, "DRUID", "Moonkin Form"}, {2, 33891, "DRUID", "Tree of Life"},
+    {17, 2457, "WARRIOR", "Battle Stance"}, {18, 71, "WARRIOR", "Defensive Stance"}, {19, 2458, "WARRIOR", "Berserker Stance"},
+    {30, 1784, "ROGUE", "Stealth"}, {28, 15473, "PRIEST", "Shadowform"}, {16, 2645, "SHAMAN", "Ghost Wolf"},
+  }
+  for _, form in ipairs(forms) do
+    local formID, spellID, class, fallback = unpack(form)
+    local name = Try(Private.ExecEnv.GetSpellName, spellID) or fallback
+    local className = WeakAuras.class_types[class]
+    Private.form_id_types[formID] = (className and (className .. ": ") or "") .. name
+    Private.form_id_order[#Private.form_id_order + 1] = formID
   end
 end
 

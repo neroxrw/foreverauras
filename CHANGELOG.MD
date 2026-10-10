@@ -1,5 +1,17 @@
 # Changelog
 ## Versions
+## 0.72.4
+- Fixed the Talent load option's picker piling icons together in rare situations: talents now sit on a tidy grid, separate trees side by side, with a dark background
+- Add Humanoid Form
+- Stance/Form/Aura has a new Form option that lists every class’s forms. You can build form triggers without knowing the forms yourself, and they work on any character.
+- In that Form list, entries are grouped by class, and Bear Form also matches Dire Bear Form.
+- The old option is now “Form (Bar Position)”. Imported auras no longer show an empty dropdown.
+- Removed copies of FojjiCore icons from ForeverAuras, so the download is smaller.
+- ForeverAuras now keeps loading when another addon ships a stricter shared library (e.g. the latest BugSack).
+- If ForeverAuras can’t finish loading, it now says so once and leaves your auras untouched.
+- Updated LibSharedMedia-3.0 to the latest release.
+- Removed a sound that was listed but never included.
+
 ## 0.70.38
 - Fix for Lib-SharedMedia update
 - Removed a sound that was listed but never included

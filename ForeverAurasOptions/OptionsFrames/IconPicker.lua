@@ -63,11 +63,12 @@ local function ConstructIconPicker(frame)
     local function AddLibrary(filter, onlyFolder)
       if not library then return end
       for index, folder in ipairs(library.folders) do
-        if not onlyFolder or onlyFolder == index then
+        -- Folders of another addon (FojjiCore) are offered only while it is loaded.
+        if (not onlyFolder or onlyFolder == index) and OptionsPrivate.IconFolderAvailable(folder) then
           for _, file in ipairs(folder.files) do
-            local name = file:gsub("%.%a+$", "")
+            local name = file:gsub("%.%a+$", ""):gsub("^.*\\", "")
             if not filter or name:lower():find(filter, 1, true) or folder.name:lower():find(filter, 1, true) then
-              AddButton(name, library.root .. folder.path .. file)
+              AddButton(name, (folder.root or library.root) .. folder.path .. file)
               if num >= limit then return end
             end
           end
@@ -173,8 +174,10 @@ local function ConstructIconPicker(frame)
   local sourceOrder = { "spells", "all", "game" }
   if OptionsPrivate.IconLibrary then
     for index, folder in ipairs(OptionsPrivate.IconLibrary.folders) do
-      sourceList[index] = folder.name
-      tinsert(sourceOrder, index)
+      if OptionsPrivate.IconFolderAvailable(folder) then
+        sourceList[index] = folder.name
+        tinsert(sourceOrder, index)
+      end
     end
   end
   local sourceDropdown = AceGUI:Create("Dropdown")

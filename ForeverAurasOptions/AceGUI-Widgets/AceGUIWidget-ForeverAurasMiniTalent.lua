@@ -259,7 +259,8 @@ local methods = {
           button:SetNormalTexture(icon)
         end
         local multiTalent, multiTalentTotal, subTreePosition = 0, 0, nil
-        button.posX, button.posY, multiTalent, multiTalentTotal, subTreePosition = unpack(data[3])
+        button.posX, button.posY, multiTalent, multiTalentTotal, subTreePosition = unpack(data[3], 1, 5)
+        button.tree = data[3][6] or 1 -- tree index (Types_Forever); read directly since [5] may be nil
         button.posX = button.posX / 10 - (extraOffset and extraOffset.offsetX or 0)
         button.posY = button.posY / 10 - (extraOffset and extraOffset.offsetY or 0)
         if multiTalentTotal > 1 then
@@ -279,6 +280,47 @@ local methods = {
         button:ClearAllPoints()
         tinsert(self.buttons, button)
       end
+    end
+
+    -- Forever's trees don't use retail's evenly spaced coordinates: one far-off node squashed the
+    -- whole tree into a pile, and separate trees drew on top of each other. Snap each tree to a
+    -- grid of its distinct columns/rows, then place the trees side by side.
+    local GRID, SNAP = 60, 2 -- grid step; positions closer than SNAP share a column/row
+    local function Ranks(values)
+      table.sort(values)
+      local rank, last, count = {}, nil, -1
+      for _, v in ipairs(values) do
+        if not last or v - last > SNAP then count = count + 1 end
+        rank[v], last = count, v
+      end
+      return rank, count + 1
+    end
+    local trees = {}
+    for _, button in ipairs(self.buttons) do
+      local tree = trees[button.tree]
+      if not tree then
+        tree = {xs = {}, ys = {}, seenX = {}, seenY = {}}
+        trees[button.tree] = tree
+      end
+      if not tree.seenX[button.posX] then tree.seenX[button.posX] = true; tinsert(tree.xs, button.posX) end
+      if not tree.seenY[button.posY] then tree.seenY[button.posY] = true; tinsert(tree.ys, button.posY) end
+    end
+    local treeIds = {}
+    for id, tree in pairs(trees) do
+      tree.colOf, tree.cols = Ranks(tree.xs)
+      tree.rowOf = Ranks(tree.ys)
+      tinsert(treeIds, id)
+    end
+    table.sort(treeIds)
+    local nextCol = 0
+    for _, id in ipairs(treeIds) do
+      trees[id].firstCol = nextCol
+      nextCol = nextCol + trees[id].cols + 1 -- one empty column between trees
+    end
+    for _, button in ipairs(self.buttons) do
+      local tree = trees[button.tree]
+      button.posX = (tree.firstCol + tree.colOf[button.posX]) * GRID
+      button.posY = tree.rowOf[button.posY] * GRID
     end
 
     local minX, minY, maxX, maxY
@@ -357,6 +399,8 @@ local function Constructor()
   end)
   local background = talentFrame:CreateTexture(nil, "BACKGROUND")
   background:SetAllPoints(talentFrame)
+  -- Dark backdrop so the open tree reads as one panel (it previously had no texture at all).
+  background:SetColorTexture(0, 0, 0, 0.35)
 
   local toggle = AceGUI:Create("WeakAurasToolbarButton")
   toggle:SetText(L["Select Talent"])
