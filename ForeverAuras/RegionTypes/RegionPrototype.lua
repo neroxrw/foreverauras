@@ -1067,6 +1067,24 @@ function Private.regionPrototype.AddSetDurationInfo(region, uid)
   end
 end
 
+-- Regions whose show or hide waits for the end of combat (secure Modern Aura Group rows).
+local deferredVisibility = {}
+local deferredFrame
+function Private.DeferProtectedVisibility(region)
+  if not deferredFrame then
+    deferredFrame = CreateFrame("Frame")
+    deferredFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
+    deferredFrame:SetScript("OnEvent", function()
+      -- toShow is the region's wanted state after everything that happened in combat.
+      for pending in pairs(deferredVisibility) do
+        deferredVisibility[pending] = nil
+        if pending.toShow then pending:Show() else pending:Hide() end
+      end
+    end)
+  end
+  deferredVisibility[region] = true
+end
+
 -- Expand/Collapse function
 function Private.regionPrototype.AddExpandFunction(data, region, cloneId, parent, parentRegionType)
   local uid = data.uid
@@ -1104,7 +1122,10 @@ function Private.regionPrototype.AddExpandFunction(data, region, cloneId, parent
       Private.RunConditions(region, uid, true)
       region.subRegionEvents:Notify("PreHide")
       if region:IsProtected() then
-        if InCombatLockdown() then
+        if InCombatLockdown() and inModernGroup then
+          -- A Modern Aura Group row is secure while it holds clickable copies: show or hide after combat.
+          Private.DeferProtectedVisibility(region)
+        elseif InCombatLockdown() then
           Private.AuraWarnings.UpdateWarning(uid, "protected_frame_error", "error",
           L["Cannot change secure frame in combat lockdown. Find more information:\nhttps://github.com/WeakAuras/WeakAuras2/wiki/Protected-Frames"],
             true)
@@ -1136,7 +1157,10 @@ function Private.regionPrototype.AddExpandFunction(data, region, cloneId, parent
       region.subRegionEvents:Notify("PreHide")
 
       if region:IsProtected() then
-        if InCombatLockdown() then
+        if InCombatLockdown() and inModernGroup then
+          -- A Modern Aura Group row is secure while it holds clickable copies: show or hide after combat.
+          Private.DeferProtectedVisibility(region)
+        elseif InCombatLockdown() then
           Private.AuraWarnings.UpdateWarning(uid, "protected_frame_error", "error",
           L["Cannot change secure frame in combat lockdown. Find more information:\nhttps://github.com/WeakAuras/WeakAuras2/wiki/Protected-Frames"],
             true)
@@ -1190,7 +1214,10 @@ function Private.regionPrototype.AddExpandFunction(data, region, cloneId, parent
 
       Private.ApplyFrameLevel(region)
       if region:IsProtected() then
-        if InCombatLockdown() then
+        if InCombatLockdown() and inModernGroup then
+          -- A Modern Aura Group row is secure while it holds clickable copies: show or hide after combat.
+          Private.DeferProtectedVisibility(region)
+        elseif InCombatLockdown() then
           Private.AuraWarnings.UpdateWarning(uid, "protected_frame_error", "error",
             L["Cannot change secure frame in combat lockdown. Find more information:\nhttps://github.com/WeakAuras/WeakAuras2/wiki/Protected-Frames"],
             true)
@@ -1257,7 +1284,10 @@ function Private.regionPrototype.AddExpandFunction(data, region, cloneId, parent
       Private.ApplyFrameLevel(region)
 
       if region:IsProtected() then
-        if InCombatLockdown() then
+        if InCombatLockdown() and inModernGroup then
+          -- A Modern Aura Group row is secure while it holds clickable copies: show or hide after combat.
+          Private.DeferProtectedVisibility(region)
+        elseif InCombatLockdown() then
           Private.AuraWarnings.UpdateWarning(uid, "protected_frame_error", "error",
             L["Cannot change secure frame in combat lockdown. Find more information:\nhttps://github.com/WeakAuras/WeakAuras2/wiki/Protected-Frames"],
             true)

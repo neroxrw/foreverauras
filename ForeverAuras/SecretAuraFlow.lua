@@ -350,6 +350,11 @@ local notAppearance = {id = true, uid = true, parent = true, triggers = true, tr
   ignoreWagoUpdate = true, skipWagoUpdate = true}
 local appearanceKeys = setmetatable({}, {__mode = "k"})
 
+-- Data can change in place without the options (imports, other addons): Apply forgets its key.
+function Display.ForgetAppearanceKey(data)
+  if data then appearanceKeys[data] = nil end
+end
+
 local function AppearanceKey(data)
   -- Options edit data in place: no keys are kept while they are open.
   local editing = WeakAuras.IsOptionsOpen()
