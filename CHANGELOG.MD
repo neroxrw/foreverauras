@@ -1,5 +1,9 @@
 # Changelog
 ## Versions
+## 0.70.38
+- Fix for Lib-SharedMedia update
+- Removed a sound that was listed but never included
+
 ## 0.70.35
 - Fixed clones of a display stacking on top of each other in Modern Aura Groups.
 
