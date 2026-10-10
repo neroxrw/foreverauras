@@ -1284,6 +1284,14 @@ function Private.Login(takeNewSnapshots)
     end
     coroutine.yield(8000);
 
+    -- A file that stopped while loading (often an error caused by another addon's
+    -- library) leaves core tables missing. Loading auras then fails for every aura,
+    -- so leave them untouched and say why once.
+    if not (Private.data_stub and Private.regionTypes and Private.event_prototypes) then
+      prettyPrint("ForeverAuras did not finish loading because of a Lua error, often caused by another addon. Your auras are safe and were not loaded. Check the first error with BugSack, or disable recently updated addons and /reload.")
+      return
+    end
+
     Private.AddMany(toAdd, takeNewSnapshots);
     coroutine.yield(1000);
 
@@ -1401,7 +1409,8 @@ loadedFrame:SetScript("OnEvent", function(self, event, ...)
         Private.CleanArchive(db.historyCutoff, db.migrationCutoff);
       end
       db.minimap = db.minimap or { hide = false };
-      LDBIcon:Register("ForeverAuras", Broker_WeakAuras, db.minimap);
+      -- The minimap library is shared with other addons; its errors must not stop loading.
+      if Broker_WeakAuras then pcall(LDBIcon.Register, LDBIcon, "ForeverAuras", Broker_WeakAuras, db.minimap) end
     end
   elseif(event == "PLAYER_LOGIN") then
     local dbIsValid, takeNewSnapshots

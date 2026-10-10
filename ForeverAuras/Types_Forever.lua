@@ -97,7 +97,7 @@ local function ReadTalentConfig(configId)
   local talents, byNode = {}, {}
   if not config then return talents, {}, byNode end
 
-  for _, treeId in ipairs(config.treeIDs) do
+  for treeIndex, treeId in ipairs(config.treeIDs) do
     for _, nodeId in ipairs(C_Traits.GetTreeNodes(treeId)) do
       local node = C_Traits.GetNodeInfo(configId, nodeId)
       if node and node.ID ~= 0 then
@@ -112,7 +112,8 @@ local function ReadTalentConfig(configId)
                 tinsert(targets, target.entryIDs[1])
               end
             end
-            local talent = {entryId, definition.spellID, {node.posX, node.posY, index, #node.entryIDs}, targets, node.maxRanks}
+            -- [3][6] = which tree the node is in, so the options picker can lay separate trees side by side.
+            local talent = {entryId, definition.spellID, {node.posX, node.posY, index, #node.entryIDs, nil, treeIndex}, targets, node.maxRanks}
             tinsert(talents, talent)
             byNode[node.ID] = byNode[node.ID] or {}
             byNode[node.ID][index] = talent
