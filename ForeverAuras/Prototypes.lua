@@ -2370,21 +2370,21 @@ end
 function Private.CurveCombatStatus(kind, trigger, data, triggernum)
   trigger = type(trigger) == "table" and trigger or {}
   if kind == "power" and trigger.use_powertype and trigger.powertype == 99 then
-    return "|cffff2020Won't work in combat:|r Stagger checks."
+    return "|cffff2020" .. L["Won't work in combat:"] .. "|r " .. L["Stagger checks."]
   end
   local report = data and triggernum and Private.CurveCombatReport(data, triggernum)
-  if not report then return "|cff33ff99Works in combat.|r" end
+  if not report then return "|cff33ff99" .. L["Works in combat."] .. "|r" end
   local lines = {}
   local filters = report.filters or {}
   if #report.works > 0 then
-    lines[#lines + 1] = "|cff33ff99Works in combat:|r " .. table.concat(report.works, "; ") .. "."
+    lines[#lines + 1] = "|cff33ff99" .. L["Works in combat:"] .. "|r " .. table.concat(report.works, "; ") .. "."
   end
-  lines[#lines + 1] = "|cff33ff99You can use Conditions on " .. (kind == "power" and "Power" or "Health")
-    .. " values to change Alpha and Color, in and out of combat.|r"
+  lines[#lines + 1] = "|cff33ff99" .. (kind == "power" and L["You can use Conditions on Power values to change Alpha and Color, in and out of combat."]
+    or L["You can use Conditions on Health values to change Alpha and Color, in and out of combat."]) .. "|r"
   for _, line in ipairs(filters) do lines[#lines + 1] = line end
   if #report.notes > 0 then lines[#lines + 1] = "|cffff9933" .. table.concat(report.notes, " ") .. "|r" end
   if #report.fails > 0 then
-    lines[#lines + 1] = "|cffff2020Won't work in combat:|r " .. table.concat(report.fails, "; ") .. "."
+    lines[#lines + 1] = "|cffff2020" .. L["Won't work in combat:"] .. "|r " .. table.concat(report.fails, "; ") .. "."
   end
   return table.concat(lines, "\n")
 end
@@ -2393,7 +2393,7 @@ function Private.CastCombatStatus(trigger)
   trigger = type(trigger) == "table" and trigger or {}
   local unit = trigger.unit or "player"
   if unit == "member" and type(trigger.specificUnit) == "string" and trigger.specificUnit:lower() == "player" then unit = "player" end
-  if unit == "player" then return "|cff33ff99Works in combat.|r" end
+  if unit == "player" then return "|cff33ff99" .. L["Works in combat."] .. "|r" end
   local blocked = {}
   for _, entry in ipairs(castReadableArgs) do
     local key, label = entry[1], entry[2]
@@ -2409,10 +2409,10 @@ function Private.CastCombatStatus(trigger)
     end
   end
   if #blocked > 0 then
-    return "|cffff2020Won't match in combat:|r " .. table.concat(blocked, ", ")
-      .. ". |cffff9933Casts by other units are secret in combat; only your own stay readable.|r"
+    return "|cffff2020" .. L["Won't match in combat:"] .. "|r " .. table.concat(blocked, ", ")
+      .. ". |cffff9933" .. L["Casts by other units are secret in combat; only your own stay readable."] .. "|r"
   end
-  return "|cffff9933In combat, casts by other units are secret: they still show with their bar and timer, but cannot be filtered.|r"
+  return "|cffff9933" .. L["In combat, casts by other units are secret: they still show with their bar and timer, but cannot be filtered."] .. "|r"
 end
 
 Private.event_prototypes = {

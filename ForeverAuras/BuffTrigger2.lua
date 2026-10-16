@@ -3747,7 +3747,7 @@ end
 
 function BuffTrigger.GetName(triggerType)
   if triggerType == "aura2" then
-    return "Aura (Legacy)"
+    return L["Aura (Legacy)"]
   end
 end
 

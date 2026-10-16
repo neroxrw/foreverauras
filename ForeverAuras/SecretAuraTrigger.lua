@@ -1,6 +1,7 @@
 -- Modified for ForeverAuras, 2026-09-30.
 -- Modifications Copyright (C) 2026 ForeverAuras. Licensed under the GNU GPL v2 (see LICENSE).
 if not WeakAuras.IsLibsOK() then return end
+local L = WeakAuras.L
 local _, Private = ...
 -- Frames and hooks from this file are timed by the profiler (see Private.TimedAPI).
 local CreateFrame, hooksecurefunc, TimedHookScript = Private.TimedAPI("SecretAuraTrigger")
@@ -223,13 +224,13 @@ function Trigger.Rename(oldid, newid)
 end
 
 function Trigger.FinishLoadUnload() end
-function Trigger.GetName() return "Aura (Modern)" end
+function Trigger.GetName() return L["Aura (Modern)"] end
 function Trigger.CanHaveTooltip() return false end
 function Trigger.SetToolTip() return false end
 function Trigger.GetOverlayInfo() return {} end
 function Trigger.GetAdditionalProperties() return {} end
 function Trigger.GetProgressSources(data, triggernum, values)
-  table.insert(values, {trigger = triggernum, property = "value", type = "number", display = "Aura (Modern)", total = "total"})
+  table.insert(values, {trigger = triggernum, property = "value", type = "number", display = L["Aura (Modern)"], total = "total"})
 end
 function Trigger.GetTriggerConditions() return {} end
 
