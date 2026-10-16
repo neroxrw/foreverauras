@@ -1,5 +1,6 @@
 -- Copyright (C) 2026 ForeverAuras. Part of ForeverAuras, licensed under the GNU GPL v2 (see LICENSE).
 if not WeakAuras.IsLibsOK() then return end
+local L = WeakAuras.L
 local _, Private = ...
 
 -- Timers from this file are timed by the profiler (see Private.TimedAPI).
@@ -374,13 +375,13 @@ local function GetValues(trigger)
     local info = C_CooldownViewer.GetCooldownViewerCooldownInfo(id)
     if info then
       local identity = Private.CDMIdentity(id, entry, info, frames[id])
-      local placement = entry.displayed == true and "Displayed" or entry.displayed == false and "Not displayed" or "Layout unavailable"
+      local placement = entry.displayed == true and L["Displayed"] or entry.displayed == false and L["Not displayed"] or L["Layout unavailable"]
       local learned = entry.known and "" or " â€” Not learned"
       values[id] = placement .. " â€” " .. Private.CDMCategoryName(entry.category) .. " â€” " .. identity.name .. " [" .. (identity.spellID or identity.itemID or "Unknown") .. "]" .. learned
     end
   end
   for _, id in ipairs(GetSelections(trigger)) do
-    if type(id) == "number" and not values[id] then values[id] = "Unavailable in this specialization" end
+    if type(id) == "number" and not values[id] then values[id] = L["Unavailable in this specialization"] end
   end
   return values
 end
@@ -828,7 +829,7 @@ Private.CooldownViewerPrototype = {
   args = {
     {
       name = "cdmSpells",
-      display = "Cooldown Manager entries",
+      display = L["Cooldown Manager entries"],
       type = "multiselect",
       required = true,
       multiNoSingle = true,
@@ -837,39 +838,39 @@ Private.CooldownViewerPrototype = {
     },
     {
       name = "cdmShowGCD",
-      display = "Include global cooldown",
+      display = L["Include global cooldown"],
       type = "toggle",
     },
     {
       name = "spellId",
-      display = "Spell ID",
+      display = L["Spell ID"],
       hidden = true,
       conditionType = "number",
       operator_types = "only_equal",
     },
     {
       name = "name",
-      display = "Spell Name",
+      display = L["Spell Name"],
       hidden = true,
       conditionType = "string",
     },
     {
       name = "onCooldown",
-      display = "On Cooldown",
+      display = L["On Cooldown"],
       hidden = true,
       conditionType = "bool",
       conditionTest = BooleanCondition("onCooldown"),
     },
     {
       name = "isReady",
-      display = "Ready",
+      display = L["Ready"],
       hidden = true,
       conditionType = "bool",
       conditionTest = BooleanCondition("isReady"),
     },
     {
       name = "recharging",
-      display = "Recharging",
+      display = L["Recharging"],
       hidden = true,
       conditionType = "bool",
       conditionTest = BooleanCondition("recharging"),
@@ -877,7 +878,7 @@ Private.CooldownViewerPrototype = {
   },
 }
 
-for _, field in ipairs({{"itemId", "Item ID", "number"}, {"cdmCategory", "CDM Category", "string"}, {"cdmDisplayed", "Displayed in CDM", "bool"}, {"auraActive", "Aura Active (when readable)", "bool"}, {"hasTimer", "Timer Available", "bool"}}) do
+for _, field in ipairs({{"itemId", L["Item ID"], "number"}, {"cdmCategory", L["CDM Category"], "string"}, {"cdmDisplayed", L["Displayed in CDM"], "bool"}, {"auraActive", L["Aura Active (when readable)"], "bool"}, {"hasTimer", L["Timer Available"], "bool"}}) do
   local arg = {name = field[1], display = field[2], conditionType = field[3], hidden = true}
   if field[3] == "bool" then arg.conditionTest = BooleanCondition(field[1]) end
   if field[3] == "number" then arg.operator_types = "only_equal" end
@@ -929,7 +930,7 @@ local function BuffRemainingTime(state)
 end
 local remainingCondition = {
   name = "cdmRemaining",
-  display = "Remaining Time (when readable)",
+  display = L["Remaining Time (when readable)"],
   hidden = true,
   conditionType = "number",
   noProgressSource = true,
@@ -1073,12 +1074,12 @@ Private.CooldownViewerUtilityPrototype.name = "Cooldown"
 Private.CooldownViewerItemPrototype.name = "Item"
 local spellArgs = {}
 for i, arg in ipairs(Private.CooldownViewerPrototype.args) do spellArgs[i] = arg end
-spellArgs[#spellArgs + 1] = {name = "inRange", display = "Spell In Range", hidden = true,
+spellArgs[#spellArgs + 1] = {name = "inRange", display = L["Spell In Range"], hidden = true,
   conditionType = "bool", conditionTest = BooleanCondition("inRange")}
 -- Only spell cooldown triggers expose usability and resource checks; item and aura triggers retain their conditions.
-spellArgs[#spellArgs + 1] = {name = "isUsable", display = "Spell Usable", hidden = true,
+spellArgs[#spellArgs + 1] = {name = "isUsable", display = L["Spell Usable"], hidden = true,
   conditionType = "bool", conditionTest = BooleanCondition("isUsable")}
-spellArgs[#spellArgs + 1] = {name = "insufficientResources", display = "Insufficient Resources", hidden = true,
+spellArgs[#spellArgs + 1] = {name = "insufficientResources", display = L["Insufficient Resources"], hidden = true,
   conditionType = "bool", conditionTest = BooleanCondition("insufficientResources")}
 Private.CooldownViewerPrototype.args = spellArgs
 Private.CooldownViewerUtilityPrototype.args = spellArgs

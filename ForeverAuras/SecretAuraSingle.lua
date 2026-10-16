@@ -14,6 +14,7 @@
 --   Total Duration: a hidden text formatted from the total duration sizes a
 --     clip that holds the whole aura button (StyleDurationGate).
 if not WeakAuras.IsLibsOK() then return end
+local L = WeakAuras.L
 local _, Private = ...
 -- Frames and hooks from this file are timed by the profiler (see Private.TimedAPI).
 local CreateFrame, hooksecurefunc, TimedHookScript = Private.TimedAPI("SecretAuraSingle")
@@ -29,7 +30,7 @@ function Display.IsSingleUnit(trigger)
 end
 -- Stored in secret* fields, not the Aura (Legacy) ones, so auras converted from
 -- Legacy keep their behaviour.
-Display.showOnValues = {showOnActive = "Aura(s) Found", showOnMissing = "Aura(s) Missing", showAlways = "Always"}
+Display.showOnValues = {showOnActive = L["Aura(s) Found"], showOnMissing = L["Aura(s) Missing"], showAlways = L["Always"]}
 Display.remOperators = {["<"] = "<", ["<="] = "<=", [">"] = ">", [">="] = ">="}
 
 -- Keys of the extra native parts, unique within their containers.
@@ -281,32 +282,32 @@ function Display.TriggerStatus(data, trigger)
   local problem = Display.Validate(data)
   -- Condition problems are a short red line of their own; the trigger works.
   if problem == "Incompatible condition." then return RED .. problem .. "|r" end
-  if problem then return RED .. "Won't work:|r " .. problem end
+  if problem then return RED .. L["Won't work:"] .. "|r " .. problem end
   local severity, reason = Display.SpellIDFilterNote(trigger)
   -- Blizzard still plays Actions sounds for these spell IDs (AddAuraSound).
-  if severity == "error" then return RED .. "Won't work:|r " .. reason .. " " .. ORANGE .. "Sounds in Actions still play.|r" end
-  local text = GREEN .. "Works in combat.|r"
+  if severity == "error" then return RED .. L["Won't work:"] .. "|r " .. reason .. " " .. ORANGE .. L["Sounds in Actions still play."] .. "|r" end
+  local text = GREEN .. L["Works in combat."] .. "|r"
   if Display.UsesApproximate(trigger) then
     local profile = Display.ApproximateProfile(trigger)
     if not profile then
-      return RED .. "Won't work:|r This debuff's duration isn't known. Add a Total Duration filter."
+      return RED .. L["Won't work:"] .. "|r " .. L["This debuff's duration isn't known. Add a Total Duration filter."]
     end
     -- Without the gate (not an Icon, Missing, Remaining Time) only Blizzard's
     -- maximum duration applies, so shorter debuffs get through.
     local _, _, source, problem = Display.GateRange(data, trigger)
-    text = text .. " " .. ORANGE .. ((source and not problem) and "Approximate match, may not be exact."
-      or "Approximate match: shorter debuffs can match too.") .. "|r"
+    text = text .. " " .. ORANGE .. ((source and not problem) and L["Approximate match, may not be exact."]
+      or L["Approximate match: shorter debuffs can match too."]) .. "|r"
   end
   if severity == "note" then
-    text = text .. " " .. ORANGE .. (trigger.debuffType == "HARMFUL" and "Hostile units only." or "Friendly units only.") .. "|r"
+    text = text .. " " .. ORANGE .. (trigger.debuffType == "HARMFUL" and L["Hostile units only."] or L["Friendly units only."]) .. "|r"
   end
   if Display.InDynamicGroup(data) then
-    text = text .. " " .. ORANGE .. "In a Dynamic Group it keeps a fixed position; a Modern Aura Group is recommended.|r"
+    text = text .. " " .. ORANGE .. L["In a Dynamic Group it keeps a fixed position; a Modern Aura Group is recommended."] .. "|r"
   end
   local lateX = Display.LateGlowSpec(data, trigger)
   if lateX then
     local total = Display.LateGlowTotal(trigger)
-    if not (total and total > lateX) then text = text .. " " .. ORANGE .. "Glow starts once the aura's duration is known.|r" end
+    if not (total and total > lateX) then text = text .. " " .. ORANGE .. L["Glow starts once the aura's duration is known."] .. "|r" end
   end
   return text
 end
