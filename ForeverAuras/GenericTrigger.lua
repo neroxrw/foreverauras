@@ -4286,6 +4286,12 @@ local totemSlots = {}
 local lastTotemCast = {time = -math.huge}
 local TOTEM_CAST_WINDOW = 0.5
 
+-- Hawk blir en totem vid traffen, inte vid kastet. Spara vantande kast
+-- separat sa att Auto Shot och andra spells inte skriver over dem.
+local hawkSpellIds = {[1293241] = true, [1293525] = true, [1293526] = true, [1293527] = true}
+local pendingHawkCasts = {}
+local HAWK_TRAVEL_WINDOW = 5
+
 local knownTotemSlots = {}
 for slot, families in pairs({
   [1] = {{3599, 6363, 6364, 6365, 10437, 10438}, {8190, 10585, 10586, 10587}, {8227, 8249, 10526, 16387}, {8181, 10478, 10479}},
@@ -4349,6 +4355,15 @@ local function UpdateSecretTotemSlot(slot)
   return changed
 end
 
+local function TakePendingHawkCast(slot)
+  if slot ~= 2 and slot ~= 3 then return end
+  local now = GetTime()
+  while pendingHawkCasts[1] and now - pendingHawkCasts[1].time > HAWK_TRAVEL_WINDOW do
+    table.remove(pendingHawkCasts, 1)
+  end
+  return table.remove(pendingHawkCasts, 1)
+end
+
 local totemFrame = CreateFrame("Frame")
 totemFrame:RegisterEvent("PLAYER_TOTEM_UPDATE")
 totemFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
@@ -4357,17 +4372,43 @@ totemFrame:RegisterUnitEvent("UNIT_SPELLCAST_SUCCEEDED", "player")
 totemFrame:SetScript("OnEvent", function(_, event, arg1, _, spellId)
   if event == "UNIT_SPELLCAST_SUCCEEDED" then
     local public = not issecretvalue(spellId) and type(spellId) == "number"
+    if public and hawkSpellIds[spellId] then
+      -- Aktivera inte en slot har: den befintliga hoktimern kan annars
+      -- visas innan nasta dive traffar. PLAYER_TOTEM_UPDATE avgor slot.
+      for i = #pendingHawkCasts, 1, -1 do
+        if GetTime() - pendingHawkCasts[i].time > HAWK_TRAVEL_WINDOW then
+          table.remove(pendingHawkCasts, i)
+        end
+      end
+      pendingHawkCasts[#pendingHawkCasts + 1] = {spellId = spellId, time = GetTime()}
+      return
+    end
     lastTotemCast.time, lastTotemCast.spellId = GetTime(), public and spellId or nil
     local slot = public and TotemSlotForSpell(spellId)
     if slot and C_Secrets.ShouldTotemSlotBeSecret(slot) and UpdateSecretTotemSlot(slot) then
       Private.ScanEvents("FA_TOTEM_UPDATE", slot)
     end
   elseif event == "PLAYER_TOTEM_UPDATE" then
-    if type(arg1) == "number" and not issecretvalue(arg1) and not ReadTotemSlot(arg1) then
-      UpdateSecretTotemSlot(arg1)
+    if not issecretvalue(arg1) and type(arg1) == "number" then
+      local pending = TakePendingHawkCast(arg1)
+      local readable = ReadTotemSlot(arg1)
+      if not readable then
+        if pending then
+          local id = pending.spellId
+          totemSlots[arg1] = {
+            name = Private.ExecEnv.GetSpellName(id),
+            icon = Private.ExecEnv.GetSpellIcon(id),
+            spellId = id,
+          }
+        else
+          UpdateSecretTotemSlot(arg1)
+        end
+      end
     end
     Private.ScanEvents("FA_TOTEM_UPDATE", not issecretvalue(arg1) and arg1 or nil)
   else
+    -- Vid zonbyte eller avslutad strid anvands ater spelets lasbara data.
+    wipe(pendingHawkCasts)
     for slot = 1, 5 do
       if not C_Secrets.ShouldTotemSlotBeSecret(slot) then ReadTotemSlot(slot) end
     end
