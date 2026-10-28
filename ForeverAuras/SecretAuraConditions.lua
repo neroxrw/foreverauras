@@ -564,7 +564,7 @@ function Display.ValidateConditions(data)
         return L["Only Aura Active can be combined with All of / Any of, once, with ordinary checks."]
       end
       if condition.linked or (data.conditions[index + 1] and data.conditions[index + 1].linked) then
-        return L["Aura (Modern) conditions cannot use Else If."]
+        return L["A condition with an Aura (Modern) check (Aura Active, Remaining Time, In Pandemic Window, Stack Count, dispel type...) cannot use Else If."]
       end
       if durationVariables[kind] and condition.check.op and condition.check.op ~= "<" and condition.check.op ~= ">=" then
         return L["Aura (Modern) time conditions support < and >=."]

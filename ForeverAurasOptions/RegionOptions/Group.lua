@@ -1,4 +1,4 @@
--- Modified for ForeverAuras, 2026-09-29.
+-- Modified for ForeverAuras, 2026-10-25.
 -- Modifications Copyright (C) 2026 ForeverAuras. Licensed under the GNU GPL v2 (see LICENSE).
 if not WeakAuras.IsLibsOK() then return end
 ---@type string
@@ -645,10 +645,18 @@ local function createOptions(id, data)
         end
       end,
     },
-    blizzardFlowNormalNote = {
-      type = "description", order = 0.612, width = "full", fontSize = "small",
-      name = "|TInterface\\common\\help-i:16:16|t Icon and Text displays with other triggers join the row as copies, without glows or Masque. Other displays with other triggers stay at the row's start.",
-      hidden = function() return FlowOff() or Display.FlowGrid(data) or data.blizzardFlowFrames ~= nil end,
+    -- ForeverAuras: the row layout (SecretAuraFlow.lua, FlowGroupOwned). New
+    -- Modern Aura Groups start their row at the group's anchor; groups made
+    -- before 1.1.0 keep the old layout (the first display anchors the row)
+    -- until this box is unticked, so existing packs are not moved. Shown as
+    -- one checkbox, ticked for the old layout, so a new group shows it
+    -- unticked and can be left alone.
+    blizzardFlowOrigin = {
+      type = "toggle", width = WeakAuras.doubleWidth, order = 0.611, name = L["Use old row layout (before 1.1.0)"],
+      desc = L["Leave this unticked: the row starts where you place the group, like a Dynamic Group.\n\nGroups made before 1.1.0 have it ticked so they keep looking the same. Untick it to move such a group to the new layout, then place the group where the row should start."],
+      hidden = function() return FlowOff() or data.blizzardFlowFrames ~= nil or Display.FlowGrid(data) end,
+      get = function() return data.blizzardFlowOrigin ~= "group" end,
+      set = function(_, v) SaveFlow("blizzardFlowOrigin", (not v) and "group" or nil) end,
     },
     blizzardFlowGridType = {
       type = "select", width = WeakAuras.normalWidth, order = 0.631, name = L["Grid direction"],
@@ -705,7 +713,7 @@ local function createOptions(id, data)
       type = "select", width = WeakAuras.doubleWidth, order = 0.65, name = L["Sort"], hidden = FlowOff,
       values = Display.flowSortModes,
       sorting = Display.flowSortOrder,
-      desc = "Ascending and Descending sort by remaining time. Aura(s) Found displays with the same unit, filters and display settings share one sorted row.",
+      desc = L["Ascending and Descending sort by remaining time. Outside a Grid, Aura (Modern) displays with Show On: Aura(s) Found, spell IDs, and the same unit, filters and look share one sorted row; other displays keep their normal layout."],
       get = function() return Display.FlowSortMode(data) end,
       set = function(_, v)
         data.blizzardFlowSort, data.blizzardFlowReverse, data.blizzardFlowMerge = nil, nil, nil
@@ -714,12 +722,17 @@ local function createOptions(id, data)
     },
     blizzardFlowSortNote = {
       type = "description", width = WeakAuras.doubleWidth, order = 0.66, fontSize = "medium",
-      name = "|cffffd100Auras sort together only when they have the same display settings.|r",
+      name = "|cffffd100" .. L["Auras sort together only when their displays have the same unit, filters and look."] .. "|r",
       hidden = function() return FlowOff() or Display.FlowGrid(data) or Display.FlowSortMode(data) == "none" end,
     },
     blizzardFlowUseLimit = {
       type = "toggle", width = WeakAuras.normalWidth, order = 0.67, name = L["Limit"], hidden = FlowOff,
-      desc = "Most auras shown by each Aura (Modern) display, or each sorted row. The whole row is also cut off after this many icons.",
+      desc = function()
+        if Display.FlowGrid(data) or data.blizzardFlowFrames ~= nil then
+          return L["Most auras shown by each Aura (Modern) display, or each sorted row."]
+        end
+        return L["Most auras shown by each Aura (Modern) display, or each sorted row. The row is also cut off at the length of this many icons of the first display's size, so displays of other sizes can be partly cut."]
+      end,
       get = function() return data.blizzardFlowUseLimit or false end,
       set = function(_, v) SaveFlow("blizzardFlowUseLimit", v or nil) end,
     },

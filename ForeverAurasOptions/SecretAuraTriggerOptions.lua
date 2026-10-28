@@ -262,11 +262,14 @@ local function GetOptions(data, triggernum)
     hidden = function() return not display.UsesRankSpellIDs(trigger) or #UnsupportedRankIDs() == 0 end,
     name = function()
       return L["Other ranks could not be found for: %s"]:format(table.concat(UnsupportedRankIDs(), ", "))
-        .. ". Only the IDs you entered will be tracked. To track another rank, add its ID under Exact Spell ID(s)."
+        .. ". " .. L["The IDs you entered are tracked, and spells with the same name. To track another rank, add its ID under Exact Spell ID(s)."]
     end,
   }
   SpellIDs("useSpellIDs", "spellid", "auraspellids", L["Exact Spell ID(s)"], L["Exact Spell ID"], 6,
     display.UsesSpellIDs, "secretUseSpellIDs")
+  -- Same-name matching always applies (Display.GetSpellIDs): said here, so
+  -- "Exact" is not read as "these IDs only".
+  options.useSpellIDs.desc = L["Track auras with these spell IDs, and any spell with the same name (other ranks and server variants), as Aura (Legacy) matches by name."]
   -- Spell Lists (Display.SpellList) are set by importing a pack, not here: a
   -- trigger with secretSpellList shows a one-line note so the empty ID fields
   -- make sense, and keeps working as data.

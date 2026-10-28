@@ -1,5 +1,18 @@
 # Changelog
 ## VERSIONS
+## 1.1.0
+- Modern Aura Groups now behave like Dynamic Groups. The row starts where you place the group, and each display’s X/Y Offset moves only that display. Groups you made before 1.1.0 keep their old layout automatically (a single “Use old row layout” checkbox in the group settings), so nothing you have changes.
+- Bars, progress textures and textures can now sit anywhere in a Modern Aura Group row, after a Modern list, and move with it, including in combat. Bars keep their overlays, ticks and texts; progress textures work in both their straight and circular forms.
+- The options preview now lays rows out the same way the live row does, including the display limit’s cut-off.
+- Fixed member offsets in Modern Aura Groups being measured from the wrong display, which pushed rows and neighboring icons sideways.
+- Fixed Centered growth rows not centering correctly, and ordinary displays landing in the wrong place in mixed rows.
+- Fixed the Grid preview showing members that the live grid leaves out, and the Lua error when switching a row group to Grid with the editor open.
+- Fixed an error after reloading during combat (“Auras cannot be accessed when secret”).
+- Cooldown Manager: entries are found more reliably, including on login and when Blizzard’s viewers load late, and no longer loop on failed lookups.
+- Spell Known triggers wait for spell data when it isn’t loaded yet instead of reporting the spell as unknown.
+- Many option tooltips and warnings rewritten to say exactly what the addon does; confusing or outdated ones removed.
+- Known limit: after a reload during combat, Modern displays appear when the fight ends.
+
 ## 1.0.2
 - The spell-data request behind non-exact ‘Spell Known’ now survives a result that arrives during login, stops after a failed load, and doesn’t get stuck if the request itself fails.
 

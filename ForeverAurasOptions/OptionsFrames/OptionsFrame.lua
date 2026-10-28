@@ -1601,7 +1601,7 @@ function OptionsPrivate.CreateFrame()
       flowButton:SetIcon(frame.modernGroupIcon)
       flowButton:SetDescription("A group whose Aura (Modern) displays grow together, also in combat")
       flowButton:SetClick(function()
-        WeakAuras.NewAura({blizzardFlow = true, blizzardFlowGrowth = "RIGHT", blizzardFlowSpacing = 2}, "group", self:GetTargetAura())
+        WeakAuras.NewAura({blizzardFlow = true, blizzardFlowGrowth = "RIGHT", blizzardFlowSpacing = 2, blizzardFlowOrigin = "group"}, "group", self:GetTargetAura())
       end)
       containerScroll:AddChild(flowButton)
     end

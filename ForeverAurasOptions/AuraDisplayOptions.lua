@@ -283,9 +283,16 @@ function OptionsPrivate.PrepareSecretActionOptions(data, action)
       end
     end
   end
+  -- On Show / On Hide follow the display: with Show On: Aura(s) Missing the
+  -- display appears when the aura is removed, so the sounds swap over
+  -- (BlizzardAuraDisplay.lua, RegisterSounds); the tooltip says which.
   for _, when in ipairs({"start", "finish"}) do
-    local title = when == "start" and "added" or "removed"
-    action.args[when .. "_do_sound"].desc = L["Play when one of the trigger's exact spell IDs is %s. Works even if Blizzard cannot display the aura. Uses the selected unit and exact spell IDs, excluding ignored IDs; other display filters do not affect sounds."]:format(title)
+    action.args[when .. "_do_sound"].desc = function()
+      local trigger = Display.GetSavedTrigger(data)
+      local missing = trigger and Display.RawShowOn(trigger) == "showOnMissing"
+      local added = (when == "start") ~= (missing == true)
+      return L["Play when one of the trigger's exact spell IDs is %s. Works even if Blizzard cannot display the aura. Uses the selected unit and exact spell IDs, excluding ignored IDs; other display filters do not affect sounds."]:format(added and L["added"] or L["removed"])
+    end
   end
   -- Reuse the native unit-glow settings, never the Lua On Show glow action.
   local settings = data.blizzardAuraDisplay

@@ -1585,7 +1585,10 @@ function Private.DebugMissing(id, triggernum, triggerInfo, unit)
   local wantName = triggerInfo.auranames and triggerInfo.auranames[1]
   local wantId = triggerInfo.auraspellids and triggerInfo.auraspellids[1]
   local filter = triggerInfo.debuffType or "HELPFUL"
-  if unit and C_UnitAuras and C_UnitAuras.GetAuraDataByIndex then
+  -- Not while auras are secret: the index lookup raises then; the capture
+  -- says so instead of counting.
+  local restricted = aurasAreLocked and C_Secrets.ShouldAurasBeSecret()
+  if unit and C_UnitAuras and C_UnitAuras.GetAuraDataByIndex and not restricted then
     for index = 1, 80 do
       local aura = C_UnitAuras.GetAuraDataByIndex(unit, index, filter)
       if not aura then break end
@@ -1597,8 +1600,9 @@ function Private.DebugMissing(id, triggernum, triggerInfo, unit)
       end
     end
   end
-  print(("|cffff8800FA missing:|r %s #%d unit %s: %.2fs after loading screen, %.2fs after entering world; %d auras, %d secret, wanted %s"):format(
-    tostring(id), triggernum, tostring(unit), now - lastLoadingScreen, now - lastEnteringWorld, count, secret, found and "present" or "absent"))
+  local auras = restricted and "auras restricted (secret), not listed" or ("%d auras, %d secret, wanted %s"):format(count, secret, found and "present" or "absent")
+  print(("|cffff8800FA missing:|r %s #%d unit %s: %.2fs after loading screen, %.2fs after entering world; %s"):format(
+    tostring(id), triggernum, tostring(unit), now - lastLoadingScreen, now - lastEnteringWorld, auras))
 end
 
 local function UpdateTriggerState(time, id, triggernum)
@@ -1869,7 +1873,9 @@ do
       -- Combat aura loading as combat ends during a zone) must not record the
       -- player's momentarily empty list as up to date; it is left unprepared
       -- and the real scan at the end of the window fills it in.
-      if newAPI and settling and unit == "player" and C_UnitAuras.GetAuraDataByIndex(unit, 1, filter) == nil then
+      -- Not while auras are secret (see ScanUnitWithFilter's settle check).
+      if newAPI and settling and unit == "player" and not (aurasAreLocked and C_Secrets.ShouldAurasBeSecret())
+        and C_UnitAuras.GetAuraDataByIndex(unit, 1, filter) == nil then
         return
       end
       if newAPI then
@@ -2060,7 +2066,13 @@ do
               end
             end
           end
-        elseif settling and unit == "player" and C_UnitAuras.GetAuraDataByIndex(unit, 1, filter) == nil then
+        elseif settling and unit == "player" and not (aurasAreLocked and C_Secrets.ShouldAurasBeSecret())
+          and C_UnitAuras.GetAuraDataByIndex(unit, 1, filter) == nil then
+          -- ForeverAuras: not while auras are secret (a reload in combat):
+          -- GetAuraDataByIndex raises then ("Auras cannot be accessed when
+          -- secret"; seen in game, 1.1.0-dev.7). The full scan below then
+          -- looks up the wanted spell IDs instead (SafeForEachAura), as it
+          -- does for every scan while auras are secret.
           -- ForeverAuras: the player's aura list is empty from the start of a
           -- loading screen until shortly after entering the world (captured:
           -- "0 auras" at 0.00s after entering world, the auras back a moment

@@ -407,7 +407,7 @@ function OptionsPrivate.MultipleDisplayTooltipMenu()
       text = "Add to new Modern Aura Group",
       notCheckable = 1,
       func = function()
-        CreateNewGroupFromSelection("group", false, {blizzardFlow = true, blizzardFlowGrowth = "RIGHT", blizzardFlowSpacing = 2})
+        CreateNewGroupFromSelection("group", false, {blizzardFlow = true, blizzardFlowGrowth = "RIGHT", blizzardFlowSpacing = 2, blizzardFlowOrigin = "group"})
       end
     },
     {

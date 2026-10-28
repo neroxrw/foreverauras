@@ -1338,7 +1338,7 @@ local function PowerCurveCode(data, properties, allConditionsTemplate)
   end
 
   Private.AuraWarnings.UpdateWarning(data.uid, "power_curve_conditions", limited and "info" or nil,
-    limited and L["In combat, Power and Health conditions can only change Alpha and Color."] or nil)
+    limited and L["While Power and Health are secret, their conditions can only change Alpha and Color."] or nil)
   if not next(plan.props) then return end
 
   Private.ExecEnv.conditionHelpers[data.uid] = Private.ExecEnv.conditionHelpers[data.uid] or {}
@@ -1469,7 +1469,7 @@ local function TimerCurveCode(data, properties, allConditionsTemplate)
   local restricted = type(trigger) == "table" and (trigger.type == "spell" or trigger.event == "Cast")
   limited = limited and restricted
   Private.AuraWarnings.UpdateWarning(data.uid, "timer_curve_conditions", limited and "info" or nil,
-    limited and L["In combat, Remaining Time conditions can only change Alpha and Color, and color or hide a timer text."] or nil)
+    limited and L["While the remaining time is secret, Remaining Time conditions can only change Alpha and Color, and color or hide a timer text, and cannot use Else If."] or nil)
   if not next(plan.props) and not next(plan.forced) then return end
 
   Private.ExecEnv.conditionHelpers[data.uid] = Private.ExecEnv.conditionHelpers[data.uid] or {}

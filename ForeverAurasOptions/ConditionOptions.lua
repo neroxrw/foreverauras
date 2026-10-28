@@ -2892,7 +2892,7 @@ local function addControlsForCondition(args, order, data, conditionVariable, tot
       args["condition" .. i .. "_combatNote"] = {
         type = "description",
         width = WeakAuras.doubleWidth,
-        name = "|cffff9900" .. L["In combat the game forbids addon changes to a live aura icon, so while the aura is shown this condition takes effect when combat ends. The Missing look is the addon's own and follows it at once. Only an 'Aura Active' condition on its own changes the live icon during combat."] .. "|r",
+        name = "|cffff9900" .. L["While aura restrictions are on the game forbids addon changes to a live aura icon, so while the aura is shown this condition takes effect when the restrictions end. The Missing look is the addon's own and follows it at once. Conditions on the aura itself (Aura Active, Remaining Time, In Pandemic Window, Stack Count, dispel type) are applied by the game and keep working under restrictions."] .. "|r",
         order = order,
       }
       order = order + 1

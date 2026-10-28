@@ -586,7 +586,7 @@ function Display.Validate(data)
     if when ~= "init" then
       for key, value in pairs(action) do
         if key:match("^do_") and key ~= "do_sound" and key ~= "do_message" and value then
-          return L["Secret Aura trigger detected. Only Chat Message, Play Sound and Hide Glows are supported in On Show/On Hide. Custom Init is available."]
+          return L["With an Aura (Modern) trigger, On Show/On Hide support Play Sound and Hide Glows only. Custom Init is available."]
         end
       end
       if action.stop_sound or (action.do_sound and action.sound == " KitID") then
@@ -596,7 +596,7 @@ function Display.Validate(data)
   end
   for _, animation in pairs(data.animation or {}) do
     if animation.type and animation.type ~= "none" then
-      return L["Secret Aura trigger detected. You cannot use Animations on this aura."]
+      return L["With an Aura (Modern) trigger, the display's own Start/Main/Finish animations do not play; use the aura animations on the Animations tab."]
     end
   end
 end
@@ -919,6 +919,12 @@ end
 -- client for the rest of the session.
 local function QuietInstance(region, instance)
   local locked = false
+  -- ForeverAuras: a quieted instance is not visible, whatever the client
+  -- lets us do to its frames right now: the per-unit rows of a Modern Aura
+  -- Group grouped by frame (SecretAuraFlow.lua, RelinkFlowUnits) chain only
+  -- visible instances, and a hidden display's containers used to stay in
+  -- them until the next unit refresh.
+  instance.visible = false
   if Locked(instance.container) then
     locked = true
   else
@@ -2224,7 +2230,7 @@ function ApplyDisplay(region, data)
   local existing = region.blizzardAuraDisplay
   if Restricted() and existing and #existing.instances > 0 then
     pending[region] = data
-    Warn(data, L["Display > Secret Aura Settings changes will apply when aura restrictions end."])
+    Warn(data, L["Display changes will apply when aura restrictions end."])
     return
   end
   if not C_AddOns.IsAddOnLoaded("Blizzard_AuraContainer") then
@@ -2569,6 +2575,17 @@ local PENDING_BUDGET = 4
 local draining = false
 local function DrainPending()
   -- Before login completes, the login callback starts the drain.
+  -- ForeverAuras: the whole queue waits for restrictions to end, first
+  -- builds included. Drained under restrictions (1.1.0-dev.6, a reload in
+  -- combat), the reserve builder's styling of a new container's buttons
+  -- failed (SetSize in StyleAppearance: "Attempt to access forbidden
+  -- object"), and the builder counted the instance as built regardless. The
+  -- client calls initializeFrame before it restricts a button, and the
+  -- styling runs after, so this is an initialisation-order question, not
+  -- proof that a first build can never be styled in combat; it is not yet
+  -- known whether the failing instances were new or previously allocated.
+  -- Both points are open: until they are settled, nothing is built here
+  -- under restrictions.
   if Restricted() or not WeakAuras.IsLoginFinished() then draining = false; return end
   local started = debugprofilestop()
   -- Modern Aura Groups re-anchor once per group after this batch, not once
