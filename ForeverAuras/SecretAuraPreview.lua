@@ -188,18 +188,47 @@ function Display.HidePreview(region)
   for _, sample in ipairs(region.secretAuraSamples or {}) do HideSample(sample.button) end
 end
 
-function Display.ShowPreview(region, data, StyleSample)
-  local ids = Display.GetSpellIDs(Display.GetTrigger(data), false)
-  if #ids == 0 then ids[1] = false end
+-- ForeverAuras: one sample at its place in the display's own preview (not a
+-- group's row or grid): the index-th of count, on the display's box. Shared
+-- with the grid preview, which puts a member it leaves out back here
+-- (ArrangeGridPreview, SecretAuraGrid.lua).
+function Display.PlaceOwnSample(region, data, button, index, count)
   local settings = data.blizzardAuraDisplay
-  -- The single-aura settings preview one aura in the region's own rectangle.
-  local count = math.min(#ids, Display.MaxAuras(data))
   local width, height = Display.Dimensions(data)
   local growth, spacing = Display.Growth(data), settings.spacing or 6
-  local missingLook = Display.PreviewShowsMissing(data)
   local vertical = growth == "UP" or growth == "DOWN" or growth == "CENTER_VERTICAL"
   local centered = growth == "CENTER_HORIZONTAL" or growth == "CENTER_VERTICAL"
   local anchor = growth == "LEFT" and "TOPRIGHT" or growth == "UP" and "BOTTOMLEFT" or "TOPLEFT"
+  button:ClearAllPoints()
+  local perRow = Display.IconsPerRow(data)
+  if perRow then
+    local corner, point, horizontal, verticalDirection = Display.WrapLayout(growth, settings.rowGrowth)
+    local column, row = (index - 1) % perRow, math.floor((index - 1) / perRow)
+    local hSign, vSign = horizontal == "LEFT" and -1 or 1, verticalDirection == "UP" and 1 or -1
+    local line = math.min(count, perRow)
+    local x, y = 0, 0
+    if growth == "CENTER_HORIZONTAL" then x = -(line * (width + spacing) - spacing) / 2
+    elseif growth == "CENTER_VERTICAL" then y = (line * (height + spacing) - spacing) / 2 end
+    if vertical then
+      x, y = x + hSign * row * (width + spacing), y + vSign * column * (height + spacing)
+    else
+      x, y = x + hSign * column * (width + spacing), y + vSign * row * (height + spacing)
+    end
+    button:SetPoint(corner, region, point, x, y)
+  else
+    local offset = (index - 1 - (centered and (count - 1) / 2 or 0)) * ((vertical and height or width) + spacing)
+    local x = not vertical and (growth == "LEFT" and -offset or offset) or 0
+    local y = vertical and (growth == "UP" and offset or -offset) or 0
+    button:SetPoint(centered and "CENTER" or anchor, region, centered and "CENTER" or anchor, x, y)
+  end
+end
+
+function Display.ShowPreview(region, data, StyleSample)
+  local ids = Display.GetSpellIDs(Display.GetTrigger(data), false)
+  if #ids == 0 then ids[1] = false end
+  -- The single-aura settings preview one aura in the region's own rectangle.
+  local count = math.min(#ids, Display.MaxAuras(data))
+  local missingLook = Display.PreviewShowsMissing(data)
   region.secretAuraSamples = region.secretAuraSamples or {}
   -- In a Modern Aura Group on unit frames the editor box follows its first
   -- sample; put it back first, as the samples are anchored to the box below
@@ -224,28 +253,7 @@ function Display.ShowPreview(region, data, StyleSample)
     -- Use the configured entry once, not every expanded rank of that entry.
     sample.name, sample.iconID = info and info.name or "Aura", info and info.iconID or 134400
     StyleSample(sample, data)
-    button:ClearAllPoints()
-    local perRow = Display.IconsPerRow(data)
-    if perRow then
-      local corner, point, horizontal, verticalDirection = Display.WrapLayout(growth, settings.rowGrowth)
-      local column, row = (index - 1) % perRow, math.floor((index - 1) / perRow)
-      local hSign, vSign = horizontal == "LEFT" and -1 or 1, verticalDirection == "UP" and 1 or -1
-      local line = math.min(count, perRow)
-      local x, y = 0, 0
-      if growth == "CENTER_HORIZONTAL" then x = -(line * (width + spacing) - spacing) / 2
-      elseif growth == "CENTER_VERTICAL" then y = (line * (height + spacing) - spacing) / 2 end
-      if vertical then
-        x, y = x + hSign * row * (width + spacing), y + vSign * column * (height + spacing)
-      else
-        x, y = x + hSign * column * (width + spacing), y + vSign * row * (height + spacing)
-      end
-      button:SetPoint(corner, region, point, x, y)
-    else
-      local offset = (index - 1 - (centered and (count - 1) / 2 or 0)) * ((vertical and height or width) + spacing)
-      local x = not vertical and (growth == "LEFT" and -offset or offset) or 0
-      local y = vertical and (growth == "UP" and offset or -offset) or 0
-      button:SetPoint(centered and "CENTER" or anchor, region, centered and "CENTER" or anchor, x, y)
-    end
+    Display.PlaceOwnSample(region, data, button, index, count)
     -- Like ordinary OPTIONS states, each sample has a six-second duration.
     -- Show On: Aura Missing previews the static look drawn while the aura is absent.
     button.staticSample = missingLook

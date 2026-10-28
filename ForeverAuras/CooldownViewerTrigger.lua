@@ -52,6 +52,7 @@ local catalogSecret = false
 -- (timed or event-driven) per episode, then the catalog stands until a
 -- refresh event; a complete build ends the episode.
 local catalogRetries, catalogRetryQueued = 0, false
+local viewerLoadTried = false
 local function CatalogIncomplete(which)
   return which ~= nil and Private.cdmIncompleteCatalogs ~= nil and Private.cdmIncompleteCatalogs[which] == true
 end
@@ -63,6 +64,10 @@ local function ScheduleCatalogRetry()
     if Private.QueueCDMRefresh then Private.QueueCDMRefresh() end
   end)
 end
+-- ForeverAuras: drops the catalog so the next use builds it (CooldownViewerCatalog.lua, CDMCatalogStale).
+function Private.InvalidateCDMCatalog()
+  catalog = nil
+end
 local function GetCatalog(refresh)
   local batch = Private.cdmScanBatch
   if batch and batch.catalog then return batch.catalog end
@@ -72,15 +77,37 @@ local function GetCatalog(refresh)
   -- A refresh event (a loading screen, a spell change, the options' refresh)
   -- starts a new episode of bounded retries.
   if refresh then catalogRetries = 0 end
-  if catalog and not refresh and CatalogIncomplete(catalog) and catalogRetries < 10 then
+  if catalog and not refresh and CatalogIncomplete(catalog) then
     if catalogTime and GetTime() - catalogTime >= 1 then
+      -- ForeverAuras: an incomplete catalog is rebuilt on any later use a
+      -- second or more after it was built, however many retries have run.
+      -- The retry count bounds only the timers below: after a loading screen
+      -- the viewer can take longer than the timed retries to get its frames
+      -- back, and it was then left incomplete until "Refresh from Blizzard
+      -- CDM"; the viewer's own refresh (hooked, Private.QueueCDMRefresh) runs
+      -- the triggers when the frames do come, and that use rebuilds it.
       refresh = true
       catalogRetries = catalogRetries + 1
     else
-      -- Rebuilt by an event moments ago: the timed retry that found it too
-      -- fresh must still lead to another look, or the chain would end here.
+      -- Rebuilt by an event moments ago: this use (the viewer's own refresh,
+      -- say, which can be what announces its frames) must still lead to
+      -- another look, or the chain would end here. One timer at most is
+      -- pending, and it leads to one rebuild, so a use cannot start a loop.
       ScheduleCatalogRetry()
     end
+  end
+  -- ForeverAuras: Blizzard's viewer is a separate, load-on-demand addon on
+  -- this client; nothing loads it until its settings are opened (the "Open
+  -- CDM" button does), so without that the viewer frames the triggers read
+  -- never exist and every catalog is incomplete (reported: bars only after
+  -- Open CDM and a refresh, on every login). Loaded here, once, out of
+  -- combat, as that button does, when a catalog is needed and the viewer is
+  -- not there.
+  if (refresh or not catalog) and not viewerLoadTried and not InCombatLockdown()
+    and C_AddOns and C_AddOns.LoadAddOn and not C_AddOns.IsAddOnLoaded("Blizzard_CooldownViewer") then
+    viewerLoadTried = true
+    local ok, loaded = pcall(C_AddOns.LoadAddOn, "Blizzard_CooldownViewer")
+    if ok and loaded then ScheduleCatalogRetry() end
   end
   if catalog and not refresh then
     if batch then batch.catalog = catalog end

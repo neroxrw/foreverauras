@@ -290,11 +290,43 @@ end
 function Display.ArrangeGridPreview(group)
   local samples = {}
   local firstRegion
+  -- ForeverAuras: the same eligibility as the live grid (Members): a member
+  -- watching a different unit than the first eligible one is left at its
+  -- own position, as the live grid leaves it. The preview checked only the
+  -- per-display rules, so a Target display previewed inside a Player grid.
+  local unit
   for _, childID in ipairs(group.controlledChildren or {}) do
     local entry = Private.regions[childID]
     local region = entry and entry.region
     local data = WeakAuras.GetData(childID)
-    if region and region.secretAuraSamplesActive and data and Display.Enabled(data) and not Display.GridProblem(data) then
+    local eligible = region and region.secretAuraSamplesActive and data and Display.Enabled(data) and not Display.GridProblem(data)
+    if eligible then
+      local childUnit = Display.UnitTokens(Display.GetTrigger(data))[1]
+      if childUnit and unit and childUnit ~= unit then
+        eligible = false
+        -- Its box and its samples go back to its own layout: the samples
+        -- were anchored to the grid's first box the last time it was in the
+        -- grid, and stayed there (PlaceOwnSample, SecretAuraPreview.lua).
+        if Display.RestorePreviewRegion then Display.RestorePreviewRegion(region) end
+        if Display.PlaceOwnSample then
+          local shown = {}
+          for _, sample in ipairs(region.secretAuraSamples or {}) do
+            if sample.button:IsShown() then shown[#shown + 1] = sample.button end
+          end
+          for index, button in ipairs(shown) do Display.PlaceOwnSample(region, data, button, index, #shown) end
+        end
+      else
+        unit = unit or childUnit
+      end
+    end
+    if eligible then
+      -- ForeverAuras: the row preview moves a display's own box onto its
+      -- first sample (MovePreviewRegion, SecretAuraFlow.lua). Switched to a
+      -- Grid with the editor open, the box was still on the sample, and
+      -- anchoring the samples to the first box below made a cycle ("Cannot
+      -- anchor to a region dependent on it"). The box goes back on its own
+      -- anchor first.
+      if Display.RestorePreviewRegion then Display.RestorePreviewRegion(region) end
       for _, sample in ipairs(region.secretAuraSamples or {}) do
         if sample.button:IsShown() then
           firstRegion = firstRegion or region

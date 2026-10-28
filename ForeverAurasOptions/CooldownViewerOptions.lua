@@ -60,7 +60,7 @@ function OptionsPrivate.AddCooldownViewerOptions(options, data, triggernum)
   -- for an Aura (Modern) trigger, and that is said here the same way.
   if trigger.cdmSource == "buff" then
     Add("alwaysActive", {type = "description", fontSize = "medium", width = "full",
-      name = L["|cffffffffNote: Trigger Always Active in combat|r (the aura is secret then; Blizzard shows the display)"]})
+      name = L["|cffffffffNote: Trigger Always Active while the aura is secret|r: the addon cannot read the aura then, so the trigger stays active and Blizzard's own aura display shows or hides the display. Lua conditions on this trigger's aura do not update until the aura is readable again."]})
   end
   Add("help", {type = "description", name = L["Spells must be active in the CDM to be displayed. Type /cdm and add them."], width = "full"})
   -- Blizzard's Cooldown Manager flags some entries as not known although the
@@ -311,6 +311,7 @@ function OptionsPrivate.AddCooldownViewerOptions(options, data, triggernum)
       get = function() return trigger.cdmAutoClone ~= false end,
       set = function(_, value) Save("cdmAutoClone", value) end})
     Add("combineMode", {type = "select", name = L["Preferred Match"], width = WeakAuras.normalWidth,
+      desc = L["Which listed aura the display follows while several are up. Remaining times that are secret cannot be compared: an aura with a readable time is preferred, and when aura information is hidden, Blizzard selects the aura shown."],
       values = {showLowest = L["Least remaining time"], showHighest = L["Most remaining time"], showFirst = L["First in the list"]},
       sorting = {"showLowest", "showHighest", "showFirst"},
       hidden = function() return trigger.cdmAutoClone ~= false end,

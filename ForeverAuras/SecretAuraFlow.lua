@@ -55,10 +55,27 @@ end
 -- place, which already carries the offset, is where the row starts) or nil.
 -- Only Aura (Modern) displays take it: an ordinary display in the row keeps
 -- the placement it always had (its preview does not apply offsets either).
-local function RowOffset(flow, first)
-  if not flow or flow == first or flow.normal then return 0, 0 end
+-- Relative to the first flow's own offset: the row already starts offset by
+-- that much, so a later display with the same offset (members that all
+-- anchor to one frame with one offset, say) adds nothing, and only the
+-- difference between its offset and the first's moves it.
+-- An ordinary display's own offset counts only as the row's first offset
+-- (its region's place carries it like any first display's); chained, it
+-- takes none (RowOffset).
+local function FlowOwnOffset(flow)
+  if not flow then return 0, 0 end
+  if flow.normal then return OwnOffset(flow.normal.data) end
   local data = flow.region and flow.region.blizzardAuraDisplay and flow.region.blizzardAuraDisplay.data
   return OwnOffset(data)
+end
+local function RowOffset(flow, first)
+  if not flow or flow == first or flow.normal then return 0, 0 end
+  -- A row-start helper (the end of a centred row's shadows) is not a
+  -- display and carries no offset of its own.
+  if not flow.region then return 0, 0 end
+  local x, y = FlowOwnOffset(flow)
+  local fx, fy = FlowOwnOffset(first)
+  return x - fx, y - fy
 end
 
 -- A chain frame (a display's start, or its shadow start) is anchored to
@@ -267,7 +284,7 @@ end
 -- Why this display cannot join its Modern Aura Group's growth, or nil.
 function Display.FlowProblem(data, trigger)
   if not Display.FlowGroup(data) then return end
-  if not Display.missingTypes[data.regionType] then return L["In a Modern Aura Group, use an Icon, Progress Bar, Progress Texture or Text display."] end
+  if not Display.missingTypes[data.regionType] then return L["In a Modern Aura Group, use an Icon, Progress Bar, Progress Texture, Texture or Text display."] end
   if Display.RemainingWindow(trigger) and Display.FlowGrid(Display.FlowGroup(data)) then return L["In a Grid, Remaining Time is not available."] end
   local mode = Display.FlowFrameMode(data)
   if mode then
@@ -317,11 +334,60 @@ function Display.AnchorToContent(container, point, region, relativePoint, x, y)
   return anchor == region
 end
 
--- Where this display's content is drawn from: its start frame in a Modern
--- Aura Group, else the region itself.
+-- ForeverAuras: row layout ("Use old row layout", Modern Aura Group Settings). A group-owned row
+-- ("group") starts at the group's own anchor point, as a Dynamic Group's
+-- children start at the group; a member's own X/Y Offset moves that
+-- member's content only (its content frame, FlowContent), never the row.
+-- In both modes the ordinary displays that cannot be copied (bars and the
+-- like) lead the row: a frame placed from a secret-length container must opt
+-- out of untrusted layout scripts, which a display's own frames do not, and
+-- a Centered row starts a secret distance back. The legacy row (nil) starts
+-- at the first display's own anchor and takes offsets relative to the first
+-- display. Imported groups keep the legacy row; new Modern Aura Groups get
+-- the group-owned one.
+function Display.FlowGroupOwned(group)
+  return group ~= nil and group.blizzardFlowOrigin == "group"
+end
+
+-- The frame and point a group-owned row starts from: the group's region at
+-- its own anchor point (its selfPoint corner sits on the anchor; the frame's
+-- size changes around it, as a Dynamic Group's does).
+local function RowOrigin(group)
+  local entry = Private.regions[group.id]
+  return entry and entry.region, group.selfPoint or "CENTER"
+end
+
+-- A member's content frame in a group-owned row: the same rectangle as its
+-- start frame, moved by the member's own X/Y Offset. Containers, the Missing
+-- look, samples and stand copies hang from it (ContentAnchor), so the offset
+-- moves the content and the chain, which runs through the start frames, does
+-- not see it. Made on demand; a locked one is replaced (FreshFrame).
+function Display.FlowContent(flow, region)
+  if not flow.content then
+    flow.content = OnPixels(CreateFrame("Frame", nil, region, "DisableUntrustedLayoutScriptsTemplate"))
+    flow.content:EnableMouse(false)
+  end
+  FreshFrame(flow, "content", "startSize", region)
+  return flow.content
+end
+
+local function PlaceContent(flow, ox, oy)
+  local content = flow.content
+  if not content or Busy(content) then return end
+  -- A child of the start frame, so it shows and hides with it (the editor
+  -- hides a stand's start frame while its preview stands in).
+  if content:GetParent() ~= flow.start and not InCombatLockdown() then content:SetParent(flow.start) end
+  content:ClearAllPoints()
+  content:SetPoint("TOPLEFT", flow.start, "TOPLEFT", ox or 0, oy or 0)
+  content:SetPoint("BOTTOMRIGHT", flow.start, "BOTTOMRIGHT", ox or 0, oy or 0)
+end
+
+-- Where this display's content is drawn from: its content frame in a
+-- group-owned row, its start frame in a legacy row, else the region itself.
 function Display.ContentAnchor(region)
   local native = region.blizzardAuraDisplay
-  return native and native.flow and native.flow.start or region
+  local flow = native and native.flow
+  return flow and (flow.content or flow.start) or region
 end
 
 -- Called by Apply before anything is laid out.
@@ -349,6 +415,23 @@ function Display.EnsureFlowStart(region, data)
   -- Until the chain is built, start where the region is.
   flow.start:ClearAllPoints()
   flow.start:SetPoint(flow.growth.start, region, flow.growth.start)
+  -- ForeverAuras: group-owned row: the content frame carries the display's
+  -- own offset (FlowContent); a legacy row draws from the start frame.
+  local hadContent = flow.content ~= nil
+  if Display.FlowGroupOwned(Display.FlowGroup(data)) then
+    Display.FlowContent(flow, region)
+    PlaceContent(flow, OwnOffset(data))
+    flow.contentOn = flow.start
+  elseif flow.content then
+    SetShown(flow.content, false)
+    flow.content = nil
+  end
+  -- The content anchor changed with the row mode: the containers must be
+  -- anchored again (RefreshUnits re-anchors an instance marked unanchored;
+  -- its anchor record names the region either way, so it would not notice).
+  if hadContent ~= (flow.content ~= nil) then
+    for _, instance in ipairs(native.instances or {}) do instance.anchored = false end
+  end
 end
 
 -- Called by Apply once the display's parts exist: records where the next
@@ -362,6 +445,13 @@ function Display.SetFlowEnd(region, data, presence)
   local _, spacing = Display.FlowGrowth(data)
   local width, height = Display.Dimensions(data)
   local showOn = Display.ShowOn(trigger)
+  -- ForeverAuras: group-owned row: only the aura containers hang from the
+  -- content frame (AnchorToContent) and so carry the display's own offset;
+  -- the Remaining Time text and the Missing presence container are measured
+  -- from the start frame and carry none. The chain takes the offset back off
+  -- only where it is (RechainFlow); taken off a presence end, a Missing
+  -- display's offset moved every member after it the other way.
+  flow.endInContent = false
   if flow.remain then
     -- The measured pixels back from the text's end (MeasureText), in the
     -- next display's units.
@@ -375,6 +465,7 @@ function Display.SetFlowEnd(region, data, presence)
     -- Several units are chained one after another; the last one ends the display.
     flow.endFrame, flow.endPoint = native.instances[#native.instances].container, g.listEnd
     flow.x, flow.y = g.pixel[1], g.pixel[2]
+    flow.endInContent = true
   else
     -- A fixed icon: Always, or a Total Duration list whose candidates overlap.
     flow.endFrame, flow.endPoint = flow.start, g.start
@@ -1296,6 +1387,13 @@ function ArrangeFlowPreviewNow(group)
   local groupEntry = Private.regions[group.id]
   local function Spaced(size) return Display.FlowSpacing(group, groupEntry and groupEntry.region, size) end
   local point, frameX, frameY = FramePosition(group)
+  -- ForeverAuras: group-owned row (FlowGroupOwned): the samples and ordinary
+  -- displays are lined up from the group's anchor in the group's order, each
+  -- member's own offset on that member only, as the live chain places them.
+  local owned = not framed and Display.FlowGroupOwned(group)
+  local originFrame, originPoint
+  if owned then originFrame, originPoint = RowOrigin(group) end
+  if owned and not originFrame then owned = false end
   for _, childID in ipairs(group.controlledChildren or {}) do
     local entry = Private.regions[childID]
     local region = entry and entry.region
@@ -1370,6 +1468,8 @@ function ArrangeFlowPreviewNow(group)
   local previous = {}
   -- The previous sample's own display offset per row key, taken back off (OwnOffset).
   local previousOwn = {}
+  -- The first display's own offset per row key, off a frame (see PlaceSamples).
+  local firstOwn = {}
   local onFrame = false
   -- A centred row starts half its length back, which can fall between two
   -- pixels; nothing here is secret, so the start is put on a whole pixel.
@@ -1418,14 +1518,25 @@ function ArrangeFlowPreviewNow(group)
   local function PlaceNormal(region)
     local normal = region.flowNormal
     local inRow = not g.shadow or normal.stand ~= nil
+    -- Group-owned row: the display's own offset moves it alone, so it is put
+    -- on and remembered for the next member to take back off.
+    local ownX, ownY = 0, 0
+    if owned then ownX, ownY = OwnOffset(normal.data) end
     if inRow and previous[""] then
       region:SetAnchor(g.start, previous[""], g.far)
       local gap = Spaced(along and previous[""]:GetWidth() or previous[""]:GetHeight())
       -- A preceding Modern sample's own offset is taken back off (OwnOffset),
       -- as the live row does; an ordinary display carries none itself.
       local back = previousOwn[""] or {0, 0}
-      region:SetOffset(g.sign[1] * gap - back[1], g.sign[2] * gap - back[2])
-      previousOwn[""] = nil
+      region:SetOffset(g.sign[1] * gap + ownX - back[1], g.sign[2] * gap + ownY - back[2])
+      previousOwn[""] = owned and {ownX, ownY} or nil
+    elseif inRow and owned then
+      -- First member: on the group's anchor.
+      local ox, oy = Offset("")
+      ox, oy = WholePixel(region, originFrame, originPoint, ox, oy)
+      region:SetAnchor(g.start, originFrame, originPoint)
+      region:SetOffset(ox + ownX, oy + ownY)
+      previousOwn[""] = {ownX, ownY}
     elseif inRow and g.shadow then
       local ox, oy = Offset("")
       ox, oy = WholePixel(region, normal.home, g.centerPoint, ox, oy)
@@ -1435,7 +1546,12 @@ function ArrangeFlowPreviewNow(group)
       region:SetAnchor(g.start, normal.home, g.start)
       region:SetOffset(0, 0)
     end
-    if inRow and not previous[""] then rowStart = region end
+    if inRow and not previous[""] then
+      rowStart = region
+      -- An ordinary first display's offset is the row's first offset too
+      -- (FlowOwnOffset), so a Modern sample after it adds the difference only.
+      firstOwn[""] = {OwnOffset(normal.data)}
+    end
     if inRow then previous[""] = region end
   end
   local function PlaceSamples(region)
@@ -1449,9 +1565,19 @@ function ArrangeFlowPreviewNow(group)
         local key = Key(sample)
         local frame = framed and PreviewFrame(group, sample.previewUnit or nil)
         local ox, oy = Offset(key)
-        -- Off a frame, the first display's place already carries its own offset.
-        if not framed and not previous[key] then ownX, ownY = 0, 0 end
-        ox, oy = ox + ownX, oy + ownY
+        -- Off a frame, offsets are relative to the first display's, as in the
+        -- live row (RowOffset): its place already carries its own offset, so
+        -- it adds none, and a later display moves by the difference from the
+        -- first's offset only, not by its whole offset again. The same
+        -- relative offset is what the next display (a Modern sample or an
+        -- ordinary display, PlaceNormal) takes back off.
+        local addX, addY = ownX, ownY
+        if not framed and not owned then
+          if not previous[key] then firstOwn[key] = {ownX, ownY} end
+          local first = firstOwn[key] or {0, 0}
+          addX, addY = ownX - first[1], ownY - first[2]
+        end
+        ox, oy = ox + addX, oy + addY
         -- The group's anchor point only places the row on a frame; on the
         -- screen the row sits on the first display's box, as the live auras do.
         local start, far = g.start, g.far
@@ -1463,7 +1589,12 @@ function ArrangeFlowPreviewNow(group)
         if previous[key] then
           local gap = Spaced(along and previous[key]:GetWidth() or previous[key]:GetHeight())
           local back = previousOwn[key] or {0, 0}
-          button:SetPoint(start, previous[key], far, g.sign[1] * gap + ownX - back[1], g.sign[2] * gap + ownY - back[2])
+          button:SetPoint(start, previous[key], far, g.sign[1] * gap + addX - back[1], g.sign[2] * gap + addY - back[2])
+        elseif owned then
+          -- Group-owned row: the first sample sits on the group's anchor, a
+          -- centred row half its length back from it.
+          ox, oy = WholePixel(button, originFrame, originPoint, ox, oy)
+          button:SetPoint(g.start, originFrame, originPoint, ox, oy)
         elseif frame then
           button:SetPoint(start, frame, point, frameX + ox, frameY + oy)
         elseif g.shadow then
@@ -1489,11 +1620,14 @@ function ArrangeFlowPreviewNow(group)
         onFrame = onFrame or frame ~= nil and frame ~= false
         if not framed and not previous[key] then rowStart = button end
         previous[key] = button
-        previousOwn[key] = {ownX, ownY}
+        previousOwn[key] = {addX, addY}
       end
     end
     if not moved then Display.RestorePreviewRegion(region) end
   end
+  -- Ordinary displays that are not copied lead the row (in both row modes:
+  -- they cannot hang from a secret-length container), then samples and
+  -- stands in the group's order.
   for _, childID in ipairs(group.controlledChildren or {}) do
     local entry = Private.regions[childID]
     local region = entry and entry.region
@@ -1511,7 +1645,22 @@ function ArrangeFlowPreviewNow(group)
       PlaceNormal(region)
     end
   end
-  if limit and Display.PreviewFlowClip then Display.PreviewFlowClip(group, g, rowStart, leadSteps, firstStep) end
+  -- Group-owned row: the cut starts at the group's anchor (a centred row
+  -- half the limit's window back, like the live cap), not at the first
+  -- sample, whose own offset moves the sample alone (see UpdateFlowClip).
+  local clipOrigin
+  if owned and rowStart and limit then
+    local ox, oy = 0, 0
+    if g.shadow and firstStep then
+      local window = (limit * firstStep - (lastSpacing[""] or spacing)) / 2
+      local px = PixelsPerUnit(groupRegionForHalf)
+      if px then window = math.floor(window * px + 0.5 + 0.001) / px end
+      ox, oy = -g.sign[1] * window, -g.sign[2] * window
+    end
+    ox, oy = WholePixel(rowStart, originFrame, originPoint, ox, oy)
+    clipOrigin = {originFrame, originPoint, ox, oy}
+  end
+  if limit and Display.PreviewFlowClip then Display.PreviewFlowClip(group, g, rowStart, leadSteps, firstStep, clipOrigin) end
   if onFrame and firstKey then
     local ox, oy = Offset(firstKey)
     local cx, cy = CrossOffset(group, g, cross[firstKey] or 0)
@@ -1660,9 +1809,10 @@ end
 function Display.FlowClipParent(data)
   local group = Display.FlowGroup(data)
   if not ClipWanted(group) or KeepsParent(data) then return end
-  -- With Centered growth only icons and texts join the row; the rest keep their own place.
+  -- With Centered growth only icons and texts join a legacy row; the rest keep
+  -- their own place. A group-owned row takes every display (FlowGroupOwned).
   local inRow = Display.Enabled(data) or Display.FlowNormal(data)
-    and (not GROWTH[GrowthKey(group)].shadow or Display.UsesStand ~= nil and Display.UsesStand(data))
+    and (Display.FlowGroupOwned(group) or not GROWTH[GrowthKey(group)].shadow or Display.UsesStand ~= nil and Display.UsesStand(data))
   if inRow then return EnsureClip(group) end
 end
 
@@ -1717,7 +1867,9 @@ local function LeadSteps(flows)
 end
 
 -- Centred: where the visible row starts, no further back than the limit.
-local function CapRowStart(group, g, flows, previous, combat, snapX, snapY)
+-- originFrame/originPoint: a group-owned row's start (RowOrigin); nil for the
+-- legacy row, which starts at the first display.
+local function CapRowStart(group, g, flows, previous, combat, snapX, snapY, originFrame, originPoint)
   if not previous or not ClipWanted(group) then return previous end
   local vertical = g.sign[1] == 0
   local rule = StretchRule(vertical)
@@ -1739,7 +1891,8 @@ local function CapRowStart(group, g, flows, previous, combat, snapX, snapY)
     end
   end
   local step, spacing = RowStep(group, g, flows)
-  local origin = flows[1].home or flows[1].region
+  local origin = originFrame or flows[1].home or flows[1].region
+  local centerPoint = originFrame and originPoint or g.centerPoint
   local back = WindowLength(Limit(group), {}, step, spacing) / 2
   -- A whole number of pixels, so the cap does not depend on engine rounding
   -- (the options preview caps its row the same way).
@@ -1748,7 +1901,7 @@ local function CapRowStart(group, g, flows, previous, combat, snapX, snapY)
   if not combat then cap.left:ClearAllPoints() end
   -- From the same whole-pixel centre the shadows start from (snapX, snapY),
   -- so a capped row starts on the pixel the options preview puts it on.
-  Place(cap.left, "TOPLEFT", origin, g.centerPoint, (vertical and 0 or -back) + (snapX or 0), (vertical and back or 0) + (snapY or 0))
+  Place(cap.left, "TOPLEFT", origin, centerPoint, (vertical and 0 or -back) + (snapX or 0), (vertical and back or 0) + (snapY or 0))
   if not combat then cap.joint:ClearAllPoints() end
   local function ToCap() return Place(cap.joint, rule.capPoint, cap.left, "TOPLEFT") end
   local function ToStart() return Place(cap.joint, rule.startPoint, previous.endFrame, previous.endPoint, previous.x, previous.y) end
@@ -1765,8 +1918,12 @@ end
 local function PixelNudge(clip, anchor, point, offsetX, offsetY)
   local factor = PixelUtil and PixelUtil.GetPixelToUIUnitFactor and PixelUtil.GetPixelToUIUnitFactor()
   if not factor or factor <= 0 then return 0, 0 end
+  -- ForeverAuras: the anchor's point may be a centre (a group-owned row
+  -- starts at the group's CENTER), read as such.
   local ok, x, y = pcall(function()
-    return point:find("LEFT") and anchor:GetLeft() or anchor:GetRight(), point:find("TOP") and anchor:GetTop() or anchor:GetBottom()
+    local cx, cy = anchor:GetCenter()
+    return point:find("LEFT") and anchor:GetLeft() or point:find("RIGHT") and anchor:GetRight() or cx,
+      point:find("TOP") and anchor:GetTop() or point:find("BOTTOM") and anchor:GetBottom() or cy
   end)
   if not ok or type(x) ~= "number" or type(y) ~= "number" or issecretvalue(x) or issecretvalue(y) then return 0, 0 end
   local anchorScale, clipScale = anchor:GetEffectiveScale(), clip:GetEffectiveScale()
@@ -1777,7 +1934,10 @@ local function PixelNudge(clip, anchor, point, offsetX, offsetY)
   return Nudge(x, offsetX), Nudge(y, offsetY)
 end
 
-local function SetWindow(clip, g, point, anchor, length, width, height, spacing)
+-- relativePoint, ox, oy: where on the anchor the row starts, when not the
+-- clip's own corner (a group-owned row starts at the group's anchor point).
+local function SetWindow(clip, g, point, anchor, length, width, height, spacing, relativePoint, ox, oy)
+  relativePoint, ox, oy = relativePoint or point, ox or 0, oy or 0
   -- The cut ends at the last display's far edge, not after its spacing: a cut
   -- that reaches the next display shows that display's first pixel column
   -- (its border) when the edge falls between pixels. The length is rounded to
@@ -1788,9 +1948,9 @@ local function SetWindow(clip, g, point, anchor, length, width, height, spacing)
   if px then after = math.floor(after * px + 0.5) / px end
   local horizontal = point:find("LEFT") and -1 or 1
   local vertical = point:find("TOP") and 1 or -1
-  local nudgeX, nudgeY = PixelNudge(clip, anchor, point, horizontal * CLIP_MARGIN, vertical * CLIP_MARGIN)
+  local nudgeX, nudgeY = PixelNudge(clip, anchor, relativePoint, horizontal * CLIP_MARGIN + ox, vertical * CLIP_MARGIN + oy)
   clip:ClearAllPoints()
-  clip:SetPoint(point, anchor, point, horizontal * CLIP_MARGIN + nudgeX, vertical * CLIP_MARGIN + nudgeY)
+  clip:SetPoint(point, anchor, relativePoint, horizontal * CLIP_MARGIN + ox + nudgeX, vertical * CLIP_MARGIN + oy + nudgeY)
   if g.sign[1] ~= 0 then
     clip:SetSize(after, height + 2 * CLIP_MARGIN)
   else
@@ -1798,14 +1958,22 @@ local function SetWindow(clip, g, point, anchor, length, width, height, spacing)
   end
 end
 
--- Options preview: the samples are placed in Lua, so the cut starts at the first one.
-function Display.PreviewFlowClip(group, g, rowStart, leadSteps, step)
+-- Options preview: the samples are placed in Lua, so the cut starts at the
+-- first one. origin: a group-owned row's start (frame, point, x, y; see
+-- ArrangeFlowPreviewNow), where the live cut starts too: the first sample's
+-- own offset moves the sample, not the cut.
+function Display.PreviewFlowClip(group, g, rowStart, leadSteps, step, origin)
   local clip = clips[group.id]
   if not clip or not ClipWanted(group) or not rowStart or not step or Busy(clip) then return end
   -- The same whole-pixel gap the samples are spaced by.
   local spacing = Display.FlowSpacing(group, rowStart, (g.sign[1] ~= 0) and rowStart:GetWidth() or rowStart:GetHeight())
-  SetWindow(clip, g, g.start, rowStart, WindowLength(Limit(group), leadSteps, step, spacing),
-    rowStart:GetWidth() or 0, rowStart:GetHeight() or 0, spacing)
+  local length = WindowLength(Limit(group), leadSteps, step, spacing)
+  if origin then
+    SetWindow(clip, g, g.start, origin[1], length, rowStart:GetWidth() or 0, rowStart:GetHeight() or 0, spacing,
+      origin[2], origin[3], origin[4])
+  else
+    SetWindow(clip, g, g.start, rowStart, length, rowStart:GetWidth() or 0, rowStart:GetHeight() or 0, spacing)
+  end
 end
 
 function Display.UpdateFlowClip(group, flows, g)
@@ -1846,10 +2014,24 @@ function Display.UpdateFlowClip(group, flows, g)
   -- The options preview places its own cut.
   if not first or WeakAuras.IsOptionsOpen() then return end
   local step, spacing, width, height = RowStep(group, g, flows)
+  local owned = Display.FlowGroupOwned(group)
   local length = WindowLength(Limit(group), g.shadow and {} or LeadSteps(flows), step, spacing)
   local cap = caps[group.id]
   local origin, point = first.home or first.region, g.start
   if g.shadow and cap then origin, point = cap.left, "TOPLEFT" end
+  if owned and not (g.shadow and cap) then
+    -- ForeverAuras: a group-owned row starts at the group's anchor point
+    -- (RowOrigin), where the cut starts too. The cut is an ordinary frame, so
+    -- it cannot be anchored to a member's start frame, which follows
+    -- secret-length containers (the same client rule as for bars); the group
+    -- region is a plain frame.
+    local originFrame, originPoint = RowOrigin(group)
+    if originFrame then
+      local snapX, snapY = SnapOffset(originFrame, originPoint)
+      SetWindow(clip, g, g.start, originFrame, length, width, height, spacing, originPoint, snapX, snapY)
+      return
+    end
+  end
   SetWindow(clip, g, point, origin, length, width, height, spacing)
 end
 
@@ -1877,9 +2059,12 @@ local function FlushQueued()
   for group in pairs(groups) do
     lastFlush[group] = now
     Private.StartProfileSystem("aura (modern) - group layout: rechains")
-    Display.RechainFlow(group)
+    -- ForeverAuras: one group's failing layout is reported and the others
+    -- still chain; an error here used to leave the flag below set, so no
+    -- later rechain (visibility, timers, load batches) did anything.
+    xpcall(Display.RechainFlow, geterrorhandler(), group)
     Private.StopProfileSystem("aura (modern) - group layout: rechains")
-    if WeakAuras.IsOptionsOpen() then Display.ArrangeFlowPreview(group) end
+    if WeakAuras.IsOptionsOpen() then xpcall(Display.ArrangeFlowPreview, geterrorhandler(), group) end
   end
   flushing = false
   -- Work queued by the rechain itself (a member it showed or hidden) waits
@@ -1980,7 +2165,10 @@ local function NormalWarning(normal, message)
   if uid then Private.AuraWarnings.UpdateWarning(uid, "flow_normal", message and "warning" or nil, message) end
 end
 
-function PlaceNormalRegion(region, normal, origin, x, y)
+-- ForeverAuras: originPoint names the point of the origin frame the region's
+-- start corner goes on (a group-owned row chains an ordinary display to the
+-- previous member's end, which can be any corner); a legacy row uses g.start.
+function PlaceNormalRegion(region, normal, origin, x, y, originPoint)
   local g = normal.flow.growth
   if not g then return end
   if Busy(region) then return end
@@ -2001,7 +2189,7 @@ function PlaceNormalRegion(region, normal, origin, x, y)
     return
   end
   region:SetOffset(x or 0, y or 0)
-  region:SetAnchor(g.start, origin or normal.home, g.start)
+  region:SetAnchor(g.start, origin or normal.home, originPoint or g.start)
 end
 
 function Display.AnchorFlowNormal(data, region, anchorParent, anchorPoint)
@@ -2036,6 +2224,17 @@ function Display.AnchorFlowNormal(data, region, anchorParent, anchorPoint)
   end
   Place(normal.home, data.selfPoint or "CENTER", anchorParent, anchorPoint or "CENTER", data.xOffset or 0, data.yOffset or 0)
   local g = GROWTH[group.blizzardFlowGrowth] or GROWTH.RIGHT
+  -- ForeverAuras: group-owned row: the content frame carries the display's
+  -- own offset, and a stand's copies draw in it (SecretAuraStand.lua), so it
+  -- exists, or is gone, before the stand is linked below.
+  if Display.FlowGroupOwned(group) then
+    Display.FlowContent(normal.flow, region)
+    PlaceContent(normal.flow, OwnOffset(data))
+    normal.flow.contentOn = normal.flow.start
+  elseif normal.flow.content then
+    SetShown(normal.flow.content, false)
+    normal.flow.content = nil
+  end
   if Display.UsesStand and Display.UsesStand(data) then
     if not xpcall(function() Display.EnsureStand(region, normal) end, geterrorhandler()) then
       Display.ReleaseStand(normal)
@@ -2102,6 +2301,14 @@ function Display.RechainFlow(group)
   if combat then afterCombat[group] = true end
   local flows, modernFlows = {}, {}
   local g = GROWTH[group.blizzardFlowGrowth] or GROWTH.RIGHT
+  -- ForeverAuras: a group-owned row (FlowGroupOwned) starts at the group's
+  -- own anchor and chains every member in the group's order; ordinary
+  -- displays join the chain like the rest (also with Centered growth), and
+  -- the chain reads no member's own offset (their content frames carry it).
+  local owned = Display.FlowGroupOwned(group)
+  local originFrame, originPoint
+  if owned then originFrame, originPoint = RowOrigin(group) end
+  if owned and not originFrame then owned = false end
   -- Each child's own region, then its clones (multi-state triggers) in a stable order.
   local members = {}
   for _, childID in ipairs(group.controlledChildren or {}) do
@@ -2127,11 +2334,15 @@ function Display.RechainFlow(group)
       flow.region = region
       flow.stand = flow.home and normal.stand and normal.stand.active or nil
       if flow.stand then flow.normal = normal end
+      -- Both row modes: ordinary displays that cannot be copied lead the row
+      -- (see FlowGroupOwned), then every other member in the group's order.
+      -- A Centered row starts a secret distance back (the shadows), where no
+      -- ordinary display can be placed: such a display keeps its own position.
       if not flow.home or flow.stand then
         modernFlows[#modernFlows + 1] = flow
         if flow.stand then NormalWarning(normal, nil); Display.SyncStandSecure(region, normal); PlaceNormalRegion(region, normal) end
       elseif g.shadow then
-        NormalWarning(normal, L["With Centered growth, only icons and texts line up. This display keeps its own position."])
+        NormalWarning(normal, L["With Centered growth this display keeps its own position: only icons and texts join a centred row (with the old row layout off, also textures, bars and progress textures)."])
         PlaceNormalRegion(region, normal)
       else
         NormalWarning(normal, nil)
@@ -2144,7 +2355,11 @@ function Display.RechainFlow(group)
   -- Centred: the shadows run backwards from the first display's centre point,
   -- and the visible row starts where they end, half a spacing on.
   local previous, shadowEnd
-  local snapX, snapY = SnapOffset(flows[1] and (flows[1].home or flows[1].region), g.shadow and g.centerPoint or g.start)
+  -- The row's centre (Centered growth) or start corner: the group's anchor
+  -- for a group-owned row, else the first display's own frame.
+  local rowFrame = owned and originFrame or flows[1] and (flows[1].home or flows[1].region)
+  local rowPoint = owned and originPoint or (g.shadow and g.centerPoint or g.start)
+  local snapX, snapY = SnapOffset(rowFrame, rowPoint)
   if g.shadow and flows[1] then
     local firstRegion = flows[1].region
     local spacing = Display.FlowSpacing(group, firstRegion, 0) - 0
@@ -2155,14 +2370,14 @@ function Display.RechainFlow(group)
         local start = flow.shadowStart
         if combat then
           if shadowEnd then Place(start, g.shadow.start, shadowEnd[1], shadowEnd[2], shadowEnd[3], shadowEnd[4])
-          else Place(start, g.shadow.start, flows[1].home or flows[1].region, g.centerPoint, snapX, snapY) end
+          else Place(start, g.shadow.start, rowFrame, rowPoint, snapX, snapY) end
           local ok, chained = pcall(ChainShadows, flow)
           if ok then shadowEnd = chained end
         else
           start:ClearAllPoints()
           if not (shadowEnd and Place(start, g.shadow.start, shadowEnd[1], shadowEnd[2], shadowEnd[3], shadowEnd[4])) then
             start:ClearAllPoints()
-            start:SetPoint(g.shadow.start, flows[1].home or flows[1].region, g.centerPoint, snapX, snapY)
+            start:SetPoint(g.shadow.start, rowFrame, rowPoint, snapX, snapY)
           end
           shadowEnd = ChainShadows(flow)
         end
@@ -2173,7 +2388,7 @@ function Display.RechainFlow(group)
       -- of units after the shadows, so every icon lands on the pixel grid.
       previous = {endFrame = shadowEnd[1], endPoint = shadowEnd[2],
         x = shadowEnd[3] + g.sign[1] * halfSpacing, y = shadowEnd[4] + g.sign[2] * halfSpacing}
-      previous = CapRowStart(group, g, flows, previous, combat, snapX, snapY)
+      previous = CapRowStart(group, g, flows, previous, combat, snapX, snapY, owned and originFrame or nil, owned and originPoint or nil)
     end
   end
   local origin, lead = nil, 0
@@ -2182,14 +2397,85 @@ function Display.RechainFlow(group)
     if not combat then
       local before = flow.start
       FreshFrame(flow, "start", "startSize", region)
+      -- ForeverAuras: group-owned row: the content frame follows the start
+      -- frame (replaced with it, or replaced itself when locked) and carries
+      -- the member's own offset; a replaced one is noted so what hung from
+      -- the old frame is made again below, like a replaced start frame.
+      if owned and flow.content then
+        local contentBefore = flow.content
+        FreshFrame(flow, "content", "startSize", region)
+        if flow.content ~= contentBefore or flow.start ~= flow.contentOn then
+          PlaceContent(flow, OwnOffset(FlowData(flow)))
+          flow.contentOn = flow.start
+          if flow.content ~= contentBefore then flow.contentReplaced = true end
+        end
+      end
       -- ForeverAuras: a stand's copies are children of the chain frame; with
       -- the frame replaced they stayed on the abandoned one while the row
       -- placed the new, empty frame. The stand is rebuilt on the new frame.
-      if flow.start ~= before and flow.stand and flow.normal and Display.RefreshStand then
+      if (flow.start ~= before or flow.contentReplaced) and flow.stand and flow.normal and Display.RefreshStand then
+        flow.contentReplaced = nil
         Display.RefreshStand(region)
+      elseif (flow.start ~= before or flow.contentReplaced) and not flow.home then
+        flow.contentReplaced = nil
+        -- ForeverAuras: a Modern display's containers, Missing look and
+        -- samples hang from its start frame, and its anchor record names the
+        -- region, not the frame, so a replaced frame was never noticed: the
+        -- content stayed on the abandoned frame while the row placed the new,
+        -- empty one. The display is built again on the new frame, next frame
+        -- (not inside this chain), out of combat (the replacement only runs
+        -- then).
+        local native = region.blizzardAuraDisplay
+        if native and native.active and native.data and Display.Apply and not native.rebuildQueued then
+          native.rebuildQueued = true
+          C_Timer.After(0, function()
+            native.rebuildQueued = nil
+            -- Combat begun since: Apply itself defers a display that already
+            -- has instances until restrictions end (its pending set), so the
+            -- rebuild is kept rather than dropped; the frame stays replaced
+            -- and no later chain would ask again.
+            if native.active and region.blizzardAuraDisplay == native then
+              Display.Apply(region, native.data)
+            end
+          end)
+        end
       end
     end
-    if flow.home and not flow.stand then
+    if owned then
+      -- ForeverAuras: group-owned row. A leading ordinary display's start
+      -- frame and region go on the group's anchor, a running lead along;
+      -- every other member's start frame goes on the previous member's end.
+      -- No member offset moves the chain: an ordinary display's offset is on
+      -- its region only, and a Modern display's or stand's on its content
+      -- frame (PlaceContent), whose offset is taken back off when the next
+      -- member hangs from an end that lives in that content (the last aura
+      -- container, SetFlowEnd; not the Missing presence or the Remaining
+      -- Time text, which are measured from the start frame).
+      local locked = combat and flow.stand and Display.StandLocked(flow.normal)
+      if flow.home and not flow.stand then
+        local x, y = g.sign[1] * lead, g.sign[2] * lead
+        if not combat then flow.start:ClearAllPoints() end
+        Place(flow.start, g.start, originFrame, originPoint, x + snapX, y + snapY)
+        local ox, oy = OwnOffset(flow.normal.data)
+        PlaceNormalRegion(region, flow.normal, originFrame, x + snapX + ox, y + snapY + oy, originPoint)
+        lead = lead + math.abs(flow.x) + math.abs(flow.y)
+        previous = flow
+      elseif not locked then
+        if not combat then flow.start:ClearAllPoints() end
+        local px, py = 0, 0
+        if previous and previous.region and previous.content and previous.endInContent then
+          px, py = OwnOffset(FlowData(previous))
+        end
+        local chained = previous and Place(flow.start, g.start, previous.endFrame, previous.endPoint, previous.x - px, previous.y - py)
+        if not chained then
+          if not combat then flow.start:ClearAllPoints() end
+          Place(flow.start, g.start, originFrame, originPoint, snapX, snapY)
+        end
+        previous = flow
+      else
+        previous = flow
+      end
+    elseif flow.home and not flow.stand then
       origin = origin or flow.home
       local x, y = g.sign[1] * lead, g.sign[2] * lead
       if not combat then flow.start:ClearAllPoints() end

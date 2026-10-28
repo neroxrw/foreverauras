@@ -52,11 +52,34 @@ end
 local observed = setmetatable({}, {__mode = "k"})
 local observedViewers = setmetatable({}, {__mode = "k"})
 local nativeRefreshQueued = false
+-- ForeverAuras: see CDMCatalog. True when the current catalog was built
+-- without the layout and a viewer frame now exists for an entry whose
+-- placement it does not know.
+function Private.CDMCatalogStale()
+  local catalog = Private.cdmCatalogForDebug and Private.cdmCatalogForDebug()
+  if not catalog or not (Private.cdmNoLayoutCatalogs and Private.cdmNoLayoutCatalogs[catalog]) then return false end
+  for _, name in ipairs(viewerNames) do
+    local viewer = _G[name]
+    local pool = viewer and viewer.itemFramePool
+    if pool and pool.EnumerateActive then
+      for frame in pool:EnumerateActive() do
+        local id = Number(frame.cooldownID)
+        local entry = id and catalog[id]
+        if entry and entry.displayed == nil then return true end
+      end
+    end
+  end
+  return false
+end
+
 local function NativeRefresh()
   if nativeRefreshQueued then return end
   nativeRefreshQueued = true
   C_Timer.After(0, function()
     nativeRefreshQueued = false
+    -- A frame for an entry the catalog could not place: the catalog is
+    -- dropped so this refresh builds it again (CooldownViewerTrigger.lua).
+    if Private.CDMCatalogStale() and Private.InvalidateCDMCatalog then Private.InvalidateCDMCatalog() end
     if Private.ScanEvents then Private.ScanEvents("FA_CDM_REFRESH") end
   end)
 end
@@ -290,11 +313,17 @@ function Private.CDMFrames()
 
     if viewer and hooksecurefunc and not observedViewers[viewer] then
       observedViewers[viewer] = true
-      -- Observe new buff frames before Blizzard assigns their aura, including hidden entries.
+      -- Observe new frames before Blizzard assigns their aura or cooldown,
+      -- including hidden entries, on every viewer. ForeverAuras: a cooldown
+      -- frame acquired by the Essential or Utility viewer could finish its
+      -- first refresh before anything observed it, and a catalog that did not
+      -- know its placement stood until another native callback; the
+      -- acquisition itself now queues the refresh that checks the catalog
+      -- (NativeRefresh, CDMCatalogStale).
+      if type(viewer.OnAcquireItemFrame) == "function" then
+        hooksecurefunc(viewer, "OnAcquireItemFrame", function(_, frame) Observe(frame); NativeRefresh() end)
+      end
       if name == "BuffIconCooldownViewer" or name == "BuffBarCooldownViewer" then
-        if type(viewer.OnAcquireItemFrame) == "function" then
-          hooksecurefunc(viewer, "OnAcquireItemFrame", function(_, frame) Observe(frame) end)
-        end
         if type(viewer.RefreshData) == "function" then hooksecurefunc(viewer, "RefreshData", NativeRefresh) end
       end
       for _, method in ipairs({"OnUnitAura", "OnPlayerTargetChanged", "RefreshActiveFramesForTargetChange"}) do
@@ -338,6 +367,13 @@ function Private.CDMCatalog()
   -- catalogs of its own, which must not clear the triggers' note.
   Private.cdmIncompleteCatalogs = Private.cdmIncompleteCatalogs or setmetatable({}, {__mode = "k"})
   if (layout == nil or next(layout) == nil) and next(frames) == nil then Private.cdmIncompleteCatalogs[catalog] = true end
+  -- ForeverAuras: without the layout, an entry's placement is known only
+  -- through a viewer frame; one frame makes the catalog complete while the
+  -- other entries stay unknown. Noted, so a frame arriving later for such an
+  -- entry can invalidate the catalog (CDMCatalogStale, from the viewer's
+  -- refresh hook) instead of its trigger staying empty until a refresh event.
+  Private.cdmNoLayoutCatalogs = Private.cdmNoLayoutCatalogs or setmetatable({}, {__mode = "k"})
+  if layout == nil or next(layout) == nil then Private.cdmNoLayoutCatalogs[catalog] = true end
   for _, category in pairs(Enum.CooldownViewerCategory) do
     if type(category) == "number" and category >= 0 then categories[category] = true end
   end

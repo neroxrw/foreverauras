@@ -215,7 +215,7 @@ function Editor.AddOptions(options, data, triggernum)
     -- As in Aura (Legacy): the trigger is inactive while its target, focus or
     -- pet does not exist (SecretAuraTrigger.lua), unless this is ticked.
     options.unitExists = {type = "toggle", name = L["Show If Unit Does Not Exist"], order = 71.3, width = WeakAuras.doubleWidth,
-      desc = L["Keep this trigger active while there is no such unit. Otherwise it is inactive then, so other triggers can supply the display."],
+      desc = L["Ticked, this display stays as it is while there is no such unit. Unticked, it is hidden while the unit does not exist."],
       hidden = function()
         local unit = trigger.unit
         return not (unit == "target" or unit == "focus" or unit == "pet" or unit == "targettarget" or unit == "focustarget" or unit == "pettarget" or unit == "member")

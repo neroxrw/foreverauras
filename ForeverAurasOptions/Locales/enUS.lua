@@ -971,7 +971,6 @@ WeakAuras will always run custom grow code if you include 'changed' in this list
 	L["Zoom Out"] = "Zoom Out"
 
 -- ForeverAuras: Aura (Modern), CDM and options window
-L["In combat the game forbids addon changes to a live aura icon, so while the aura is shown this condition takes effect when combat ends. The Missing look is the addon's own and follows it at once. Only an 'Aura Active' condition on its own changes the live icon during combat."] = "In combat the game forbids addon changes to a live aura icon, so while the aura is shown this condition takes effect when combat ends. The Missing look is the addon's own and follows it at once. Only an 'Aura Active' condition on its own changes the live icon during combat."
 L["This display is in an Aura (Modern) group, where the fallback is not available."] = "This display is in an Aura (Modern) group, where the fallback is not available."
 L["This display is anchored to unit frames or nameplates, where the fallback is not available."] = "This display is anchored to unit frames or nameplates, where the fallback is not available."
 L["An Aura (Modern) trigger draws the display itself, so Dynamic Information must come from it. To show another trigger's timer while its aura filters are not met, use \"When Aura (Modern) Filters Are Not Met, Use\" below."] = "An Aura (Modern) trigger draws the display itself, so Dynamic Information must come from it. To show another trigger's timer while its aura filters are not met, use \"When Aura (Modern) Filters Are Not Met, Use\" below."
@@ -1077,7 +1076,6 @@ L["Ignored Spell ID"] = "Ignored Spell ID"
 L["Include dispel types"] = "Include dispel types"
 L["Include nameplate-only auras"] = "Include nameplate-only auras"
 L["Keep border thickness and offset in screen pixels, regardless of UI or parent scale. Use a size of 1 for a one-pixel border."] = "Keep border thickness and offset in screen pixels, regardless of UI or parent scale. Use a size of 1 for a one-pixel border."
-L["Keep this trigger active while there is no such unit. Otherwise it is inactive then, so other triggers can supply the display."] = "Keep this trigger active while there is no such unit. Otherwise it is inactive then, so other triggers can supply the display."
 L["Layout"] = "Layout"
 L["Legacy Auras rarely function in combat as most are Blizzard-controlled."] = "Legacy Auras rarely function in combat as most are Blizzard-controlled."
 L["Maximum auras"] = "Maximum auras"
@@ -1129,7 +1127,6 @@ L["Spell IDs come from the Spell List |cffffd100%s|r, set by this pack's backend
 L["Spell Selection Filters"] = "Spell Selection Filters"
 L["Spell count checks:"] = "Spell count checks:"
 L["Spells must be active in the CDM to be displayed. Type /cdm and add them."] = "Spells must be active in the CDM to be displayed. Type /cdm and add them."
-L["|cffffffffNote: Trigger Always Active in combat|r (the aura is secret then; Blizzard shows the display)"] = "|cffffffffNote: Trigger Always Active in combat|r (the aura is secret then; Blizzard shows the display)"
 L["Stagger value checks and calculations:"] = "Stagger value checks and calculations:"
 L["Start a new row after this many auras. 0 keeps one row. Not used for several units on the screen."] = "Start a new row after this many auras. 0 keeps one row. Not used for several units on the screen."
 L["Style the glow on the anchored unit frame."] = "Style the glow on the anchored unit frame."
