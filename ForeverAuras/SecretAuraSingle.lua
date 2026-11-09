@@ -3296,7 +3296,10 @@ end
 -- a unit's auras absent for a moment before they arrive again, and a Show On
 -- Missing look flashed for that moment. From the start of a loading screen
 -- until a second after PLAYER_ENTERING_WORLD such a look is veiled (the clip's
--- alpha, like a unit that does not exist). A clip the client will not let addon
+-- alpha, like a unit that does not exist). Some loading screens end without
+-- PLAYER_ENTERING_WORLD (a Hearthstone or a layer change on Forever), so a
+-- veil still on when the loading screen ends lifts a second after that end
+-- instead of staying on until /reload. A clip the client will not let addon
 -- code touch right now (combat) is tried again each second, a limited number of
 -- times, so a veil never outlives combat.
 local settling = false
@@ -3345,6 +3348,7 @@ end
 local settleEvents = CreateFrame("Frame")
 settleEvents:RegisterEvent("LOADING_SCREEN_ENABLED")
 settleEvents:RegisterEvent("PLAYER_ENTERING_WORLD")
+settleEvents:RegisterEvent("LOADING_SCREEN_DISABLED")
 settleEvents:RegisterEvent("PLAYER_REGEN_ENABLED")
 settleEvents:RegisterEvent("ADDON_RESTRICTION_STATE_CHANGED")   -- (1.2.9) the suspended list timers
 settleEvents:SetScript("OnEvent", function(_, event)
@@ -3359,11 +3363,14 @@ settleEvents:SetScript("OnEvent", function(_, event)
     Display.ResumeListTimers()   -- (1.2.9)
     return
   end
+  -- The end of a loading screen only lifts a veil still on; one that
+  -- PLAYER_ENTERING_WORLD already lifted is not put back.
+  if event == "LOADING_SCREEN_DISABLED" and not settling then return end
   settleGeneration = settleGeneration + 1
   settleRetries = 0
   settling = true
   Display.SettleMissing()
-  if event == "PLAYER_ENTERING_WORLD" then
+  if event == "PLAYER_ENTERING_WORLD" or event == "LOADING_SCREEN_DISABLED" then
     local generation = settleGeneration
     C_Timer.After(SETTLE_DELAY, function()
       -- A later loading screen owns the veil now.
