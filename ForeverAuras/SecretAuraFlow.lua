@@ -2566,6 +2566,26 @@ function Display.RelinkFlowUnits(group)
       -- The display's own X/Y Offset moves its part of each unit's row only
       -- (OwnOffset): the next display's anchor takes it back off.
       local ox, oy = OwnOffset(native.data)
+      -- ForeverAuras: on unit frames the container hangs under the frame and
+      -- takes its scale (RefreshUnits, anchorFrameParent), while the offsets
+      -- of the frame-point start below are in the display's own units, as
+      -- the preview applies them to a frame under the display
+      -- (ArrangeFlowPreview). On a group scaled 1.2 over frames at 1.0, a
+      -- 6.67-unit centring step is 8 pixels on the display and 6.67 on the
+      -- frame, and a Missing icon sat a pixel right and up of its preview.
+      -- That start's offsets are converted to the container's units. Its own
+      -- scale may be secret; then the parent RefreshUnits gave it decides: the
+      -- unit frame on unit frames, the display otherwise (nameplates). Only
+      -- the frame-point start is converted (Astra's dev.1 review): the chained
+      -- and centred placements mix a container's one-pixel edge correction
+      -- (g.pixel, sh.pixel) into their offsets, which is not in display units.
+      local regionPx = PixelsPerUnit(entry.region)
+      local function ContainerUnits(container, frame, x, y)
+        local to = PixelsPerUnit(container)
+        if not to then to = (mode == "UNITFRAME" and native.data.anchorFrameParent ~= false and PixelsPerUnit(frame)) or regionPx end
+        if regionPx and to and regionPx ~= to then return x * regionPx / to, y * regionPx / to end
+        return x, y
+      end
       for _, instance in ipairs(native.instances) do
         local unit = instance.visible and instance.boundUnit
         if unit and not Busy(instance.container) then
@@ -2594,7 +2614,7 @@ function Display.RelinkFlowUnits(group)
                   - Display.FlowHalf(entry.region, Display.FlowSpacing(group, entry.region, 0))
               end
               container:ClearAllPoints()
-              container:SetPoint(start, frame, point, frameX - g.sign[1] * back + ox, frameY - g.sign[2] * back + oy)
+              container:SetPoint(start, frame, point, ContainerUnits(container, frame, frameX - g.sign[1] * back + ox, frameY - g.sign[2] * back + oy))
             end
           end
           last[unit] = {container, listEnd, g.pixel[1] - ox, g.pixel[2] - oy}

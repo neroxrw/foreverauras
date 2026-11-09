@@ -2047,6 +2047,118 @@ function Private.PrintLoadAllocation(event)
   end
 end
 
+-- ForeverAuras: paced loading after combat. Leaving combat can make a few
+-- dozen displays loadable at once (out-of-combat reminders), and loading them
+-- all in the PLAYER_REGEN_ENABLED frame is a visible hitch. Such a scan still
+-- decides every display's eligibility (and unloads) at once, but only the
+-- first few that need loading (first) are built and loaded in its frame; the
+-- rest are left in the "could be loaded" state, without a region, and are
+-- re-checked a few per frame (perFrame) over the next frames with the same
+-- event and arguments, loading through the normal scan. The event that made
+-- a deferred display loadable has passed by the time it loads, so the display
+-- is owed that event (owed[id] = a list of {n, event, arguments...}) until
+-- the scan that loads it, which delivers each once to that display only
+-- (GenericTrigger.LoadDisplays); the debt is cancelled when a scan finds the
+-- display no longer loadable or already loaded. A display waiting in the
+-- queue stays there when another scan reaches it and finds it loadable (the
+-- scans that follow a combat exit in the same frame, such as the secrets
+-- state change, otherwise loaded the whole queue at once); that scan's event
+-- is owed to it too. Nothing runs while the queue is empty. Login, zoning and
+-- entering combat are not paced. (Kept on Private: the file is at Lua's
+-- limit of 200 locals.)
+Private.pacedLoads = {
+  events = {PLAYER_REGEN_ENABLED = true},
+  first = 4,      -- loaded in the scan's own frame
+  perFrame = 4,   -- re-checked per frame afterwards
+  queue = {}, queued = {}, head = 1,
+  owed = {},      -- id -> list of {n = count, event, arguments...}
+  args = nil, scheduled = false, running = false,
+}
+
+function Private.pacedLoads.Run()
+  local paced = Private.pacedLoads
+  paced.scheduled = false
+  local batch, count = {}, 0
+  while count < paced.perFrame and paced.head <= #paced.queue do
+    local id = paced.queue[paced.head]
+    paced.head = paced.head + 1
+    -- Dropped from the set when an earlier scan reached it.
+    if paced.queued[id] then
+      paced.queued[id] = nil
+      if WeakAuras.GetData(id) then
+        batch[id] = true
+        count = count + 1
+      else
+        paced.owed[id] = nil
+      end
+    end
+  end
+  if paced.head > #paced.queue then
+    wipe(paced.queue)
+    paced.head = 1
+  end
+  if count > 0 then
+    local args = paced.args or {n = 0}
+    paced.running = true
+    Private.ScanForLoads(batch, unpack(args, 1, args.n))
+    paced.running = false
+  end
+  if #paced.queue > 0 then
+    paced.scheduled = true
+    C_Timer.After(0, Private.pacedLoads.Run)
+  else
+    paced.args = nil
+  end
+end
+
+-- For a scan that defers loads beyond the first few: its event and arguments,
+-- kept for the deferred displays. nil for every other scan.
+function Private.pacedLoads.Applies(event, ...)
+  local paced = Private.pacedLoads
+  if paced.running or event == nil or paced.events[event] ~= true then return nil end
+  return {n = select("#", ...) + 1, event, ...}
+end
+
+-- Records the latest owed event, keeping separate records for different units.
+-- Unreadable unit arguments stay separate because they cannot be compared.
+-- (Astra's dev.4 review: one unit's update must not replace another's.)
+function Private.pacedLoads.Owe(id, args)
+  if not args or args.n == 0 then return end
+  local paced = Private.pacedLoads
+  local list = paced.owed[id]
+  if not list then list = {}; paced.owed[id] = list end
+  local unitEvent = args[1]:match("^UNIT_") or Private.UnitEventList[args[1]]
+  for index, entry in ipairs(list) do
+    if entry[1] == args[1] and (not unitEvent or (not issecretvalue(entry[2]) and not issecretvalue(args[2]) and entry[2] == args[2])) then list[index] = args; return end
+  end
+  list[#list + 1] = args
+end
+
+-- Queues one display the scan found loadable but did not load. The display
+-- is taken out of the prewarm queue (PrewarmRegions): its batch builds it.
+function Private.pacedLoads.Defer(id, args)
+  local paced = Private.pacedLoads
+  prewarm[id] = nil
+  -- Events already owed stay owed (Astra's dev.3 review): a second paced
+  -- scan before the queue drained only adds or renews its own.
+  paced.Owe(id, args)
+  if not paced.queued[id] then
+    paced.queued[id] = true
+    paced.queue[#paced.queue + 1] = id
+  end
+  Private.HitchCount("display load paced")
+end
+
+-- Called once by the scan that deferred displays.
+function Private.pacedLoads.Schedule(args)
+  local paced = Private.pacedLoads
+  paced.args = args
+  if not paced.scheduled then
+    paced.scheduled = true
+    C_Timer.After(0, Private.pacedLoads.Run)
+  end
+end
+
 local function scanForLoadsImpl(toCheck, event, arg1, ...)
   if Private.IsOptionsProcessingPaused() or unloadingAllDisplays or sessionUnloaded then
     return;
@@ -2146,6 +2258,11 @@ local function scanForLoadsImpl(toCheck, event, arg1, ...)
   local parentsToCheck = {}
   wipe(toLoad);
   wipe(toUnload);
+  -- ForeverAuras: paced loading (above); loads accepted for this frame. A
+  -- scan that is not paced still carries its event for displays it leaves
+  -- waiting (Owe); none is made for a scan without an event.
+  local pacing, accepted, deferred = Private.pacedLoads.Applies(event, arg1, ...), 0, 0
+  local carried = event and not pacing and not Private.pacedLoads.running and {n = select("#", ...) + 2, event, arg1, ...} or nil
 
   -- Profiling breakdown of a load scan (no cost unless profiling runs).
   Private.StartProfileSystem("load: conditions")
@@ -2161,6 +2278,13 @@ local function scanForLoadsImpl(toCheck, event, arg1, ...)
     if (data and not data.controlledChildren) then
       local loadFunc = loadFuncs[id];
       local loadOpt = loadFuncsForOptions[id];
+      -- ForeverAuras: a display waiting for a paced load is decided here;
+      -- its own batch (running) takes it out of the queue, and so does any
+      -- scan that finds it not loadable (below). Another scan that finds it
+      -- loadable leaves it waiting (kept, below).
+      local paced = Private.pacedLoads
+      local waiting = paced.queued[id] == true
+      if waiting and paced.running then paced.queued[id] = nil; waiting = false end
       -- ForeverAuras: /fa loadmem measures each display's conditions.
       local rowStart, rowMem
       if Private.loadAllocation then rowStart, rowMem = debugprofilestop(), collectgarbage("count") end
@@ -2172,13 +2296,47 @@ local function scanForLoadsImpl(toCheck, event, arg1, ...)
         Private.loadAllocation[id] = {ms = rowMs, kb = rowKB}
       end
 
-      if(shouldBeLoaded and not loaded[id]) then
+      -- ForeverAuras: an event owed to a deferred display is kept only if it
+      -- loads now (GenericTrigger.LoadDisplays delivers it).
+      if not (shouldBeLoaded and not loaded[id]) then
+        if paced.owed[id] then paced.owed[id] = nil end
+        if waiting then paced.queued[id] = nil; waiting = false end
+      end
+
+      -- ForeverAuras: beyond the first few, a paced scan leaves the display
+      -- for a later frame (no region is built for it now); a display already
+      -- waiting is left to its batch by any other scan.
+      local pacedAway = false
+      if shouldBeLoaded and not loaded[id] then
+        if pacing and accepted >= paced.first then
+          pacedAway = true
+          deferred = deferred + 1
+          paced.Defer(id, pacing)
+        elseif waiting and not pacing then
+          pacedAway = true
+          paced.Owe(id, carried)
+          Private.HitchCount("display load kept paced")
+          if not paced.scheduled then deferred = deferred + 1 end
+        elseif waiting then
+          paced.queued[id] = nil
+        end
+      end
+      if pacedAway then
+        for parent in Private.TraverseParents(data) do
+          parentsToCheck[parent.id] = true
+        end
+      end
+
+      if(shouldBeLoaded and not loaded[id] and not pacedAway) then
         changed = changed + 1;
         toLoad[id] = true;
+        accepted = accepted + 1
         -- ForeverAuras: timed apart from the load functions, to tell a slow
         -- load condition from the regions built for auras loading now; both
-        -- counted for /fa phitch ("display loaded", "region created").
+        -- counted for /fa phitch ("display loaded", "region created"), and
+        -- the scan that loaded it is named in a capture.
         Private.HitchCount("display loaded")
+        if Private.HitchCounting() then Private.HitchCount("display loaded on " .. tostring(event or "scan")) end
         if not WeakAuras.GetRegion(id) then Private.HitchCount("region created") end
         Private.StartProfileSystem("load: ensure regions")
         Private.EnsureRegion(id)
@@ -2196,12 +2354,13 @@ local function scanForLoadsImpl(toCheck, event, arg1, ...)
           parentsToCheck[parent.id] = true
         end
       end
-      if(shouldBeLoaded) then
+      if(shouldBeLoaded and not pacedAway) then
         loaded[id] = true;
-      elseif(couldBeLoaded) then
+      elseif(couldBeLoaded or pacedAway) then
         loaded[id] = false;
-        -- ForeverAuras: its region is made ahead of time (PrewarmRegions).
-        if not WeakAuras.GetRegion(id) then QueuePrewarm(id) end
+        -- ForeverAuras: its region is made ahead of time (PrewarmRegions);
+        -- a paced display's is made when its batch loads it.
+        if not pacedAway and not WeakAuras.GetRegion(id) then QueuePrewarm(id) end
       else
         loaded[id] = nil;
       end
@@ -2211,6 +2370,11 @@ local function scanForLoadsImpl(toCheck, event, arg1, ...)
   Private.SpellKnownMemo(false)
   Private.StopProfileSystem("load: conditions")
   if not conditionsOk then error(conditionsErr, 0) end
+
+  -- ForeverAuras: the deferred displays are re-checked over the next frames.
+  if deferred > 0 then
+    Private.pacedLoads.Schedule(pacing or Private.pacedLoads.args)
+  end
 
   if(changed > 0 and not paused) then
     -- Dynamic groups holding the displays that load or unload sort and
@@ -2462,6 +2626,18 @@ local function EnsureAuraEnvironmentLifecycle(id)
 end
 
 local function UnloadAll()
+  -- ForeverAuras: a full unload ends pending paced loads and the events owed
+  -- to them (Private.pacedLoads), so closing the editor cannot replay an old
+  -- combat-end event. A scheduled callback is kept: it becomes inert, or
+  -- serves a queue made by a later combat exit. (Astra's dev.9 review.)
+  local paced = Private.pacedLoads
+  if paced then
+    wipe(paced.queue)
+    wipe(paced.queued)
+    wipe(paced.owed)
+    paced.head = 1
+    paced.args = nil
+  end
   -- Even though auras are collapsed, their finish animation can be running
   for id in pairs(runtimeActiveDisplays) do
     if Private.regions[id] and Private.regions[id].region then

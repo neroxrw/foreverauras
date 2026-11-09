@@ -3,7 +3,7 @@
 ## Title: ForeverAuras Templates
 ## Author: m33shoq, WeakAuras contributors
 ## X-Curse-Project-ID: 1703325
-## Version: 1.3.0
+## Version: 1.3.2
 ## X-License: GPL-2.0
 ## X-Copyright: ForeverAuras changes (C) 2026 ForeverAuras; WeakAuras (C) its contributors
 ## IconTexture: Interface\AddOns\ForeverAuras\Media\Textures\foreverauras_logo_64.tga
