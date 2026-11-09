@@ -141,6 +141,11 @@ local hitch = {active = false, threshold = 30, touched = {}, events = {}, counts
 function Private.HitchCount(name, n)
   if hitch.active then hitch.counts[name] = (hitch.counts[name] or 0) + (n or 1) end
 end
+-- ForeverAuras: whether a capture is running, for counters whose name is
+-- built on the spot (no string is made when nothing is listening).
+function Private.HitchCounting()
+  return hitch.active
+end
 
 -- Adds one finished measurement to the current frame's bucket for map[id]:
 -- its time, and the Lua memory it allocated (garbage drives the collector's

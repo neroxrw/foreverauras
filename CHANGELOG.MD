@@ -1,5 +1,10 @@
 # Changelog
 ## VERSIONS
+## 1.3.2
+- Leaving combat is smoother. Out-of-combat reminders used to all load in the frame the fight ended; now they load a few per frame, and nothing else running at that moment pulls the waiting ones in early.
+- Auras loaded this way still get every update that happened while they waited, exactly once. Re-entering combat or opening the options window mid-way cancels cleanly.
+- Icons on party and raid frames in a scaled Modern Aura Group now sit exactly where the preview shows them.
+
 ## 1.3.0
 - Fixed memory leak
 

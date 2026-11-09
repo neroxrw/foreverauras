@@ -974,44 +974,51 @@ end
 ---@param event string
 ---@param unit UnitToken
 ---@param ... any
+-- ForeverAuras: the dispatch of a unit event to a list of listeners
+-- (loaded_unit_events[unit][event], or a part of it: LoadDisplays delivers an
+-- owed unit event to one display), factored out of ScanUnitEvents unchanged.
+function Private.ScanUnitEventsInternal(event_list, event, unit, ...)
+  local inRaid = IsInRaid()
+  for id, triggers in pairs(event_list) do
+    Private.StartProfileAura(id);
+    Private.ActivateAuraEnvironment(id);
+    local updateTriggerState = false;
+    for triggernum, data in pairs(triggers) do
+      if inRaid and Private.multiUnitUnits.party[unit]
+      and events[id][triggernum].ignorePartyUnitsInRaid
+      and events[id][triggernum].ignorePartyUnitsInRaid[event]
+      then
+        -- If the unit is a group unit, we don't want to run the trigger for every party member
+      else
+        local delay = GenericTrigger.GetDelay(data)
+        if delay == 0 then
+          local allStates = WeakAuras.GetTriggerStateForTrigger(id, triggernum);
+          if (RunTriggerFunc(allStates, data, id, triggernum, event, unit, ...)) then
+            updateTriggerState = true;
+          end
+        else
+          Private.RunTriggerFuncWithDelay(delay, id, triggernum, data, event, unit, ...)
+        end
+      end
+    end
+    if (updateTriggerState) then
+      Private.UpdatedTriggerState(id);
+    end
+    Private.StopProfileAura(id);
+    Private.ActivateAuraEnvironment(nil);
+  end
+end
+
 function Private.ScanUnitEvents(event, unit, ...)
   -- All CDM triggers in one synchronous dispatch share catalog/frame discovery.
   -- Restore the outer snapshot for nested scans; later events always get fresh frames.
   local previousCDMBatch = BeginCDMBatch()
   Private.StartProfileSystem("generictrigger " .. event .. " " .. unit)
   local unit_list = loaded_unit_events[unit]
-  local inRaid = IsInRaid()
   if unit_list then
     local event_list = unit_list[event]
     if event_list then
-      for id, triggers in pairs(event_list) do
-        Private.StartProfileAura(id);
-        Private.ActivateAuraEnvironment(id);
-        local updateTriggerState = false;
-        for triggernum, data in pairs(triggers) do
-          if inRaid and Private.multiUnitUnits.party[unit]
-          and events[id][triggernum].ignorePartyUnitsInRaid
-          and events[id][triggernum].ignorePartyUnitsInRaid[event]
-          then
-            -- If the unit is a group unit, we don't want to run the trigger for every party member
-          else
-            local delay = GenericTrigger.GetDelay(data)
-            if delay == 0 then
-              local allStates = WeakAuras.GetTriggerStateForTrigger(id, triggernum);
-              if (RunTriggerFunc(allStates, data, id, triggernum, event, unit, ...)) then
-                updateTriggerState = true;
-              end
-            else
-              Private.RunTriggerFuncWithDelay(delay, id, triggernum, data, event, unit, ...)
-            end
-          end
-        end
-        if (updateTriggerState) then
-          Private.UpdatedTriggerState(id);
-        end
-        Private.StopProfileAura(id);
-        Private.ActivateAuraEnvironment(nil);
-      end
+      Private.ScanUnitEventsInternal(event_list, event, unit, ...)
     end
   end
   Private.StopProfileSystem("generictrigger " .. event .. " " .. unit)
@@ -1668,6 +1675,50 @@ function GenericTrigger.LoadDisplays(toLoad, loadEvent, ...)
   local loadUnit = ...
   if loadUnit and unitEventsToRegister[loadUnit] and unitEventsToRegister[loadUnit][loadEvent] then
     Private.ScanUnitEvents(loadEvent, ...);
+  end
+
+  -- ForeverAuras: a display whose load was paced (ForeverAuras.lua,
+  -- Private.pacedLoads) is owed the events that made it loadable or reached
+  -- it while it waited, which passed before it loaded, whichever scan loads
+  -- it now. Each owed event is delivered once, with its arguments, to that
+  -- display's own listeners for it; other listeners received the real event.
+  -- One is not delivered when this scan is for the same event, since the
+  -- replay above or the event's own dispatch covers the display then as in
+  -- 1.3.0; a paced batch is the exception, as its event has long passed,
+  -- unless this batch registered the event just now and the replay above
+  -- already reached it. An owed event whose first argument is a unit the
+  -- display listens to (loaded_unit_events) is delivered to that listener
+  -- set as well, as ScanUnitEvents would, under the same rule.
+  local paced = Private.pacedLoads
+  if paced and next(paced.owed) then
+    local owedListeners = {}
+    for id in pairs(toLoad) do
+      local owedList = paced.owed[id]
+      if owedList then
+        paced.owed[id] = nil
+        for _, owed in ipairs(owedList) do
+          local event, unit = owed[1], owed[2]
+          local sameScan = event == loadEvent
+          local deliver = not sameScan or (paced.running and not eventsToRegister[loadEvent])
+          local listeners = deliver and loaded_events[event]
+          if listeners and listeners[id] then
+            wipe(owedListeners)
+            owedListeners[id] = listeners[id]
+            Private.ScanEventsInternal(owedListeners, unpack(owed, 1, owed.n))
+          end
+          local unitListeners = type(unit) == "string" and loaded_unit_events[unit] and loaded_unit_events[unit][event]
+          if unitListeners and unitListeners[id] then
+            local sameUnitScan = sameScan and unit == loadUnit
+            local registeredNow = unitEventsToRegister[unit] and unitEventsToRegister[unit][event]
+            if not sameUnitScan or (paced.running and not registeredNow) then
+              wipe(owedListeners)
+              owedListeners[id] = unitListeners[id]
+              Private.ScanUnitEventsInternal(owedListeners, unpack(owed, 1, owed.n))
+            end
+          end
+        end
+      end
+    end
   end
 
   wipe(eventsToRegister);
