@@ -22,12 +22,21 @@
 --     borderSize = 2,             -- border thickness in pixels
 --     levelOffset = 5,            -- frame level above the frame
 --     enabled = true,
+--     owner = nil,                -- the display frame this overlay belongs to, only
+--                                 -- needed when the frame's parents cannot be read
+--                                 -- (the addon retires the overlay with that display)
 --   })
 --   overlay:SetSpellIDs({...}, {debuffs...}); overlay:SetUnit("target"); overlay:SetEnabled(false)
 --   overlay:SetBorderColor(r, g, b, a); overlay:SetTexture(texture, coords); overlay:Release()
+--   overlay:IsReleased() -- true once released, by the code that made it or by the
+--                        -- addon when the frame it covers is pooled or reassigned;
+--                        -- Release() returns false while a refused frame write is
+--                        -- still owed (the addon finishes it when restrictions end)
 --
 -- Returns nil and a message when the client refuses the slot.
 if not WeakAuras.IsLibsOK() then return end
+---@type string, Private
+local AddonName, Private = ...
 
 local SLOT = "Overlay"
 -- Debuffs need their own slot: a slot has one Blizzard filter.
@@ -36,6 +45,90 @@ local SLOT_HARMFUL = "OverlayHarmful"
 local NONE = {[1] = true}
 local Overlay = {}
 Overlay.__index = Overlay
+
+-- ForeverAuras (Astra's overlay-reuse review, dev.4/dev.5 follow-ups): the
+-- overlays drawn over each display, by the display frame that owns them, so
+-- the addon can retire them when it relinquishes that frame. A display's
+-- frame goes back to a shared pool when the display hides and is handed to
+-- the next display of that type; an overlay custom code left on it (its
+-- native slot still enabled, its countdown still bound) travelled with the
+-- frame and drew over the new owner's icon. Only overlays made through this
+-- API are tracked; other custom children are never touched.
+--
+-- Ownership is settled before anything is created: the parent's readable
+-- ancestry is walked to the display frame (a frame with a regionType), or
+-- the caller names the owner (options.owner, a display frame) for a parent
+-- whose ancestry cannot be read. With neither, the overlay is refused (nil
+-- and a message) before any native state exists, so no overlay can be live
+-- without a recorded owner and a pooled frame is never cleared by guess.
+-- Retirement is a set of frame writes; one the client refuses stays owned
+-- and pending (the overlay stays registered, its frame is held out of the
+-- pool by the caller) and is tried again from the existing restriction-end
+-- drain, never from a timer.
+local overlaysByOwner = setmetatable({}, {__mode = "k"})
+local pendingRetirements = {}
+
+local function IsDisplayFrame(frame)
+  return type(frame) == "table" and type(frame.regionType) == "string"
+end
+
+-- The display frame above a parent, or the parent itself when no display
+-- frame is above it (an overlay on a unit frame, say: the frame the caller
+-- would release); nil and "unreadable" when the ancestry cannot be read.
+local function ResolveOwner(parent)
+  local cursor, depth = parent, 0
+  while cursor and depth < 64 do
+    if IsDisplayFrame(cursor) then return cursor end
+    if type(cursor) ~= "table" or not cursor.GetParent then return parent end
+    local ok, up = pcall(cursor.GetParent, cursor)
+    if not ok then return nil, "unreadable" end
+    cursor = up
+    depth = depth + 1
+  end
+  return parent
+end
+
+local function Register(overlay, owner)
+  overlay.owner = owner
+  local list = overlaysByOwner[owner]
+  if not list then list = {}; overlaysByOwner[owner] = list end
+  list[#list + 1] = overlay
+end
+local function Unregister(overlay)
+  local list = overlaysByOwner[overlay.owner]
+  if not list then return end
+  for i = #list, 1, -1 do if list[i] == overlay then table.remove(list, i) end end
+  if #list == 0 then overlaysByOwner[overlay.owner] = nil end
+end
+
+-- Retires every overlay owned by the frame (a display frame, or the frame
+-- an overlay was drawn over directly). Returns true when the frame carries
+-- no live overlay any more, false when a retirement is still pending (the
+-- caller keeps the frame out of the shared pool until a later call returns
+-- true), and the number of overlays retired on this call.
+function Private.ReleaseAuraOverlays(frame)
+  if type(frame) ~= "table" then return true, 0 end
+  local list = overlaysByOwner[frame]
+  if not list then return true, 0 end
+  local retired, pending = 0, false
+  for i = #list, 1, -1 do
+    local overlay = list[i]
+    if overlay then
+      if overlay:Release() then retired = retired + 1 else pending = true end
+    end
+  end
+  return not pending, retired
+end
+
+-- Called from the restriction-end drain (BlizzardAuraDisplay.lua); finishes
+-- retirements the client refused earlier. Returns how many still wait.
+function Private.RetryAuraOverlayRetirements()
+  local waiting = 0
+  for overlay in pairs(pendingRetirements) do
+    if not overlay:Release() then waiting = waiting + 1 end
+  end
+  return waiting
+end
 
 local function SpellIDMap(list)
   local map, any = {}, false
@@ -131,6 +224,16 @@ function ForeverAuras.AuraOverlay(parent, options)
   options = options or {}
   if type(parent) ~= "table" or not parent.GetFrameLevel then return nil, "AuraOverlay needs a frame to draw over." end
   if not (CustomAuraContainerAuraProcessingPolicy and C_UnitAuras) then return nil, "This client has no native aura containers." end
+  -- ForeverAuras (Astra's dev.5 follow-up): the owner is known before any
+  -- native state is made; see the note above the registry.
+  local owner = ResolveOwner(parent)
+  if not owner then
+    if IsDisplayFrame(options.owner) then
+      owner = options.owner
+    else
+      return nil, "AuraOverlay cannot tell which display owns this frame right now; pass owner = <the display's frame> or try again later."
+    end
+  end
   local container = CreateFrame("AuraContainer", nil, parent, "CustomAuraContainerTemplate")
   container:SetEnabled(false)
   container:SetAuraProcessingPolicy(CustomAuraContainerAuraProcessingPolicy.None)
@@ -157,6 +260,7 @@ function ForeverAuras.AuraOverlay(parent, options)
   end
   container:SetUnit(overlay.unit)
   container:SetEnabled(overlay.enabled)
+  Register(overlay, owner)
   return overlay
 end
 
@@ -219,10 +323,45 @@ function Overlay:GetButton()
   return self.button
 end
 
+-- Whether the overlay is still usable; custom code that keeps a handle
+-- across its display's hide and show makes a new one when this is false.
+function Overlay:IsReleased()
+  return self.released == true
+end
+
+-- True while a retirement write the client refused is still owed.
+function Overlay:CleanupPending()
+  return self.pendingSteps ~= nil
+end
+
+-- ForeverAuras (Astra's overlay-reuse review, dev.4 follow-up): released is
+-- set at once, so the owner's later calls (SetEnabled, SetSpellIDs, SetUnit)
+-- are inert from the first request on; the container writes are each tried
+-- under pcall and the ones the client refuses are remembered and owed. The
+-- overlay stays registered under its owner until every write has succeeded.
+-- Returns true when the retirement is complete, false while writes are owed.
+local RETIREMENT = {"disable", "hide", "clear", "reparent"}
 function Overlay:Release()
-  if self.released then return end
+  if self.released and not self.pendingSteps then return true end
   self.released = true
-  self.container:SetEnabled(false)
-  self.container:Hide()
-  self.container:ClearAllPoints()
+  local container = self.container
+  local steps = self.pendingSteps or {disable = true, hide = true, clear = true, reparent = true}
+  if steps.disable and pcall(container.SetEnabled, container, false) then steps.disable = nil end
+  if steps.hide and pcall(container.Hide, container) then steps.hide = nil end
+  if steps.clear and pcall(container.ClearAllPoints, container) then steps.clear = nil end
+  -- The frame the overlay sat on may be handed to another display; the
+  -- released container leaves it, so nothing of the old owner's look stays
+  -- parented to the new owner.
+  if steps.reparent and pcall(container.SetParent, container, WeakAurasHiddenFrames or UIParent) then steps.reparent = nil end
+  for _, step in ipairs(RETIREMENT) do
+    if steps[step] then
+      self.pendingSteps = steps
+      pendingRetirements[self] = true
+      return false
+    end
+  end
+  self.pendingSteps = nil
+  pendingRetirements[self] = nil
+  Unregister(self)
+  return true
 end

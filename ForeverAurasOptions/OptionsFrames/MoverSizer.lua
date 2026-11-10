@@ -1538,12 +1538,13 @@ local function ConstructMoverSizer(parent)
     self.selfPointIcon:ClearAllPoints()
     self.selfPointIcon:SetPoint("CENTER", region, self.selfPoint)
     local selfX, selfY = self.selfPointIcon:GetCenter()
-    selfX, selfY = selfX or 0, selfY or 0
     self.anchorPointIcon:ClearAllPoints()
     self.anchorPointIcon:SetPoint("CENTER", self.anchor, self.anchorPoint)
     local anchorX, anchorY = self.anchorPointIcon:GetCenter()
-    anchorX, anchorY = anchorX or 0, anchorY or 0
-    if data.parent and db.displays[data.parent] and db.displays[data.parent].regionType == "dynamicgroup" then
+    -- Empty preview text can temporarily leave an endpoint unresolved.
+    -- Omit its guides until it resolves instead of inventing a screen origin.
+    local centersReady = selfX and selfY and anchorX and anchorY
+    if not centersReady or data.parent and db.displays[data.parent] and db.displays[data.parent].regionType == "dynamicgroup" then
       self.selfPointIcon:Hide()
       self.anchorPointIcon:Hide()
     else
@@ -1551,23 +1552,28 @@ local function ConstructMoverSizer(parent)
       self.anchorPointIcon:Show()
     end
 
-    local dX = selfX - anchorX
-    local dY = selfY - anchorY
-    local distance = sqrt(dX^2 + dY^2)
-    local angle = atan2(dY, dX)
+    local dX, dY, distance, angle
+    if centersReady then
+      dX = selfX - anchorX
+      dY = selfY - anchorY
+      distance = sqrt(dX^2 + dY^2)
+      angle = atan2(dY, dX)
 
-    local numInterim = floor(distance/40)
+      local numInterim = floor(distance/40)
 
-    for _, texture in pairs(self.interims) do
-      texture:Hide()
-    end
-    for i = 1, numInterim  do
-      local x = (distance - (i * 40)) * cos(angle)
-      local y = (distance - (i * 40)) * sin(angle)
-      self.interims[i] = EnsureTexture(self, self.interims[i])
-      self.interims[i]:ClearAllPoints()
-      self.interims[i]:SetPoint("CENTER", self.anchorPointIcon, "CENTER", x, y)
-      self.interims[i]:Show()
+      for _, texture in pairs(self.interims) do
+        texture:Hide()
+      end
+      for i = 1, numInterim  do
+        local x = (distance - (i * 40)) * cos(angle)
+        local y = (distance - (i * 40)) * sin(angle)
+        self.interims[i] = EnsureTexture(self, self.interims[i])
+        self.interims[i]:ClearAllPoints()
+        self.interims[i]:SetPoint("CENTER", self.anchorPointIcon, "CENTER", x, y)
+        self.interims[i]:Show()
+      end
+    else
+      for _, texture in pairs(self.interims) do texture:Hide() end
     end
 
     frame.arrowTexture:Hide()
@@ -1587,22 +1593,27 @@ local function ConstructMoverSizer(parent)
       end
     end
 
-    local regionScale = self.moving.region:GetScale()
-    self.text:SetText(("(%.2f, %.2f)"):format(dX*1/regionScale, dY*1/regionScale))
-    local midX = (distance / 2) * cos(angle)
-    local midY = (distance / 2) * sin(angle)
-    self.text:SetPoint("CENTER", self.anchorPointIcon, "CENTER", midX, midY)
-    local left, right, top, bottom = frame:GetLeft(), frame:GetRight(), frame:GetTop(), frame:GetBottom()
-    if (midX > 0 and (self.text:GetRight() or 0) > (left or 0))
-    or (midX < 0 and (self.text:GetLeft() or 0) < (right or 0))
-    then
-      if midY > 0 and (self.text:GetTop() or 0) > (top or 0) then
-        midY = midY - ((self.text:GetTop() or 0) - (bottom or 0))
-      elseif midY < 0 and (self.text:GetBottom() or 0) < (top or 0) then
-        midY = midY + ((top or 0) - (self.text:GetBottom() or 0))
+    if centersReady then
+      if self.isMoving then self.text:Show() end
+      local regionScale = self.moving.region:GetScale()
+      self.text:SetText(("(%.2f, %.2f)"):format(dX*1/regionScale, dY*1/regionScale))
+      local midX = (distance / 2) * cos(angle)
+      local midY = (distance / 2) * sin(angle)
+      self.text:SetPoint("CENTER", self.anchorPointIcon, "CENTER", midX, midY)
+      local left, right, top, bottom = frame:GetLeft(), frame:GetRight(), frame:GetTop(), frame:GetBottom()
+      if (midX > 0 and (self.text:GetRight() or 0) > (left or 0))
+      or (midX < 0 and (self.text:GetLeft() or 0) < (right or 0))
+      then
+        if midY > 0 and (self.text:GetTop() or 0) > (top or 0) then
+          midY = midY - ((self.text:GetTop() or 0) - (bottom or 0))
+        elseif midY < 0 and (self.text:GetBottom() or 0) < (top or 0) then
+          midY = midY + ((top or 0) - (self.text:GetBottom() or 0))
+        end
       end
+      self.text:SetPoint("CENTER", self.anchorPointIcon, "CENTER", midX, midY)
+    else
+      self.text:Hide()
     end
-    self.text:SetPoint("CENTER", self.anchorPointIcon, "CENTER", midX, midY)
     if self.isMoving then
       AlignmentLines:ShowLinesFor(IsControlKeyDown(), region, mover.sizePoint)
     end

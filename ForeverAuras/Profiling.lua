@@ -1388,13 +1388,35 @@ function Private.MemoryScan()
     if bytes >= 65536 then lines[#lines + 1] = ("  %s: %s"):format(name, MB(bytes)) end
     return bytes
   end
+  -- ForeverAuras (Dan's memory scans): an entry that is a table is measured
+  -- field by field (same total, same walk order as ScanValue), and the three
+  -- largest fields of the biggest entries are printed under them, so a 6 MB
+  -- aura environment says which of its fields the memory sits behind.
+  local function ScanFields(value)
+    if type(value) ~= "table" or seen[value] or (issecretvalue and issecretvalue(value)) then
+      return ScanValue(value, seen)
+    end
+    seen[value] = true
+    memScan.tables = memScan.tables + 1
+    local n = #value
+    local bytes, fields = 56 + n * 16, {}
+    for k, x in pairs(value) do
+      local field = 0
+      if type(k) ~= "number" or k > n or k < 1 or k % 1 ~= 0 then field = 40 end
+      field = field + ScanValue(k, seen) + ScanValue(x, seen)
+      bytes = bytes + field
+      if field >= 65536 then fields[#fields + 1] = {name = tostring(k), bytes = field} end
+    end
+    sort(fields, function(a, b) return a.bytes > b.bytes end)
+    return bytes, fields
+  end
   local function Top(name, map, keyName)
     local parts, entries = {}, 0
     for key, value in pairs(map or {}) do
       entries = entries + 1
-      local ok, bytes = pcall(ScanValue, value, seen)
+      local ok, bytes, fields = pcall(ScanFields, value)
       if not ok then memScan.refused = memScan.refused + 1; bytes = 0 end
-      if bytes > 0 then parts[#parts + 1] = {name = key, bytes = bytes} end
+      if bytes > 0 then parts[#parts + 1] = {name = key, bytes = bytes, fields = fields} end
     end
     sort(parts, function(a, b) return a.bytes > b.bytes end)
     local sum = 0
@@ -1404,6 +1426,10 @@ function Private.MemoryScan()
     lines[#lines + 1] = ("  %s: %s (%d %s, %d first reached here)"):format(name, MB(sum), entries, keyName, #parts)
     for i = 1, math.min(6, #parts) do
       lines[#lines + 1] = ("      %s %s"):format(MB(parts[i].bytes), tostring(parts[i].name))
+      local fields = parts[i].fields
+      for j = 1, math.min(3, fields and #fields or 0) do
+        lines[#lines + 1] = ("          %s .%s"):format(MB(fields[j].bytes), fields[j].name)
+      end
     end
   end
   -- 1. the saved displays, by field across all displays

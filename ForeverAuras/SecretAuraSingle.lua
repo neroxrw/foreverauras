@@ -3297,9 +3297,18 @@ end
 -- Missing look flashed for that moment. From the start of a loading screen
 -- until a second after PLAYER_ENTERING_WORLD such a look is veiled (the clip's
 -- alpha, like a unit that does not exist). A clip the client will not let addon
--- code touch right now (combat) is tried again each second, a limited number of
--- times, so a veil never outlives combat.
+-- code touch right now is retried for a bounded interval. Unfinished alpha
+-- writes remain on their current look for restriction-end recovery.
 local settling = false
+-- ForeverAuras (1.3.6-dev.14, Astra's ghost/Missing finding; Dan: a Show On
+-- Missing reminder gone after releasing spirit until a reload): the veil was
+-- lifted only a second after PLAYER_ENTERING_WORLD, but a loading screen can
+-- end (LOADING_SCREEN_DISABLED) without that event following, or with it
+-- having come first - the release-spirit screen does - so the veil stayed on
+-- for the session. The loading screen's own end now owns the completion; one
+-- cancellable timer replaces the unowned callback.
+local loadingScreenActive = false
+local settleEndTimer
 local settleGeneration = 0
 local settleRetries = 0
 local settleTimer
@@ -3317,7 +3326,26 @@ local function MissingAlpha(missing, instance)
   return 0
 end
 
-function Display.SettleMissing()
+-- Alpha is not a protected geometry operation. A forbidden object or a
+-- refused call still leaves the write owed independently of the main container.
+local function WriteMissingAlpha(instance, missing)
+  if Display.Locked(missing.clip) then return false end
+  missing.clip:SetAlpha(MissingAlpha(missing, instance))
+  return true
+end
+
+function Display.RefreshSingleStatus(instance)
+  local missing = instance.single and instance.single.missing
+  if not missing or not missing.active or not missing.clip then return end
+  local ok, applied = pcall(WriteMissingAlpha, instance, missing)
+  missing.statusAlphaPending = not (ok and applied) or nil
+end
+
+local function RetryMissingAlpha()
+  Display.SettleMissing(true)
+end
+
+function Display.SettleMissing(onlyPending)
   -- One retry timer at most: a pending one is dropped whenever a pass runs
   -- (an event, the unveil, or the timer itself).
   if settleTimer then settleTimer:Cancel() end
@@ -3327,23 +3355,21 @@ function Display.SettleMissing()
     local native = region.blizzardAuraDisplay
     for _, instance in ipairs(native and native.instances or {}) do
       local missing = instance.single and instance.single.missing
-      if missing and missing.active and missing.clip then
-        if Locked(missing.clip) then
-          retry = true
-        else
-          missing.clip:SetAlpha(MissingAlpha(missing, instance))
-        end
+      if missing and missing.active and missing.clip and (not onlyPending or missing.statusAlphaPending) then
+        Display.RefreshSingleStatus(instance)
+        if missing.statusAlphaPending then retry = true end
       end
     end
   end
   if retry and settleRetries < SETTLE_RETRIES then
     settleRetries = settleRetries + 1
-    settleTimer = C_Timer.NewTimer(1, Display.SettleMissing)
+    settleTimer = C_Timer.NewTimer(1, RetryMissingAlpha)
   end
 end
 
 local settleEvents = CreateFrame("Frame")
 settleEvents:RegisterEvent("LOADING_SCREEN_ENABLED")
+settleEvents:RegisterEvent("LOADING_SCREEN_DISABLED")
 settleEvents:RegisterEvent("PLAYER_ENTERING_WORLD")
 settleEvents:RegisterEvent("PLAYER_REGEN_ENABLED")
 settleEvents:RegisterEvent("ADDON_RESTRICTION_STATE_CHANGED")   -- (1.2.9) the suspended list timers
@@ -3353,34 +3379,32 @@ settleEvents:SetScript("OnEvent", function(_, event)
     return
   end
   if event == "PLAYER_REGEN_ENABLED" then
-    -- Clips locked in combat get their veil, or its lifting, now.
+    -- Healthy looks need no write when combat ends.
     settleRetries = 0
-    Display.SettleMissing()
+    Display.SettleMissing(true)
     Display.ResumeListTimers()   -- (1.2.9)
     return
   end
   settleGeneration = settleGeneration + 1
   settleRetries = 0
+  if settleEndTimer then settleEndTimer:Cancel(); settleEndTimer = nil end
+  if event == "LOADING_SCREEN_ENABLED" then loadingScreenActive = true
+  elseif event == "LOADING_SCREEN_DISABLED" then loadingScreenActive = false end
   settling = true
   Display.SettleMissing()
-  if event == "PLAYER_ENTERING_WORLD" then
+  -- A loading screen can finish without a later PLAYER_ENTERING_WORLD.
+  -- That event alone must not unveil a screen that is still loading.
+  if not loadingScreenActive then
     local generation = settleGeneration
-    C_Timer.After(SETTLE_DELAY, function()
-      -- A later loading screen owns the veil now.
+    settleEndTimer = C_Timer.NewTimer(SETTLE_DELAY, function()
       if generation ~= settleGeneration then return end
+      settleEndTimer = nil
       settling = false
       settleRetries = 0
       Display.SettleMissing()
     end)
   end
 end)
-
-function Display.RefreshSingleStatus(instance)
-  local missing = instance.single and instance.single.missing
-  if missing and missing.active and not Locked(missing.clip) then
-    missing.clip:SetAlpha(MissingAlpha(missing, instance))
-  end
-end
 
 -- Content-only counterpart of RefreshSingle. It is also used when the
 -- main container is busy, so Missing/Always never keeps the old target's
@@ -3474,8 +3498,8 @@ function Display.RefreshSingle(instance, unit, shown, force)
   local trigger = instance.data and Display.GetTrigger(instance.data)
   local keepWithoutUnit = trigger and trigger.unitExists
   missing.unitExists = keepWithoutUnit or Display.SingleUnitExists({unit = unit})
-  -- ForeverAuras: veiled across loading screens (MissingAlpha).
-  missing.clip:SetAlpha(MissingAlpha(missing, instance))
+  -- The child alpha has its own recovery if this write is refused.
+  Display.RefreshSingleStatus(instance)
   if shown and refresh then container:UpdateAllAuras(); Private.HitchCount("UpdateAllAuras") end
   if deferred then return false end
 end
@@ -3561,6 +3585,7 @@ function Display.PrintDebug(id)
     if missing then
       local presence, clip = missing.container, missing.clip
       Say(" missing active", Fmt(missing.active), "erased", Fmt(missing.erased), "failed", Fmt(single.missingFailed))
+      Say(" missing visibility", "loading", Fmt(loadingScreenActive), "settling", Fmt(settling), "unit exists", Fmt(missing.unitExists), "status hidden", Fmt(instance.statusHidden), "alpha owed", Fmt(missing.statusAlphaPending), "clip alpha", R(clip, "GetAlpha"))
       Say(" presence container", R(presence, "GetWidth"), "x", R(presence, "GetHeight"), "left", R(presence, "GetLeft"), "top", R(presence, "GetTop"), "shown", R(presence, "IsShown"))
       Say(" clip", R(clip, "GetWidth"), "x", R(clip, "GetHeight"), "left", R(clip, "GetLeft"), "top", R(clip, "GetTop"), "shown", R(clip, "IsShown"))
       local sample = missing.native and missing.native.button

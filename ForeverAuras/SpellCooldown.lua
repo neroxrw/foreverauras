@@ -9,9 +9,17 @@ local gcdStateSince = {}
 -- keeps them on cooldown until Blizzard reports the cooldown inactive.
 local knownOnCooldown = {}
 
+-- ForeverAuras (1.3.6-cd.1, Astra's combat-start candidate): the per-frame
+-- reader cache is declared here so the GCD sweep can leave its raw cooldown
+-- read in it (ReadSpellCooldownInfo, below the cache's description).
+local cooldownCache, cooldownCacheFrame = {}, nil
+local baseCache = {}
+local cacheGeneration = 0
+local ReadSpellCooldownInfo
+
 -- isOnGCD is authoritative only while handling SPELL_UPDATE_COOLDOWN.
 function Private.UpdateSpellCooldownGCD(spellID)
-  local info = C_Spell.GetSpellCooldown(spellID)
+  local info = ReadSpellCooldownInfo(spellID)
   local wasOnGCD = gcdStates[spellID] == true
   gcdStates[spellID] = nil
   -- Only cache an explicit public flag; an unavailable/secret value is unknown.
@@ -67,9 +75,37 @@ end
 -- garbage collector busy for milliseconds in the frames that followed.
 -- The client is asked once per spell and frame (ReadSpellBase); each variant
 -- of the data (track, GCD, loss of control) is derived from that.
-local cooldownCache, cooldownCacheFrame = {}, nil
-local baseCache = {}
-local cacheGeneration = 0
+-- (The cache tables are declared above UpdateSpellCooldownGCD.)
+
+-- ForeverAuras (1.3.6-cd.1): the frame the cache serves. A new frame, or an
+-- invalidation (a cooldown event), starts a new generation: nothing read
+-- before it is served after it.
+local function BeginCacheFrame()
+  local now = GetTime()
+  if cooldownCacheFrame ~= now then
+    cooldownCacheFrame = now
+    cacheGeneration = cacheGeneration + 1
+  end
+end
+
+-- ForeverAuras (1.3.6-cd.1, Astra's combat-start candidate): the GCD sweep on
+-- SPELL_UPDATE_COOLDOWN asks C_Spell.GetSpellCooldown for every watched spell,
+-- and the cooldown check that follows in the same frame asked again for each
+-- of them (ReadSpellBase). The sweep's raw answer is kept with the spell's
+-- base record, stamped with the current generation; ReadSpellBase reuses it
+-- only while that generation stands (same frame, no cooldown/charge/
+-- restriction event since - each of those invalidates the cache, so a second
+-- event in the same frame reads afresh). The answer is stored as given, nil
+-- included; nothing in it is compared here. No update is delayed by this.
+function ReadSpellCooldownInfo(spellID)
+  BeginCacheFrame()
+  local base = baseCache[spellID]
+  if not base then base = {}; baseCache[spellID] = base end
+  local info = C_Spell.GetSpellCooldown(spellID)
+  base.rawInfo, base.rawGeneration = info, cacheGeneration
+  Private.HitchCount("cooldown info query (GCD flags)")
+  return info
+end
 
 -- Called when a cooldown event arrives: a cast finishing and the cooldown it
 -- starts can be reported in the same frame, so values read before the event
@@ -85,11 +121,7 @@ local ReadSpellBase, FillSpellCooldownData
 -- Returns the data table for the spell and variant; it belongs to this cache
 -- and is refilled on a later frame, so callers that keep it pass `into`.
 function Private.GetSpellCooldownData(spellID, track, showGCD, showLossOfControl, into)
-  local now = GetTime()
-  if cooldownCacheFrame ~= now then
-    cooldownCacheFrame = now
-    cacheGeneration = cacheGeneration + 1
-  end
+  BeginCacheFrame()
   local variant = (track == "charges" and 1 or track == "cooldown" and 2 or 0) + (showGCD and 4 or 0) + (showLossOfControl and 8 or 0)
   local bySpell = cooldownCache[spellID]
   if not bySpell then bySpell = {}; cooldownCache[spellID] = bySpell end
@@ -132,11 +164,19 @@ function ReadSpellBase(spellID)
   if base and base.generation == cacheGeneration then return base.valid and base or nil end
   if not base then base = {}; baseCache[spellID] = base end
   base.generation = cacheGeneration
-  local info = C_Spell.GetSpellCooldown(spellID)
+  local info
+  if base.rawGeneration == cacheGeneration then
+    -- (1.3.6-cd.1) the GCD sweep read this spell in this generation: its answer is reused
+    info = base.rawInfo
+    Private.HitchCount("cooldown info shared (GCD flags)")
+    Private.HitchCount("cooldown base query", 1)
+  else
+    info = C_Spell.GetSpellCooldown(spellID)
+    Private.HitchCount("cooldown base query", 2)
+  end
   local charges = C_Spell.GetSpellCharges(spellID)
   -- (dev.106, Astra's dev.105 review) the cache core's own queries, counted whether or not the spell has
   -- data: the two reads above, then the derived reads below; not every cooldown API call of the addon
-  Private.HitchCount("cooldown base query", 2)
   if not info then knownOnCooldown[spellID] = nil end
   base.valid = (info or charges) ~= nil
   if not base.valid then return end
