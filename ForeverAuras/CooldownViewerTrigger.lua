@@ -75,19 +75,31 @@ local function GetCatalog(refresh)
   -- once it is readable again (CDMCatalog remembers what it could not read).
   if catalog and catalogSecret and not (C_Secrets and C_Secrets.ShouldAurasBeSecret and C_Secrets.ShouldAurasBeSecret()) then refresh = true end
   -- A refresh event (a loading screen, a spell change, the options' refresh)
-  -- starts a new episode of bounded retries.
-  if refresh then catalogRetries = 0 end
+  -- starts a new episode of bounded retries, and of late-entry rebuilds
+  -- (CDMCatalogStale).
+  if refresh then
+    catalogRetries = 0
+    if Private.CDMResetLateEntries then Private.CDMResetLateEntries() end
+  end
   if catalog and not refresh and CatalogIncomplete(catalog) then
     if catalogTime and GetTime() - catalogTime >= 1 then
-      -- ForeverAuras: an incomplete catalog is rebuilt on any later use a
-      -- second or more after it was built, however many retries have run.
-      -- The retry count bounds only the timers below: after a loading screen
-      -- the viewer can take longer than the timed retries to get its frames
-      -- back, and it was then left incomplete until "Refresh from Blizzard
-      -- CDM"; the viewer's own refresh (hooked, Private.QueueCDMRefresh) runs
-      -- the triggers when the frames do come, and that use rebuilds it.
-      refresh = true
-      catalogRetries = catalogRetries + 1
+      -- ForeverAuras: an incomplete catalog is rebuilt on a later use a
+      -- second or more after it was built, so that after a loading screen
+      -- the viewer's frames are picked up when they come (the viewer's own
+      -- refresh, hooked in Private.QueueCDMRefresh, runs the triggers then).
+      -- Bounded by the episode's retry count like the timers below: for a
+      -- player whose viewer never has a layout or frames (the Cooldown
+      -- Manager off or never opened) every build is incomplete, and an
+      -- unbounded rule rebuilt the catalog, and re-resolved every CDM
+      -- trigger's spell, about once a second for the whole session (a
+      -- reported profile: 2.5 MB of garbage per refresh, 59% of the addon's
+      -- time). Past the bound the catalog stands until a refresh event, the
+      -- viewer's data loading, or a viewer frame for an entry it could not
+      -- place (CDMCatalogStale invalidates it from the viewer's hooks).
+      if catalogRetries < 10 then
+        refresh = true
+        catalogRetries = catalogRetries + 1
+      end
     else
       -- Rebuilt by an event moments ago: this use (the viewer's own refresh,
       -- say, which can be what announces its frames) must still lead to
@@ -182,15 +194,57 @@ local rememberedEntrySpells = {}
 local function AurasSecret()
   return C_Secrets and C_Secrets.ShouldAurasBeSecret and C_Secrets.ShouldAurasBeSecret() or false
 end
+-- ForeverAuras (Astra's dev.8 review, item 2): the record names which field
+-- was unreadable ("info" = the entry's own spell, "frame" = the viewer
+-- frame's spell), so recovery is judged on that field alone; a sibling
+-- field that was public all along must not restart the rebuild budget.
+local function NoteSecretField(entryID, field)
+  resolved.sawSecret = true
+  resolved.secretEntries = resolved.secretEntries or {}
+  local record = resolved.secretEntries[entryID]
+  if not record then record = {}; resolved.secretEntries[entryID] = record end
+  record[field] = true
+end
 local function EntryAuraSpellIDs(entryID, info)
   local ids = Private.CDMAuraSpellIDs(info)
+  -- ForeverAuras (Astra's dev.9 review, item 2): an unreadable entry spell
+  -- is noted even on a first sight with nothing remembered, so its later
+  -- readability restarts the rebuild budget (a cold buff stayed unresolved).
+  if not IsReadable(info.spellID) then
+    NoteSecretField(entryID, "info")
+  end
   if IsReadable(info.spellID) and #ids > 0 then
     rememberedEntrySpells[entryID] = ids
   elseif #ids == 0 and rememberedEntrySpells[entryID] then
     ids = rememberedEntrySpells[entryID]
-    resolved.sawSecret = true
+    -- Noted, so a later lookup can tell cheaply whether this entry's data is readable again.
+    NoteSecretField(entryID, "info")
   end
   return ids
+end
+-- A readable spell identity: public, and an actual spell ID (nil or 0 is
+-- not a recovery).
+local function ReadableSpell(value)
+  return value ~= nil and IsReadable(value) and type(value) == "number" and value > 0
+end
+-- Whether a field that was unreadable when the index was built reads now:
+-- one info read per such entry, no index work. Only the field that failed
+-- counts (Astra's dev.8 review, item 2).
+local function SecretDataReadable(entries)
+  local frames
+  for entryID, record in pairs(resolved.secretEntries or {}) do
+    if record.info then
+      local info = entries[entryID] and C_CooldownViewer.GetCooldownViewerCooldownInfo(entryID)
+      if info and ReadableSpell(info.spellID) then return true end
+    end
+    if record.frame then
+      frames = frames or Private.CDMFrames()
+      local frame = frames[entryID]
+      local frameSpell = frame and frame.GetSpellID and frame:GetSpellID()
+      if ReadableSpell(frameSpell) then return true end
+    end
+  end
+  return false
 end
 
 -- Resolve all buff names in one catalog pass. Login can evaluate many names in
@@ -206,11 +260,20 @@ local function BuffNameIndex(entries)
       local info = C_CooldownViewer.GetCooldownViewerCooldownInfo(entryID)
       if info then
         local displayed = entry.displayed == true
-        local ids = EntryAuraSpellIDs(entryID, info)
+        -- ForeverAuras (Astra's dev.5 review, item 7): EntryAuraSpellIDs can
+        -- hand back the remembered array itself; it is copied before the
+        -- frame's spell is added, without duplicates, so repeated lookups
+        -- under partly unreadable data do not grow the remembered list.
+        local known = EntryAuraSpellIDs(entryID, info)
+        local ids, seen = {}, {}
+        for _, id in ipairs(known) do if not seen[id] then seen[id] = true; ids[#ids + 1] = id end end
         local frame = frames[entryID]
         local frameSpell = frame and frame.GetSpellID and frame:GetSpellID()
-        if IsReadable(frameSpell) and type(frameSpell) == "number" then ids[#ids + 1] = frameSpell
-        elseif frameSpell ~= nil then resolved.sawSecret = true end
+        if IsReadable(frameSpell) and type(frameSpell) == "number" then
+          if not seen[frameSpell] then seen[frameSpell] = true; ids[#ids + 1] = frameSpell end
+        elseif frameSpell ~= nil then
+          NoteSecretField(entryID, "frame")
+        end
         for _, spellID in ipairs(ids) do
           local spell = spells[spellID]
           if spell == nil then
@@ -271,7 +334,29 @@ function Private.ResolveCDMSpell(trigger, event)
   if resolved.entries ~= entries then resolved = {entries = entries} end
   -- ForeverAuras: a resolution that met secret values is dropped once auras
   -- are readable again, so it is rebuilt from live data (see EntryAuraSpellIDs).
-  if resolved.sawSecret and not AurasSecret() then resolved = {entries = entries} end
+  -- Bounded (Astra's dev.5 review, item 7): individual entry or viewer data
+  -- can stay unreadable after the global restriction ends, and every lookup
+  -- then rebuilt the index; it is rebuilt at most once per frame, and no
+  -- more than ten times per catalog while the data stays unreadable (a new
+  -- catalog, a refresh event or readable data start over).
+  if resolved.sawSecret and not AurasSecret() then
+    local now = GetTime()
+    local rebuilds = resolved.secretRebuilds or 0
+    if resolved.secretRebuildAt ~= now then
+      local rebuild = rebuilds < 10
+      -- Past the cap, readable data starts the budget over (Astra's dev.7
+      -- review: a lookup never read the entry again and could not recover).
+      -- The probe runs once per frame whatever its answer (Astra's dev.8
+      -- review, item 2): several lookups in one frame share one failed probe.
+      if not rebuild and resolved.secretProbeAt ~= now then
+        resolved.secretProbeAt = now
+        rebuild = SecretDataReadable(entries)
+      end
+      if rebuild then
+        resolved = {entries = entries, secretRebuilds = rebuilds < 10 and rebuilds + 1 or 1, secretRebuildAt = now}
+      end
+    end
+  end
   if resolved[key] then return resolved[key] end
   local id = tonumber(query)
   if trigger.cdmExact and not id then return {} end
@@ -507,28 +592,54 @@ local function ReadBoolean(value)
   if IsReadable(value) and type(value) == "boolean" then return value end
 end
 
-local spellCooldowns = {}
-local function GetSpellCooldownState(spellID, event)
-  local info = C_Spell.GetSpellCooldown and C_Spell.GetSpellCooldown(spellID)
-  local active = info and ReadBoolean(info.isActive)
-  if active == nil then return end
-  local status = spellCooldowns[spellID]
-  if not status then status = {}; spellCooldowns[spellID] = status end
-  if not active then
-    status.onCooldown, status.onGCD = false, false
+-- ForeverAuras: the cooldown state of a CDM spell comes from the reader the
+-- Cooldown Progress (Spell) trigger uses (SpellCooldown.lua,
+-- Private.GetSpellCooldownData): the GCD-filtered duration object, whose
+-- IsZero is public when the numbers are not; a spell last seen on a real
+-- cooldown kept through an unreadable moment; charges; Show GCD; the wand
+-- Shoot hold. The trigger's own rule knew a cooldown only from the isOnGCD
+-- flag during SPELL_UPDATE_COOLDOWN, secret in combat, so an ability used in
+-- combat was never "on cooldown" (reports: Retaliation, Bloodrage). Two
+-- things the reader needs from this dispatch (Astra's dev.2 review):
+--  - the cooldown events this trigger handles supersede anything the reader
+--    cached earlier in the frame (the core does the same in its own frame,
+--    which may run after this one): invalidated once per dispatch;
+--  - on SPELL_UPDATE_COOLDOWN the event-scoped isOnGCD flag of each resolved
+--    spell is handed to the reader once per spell per dispatch (the core
+--    only does so for the spells its Spell triggers watch).
+local cooldownEvents = {SPELL_UPDATE_COOLDOWN = true, SPELL_UPDATE_CHARGES = true, SPELL_UPDATE_USABLE = true,
+  BAG_UPDATE_COOLDOWN = true, ACTIONBAR_UPDATE_COOLDOWN = true, PLAYER_EQUIPMENT_CHANGED = true}
+local lastInvalidated = {event = nil, batch = nil, at = nil}
+local function FreshenCooldownReader(event)
+  if not cooldownEvents[event] or not Private.InvalidateSpellCooldownCache then return end
+  local batch, now = Private.cdmScanBatch, GetTime()
+  -- Once per dispatch: the same batch, or without one the same event in the same frame.
+  if batch then
+    if batch.cooldownFresh == event then return end
+    batch.cooldownFresh = event
+  elseif lastInvalidated.event == event and lastInvalidated.at == now and lastInvalidated.batch == nil then
+    return
   end
-  -- Blizzard only guarantees isOnGCD during SPELL_UPDATE_COOLDOWN.
-  -- Missing flags must not turn an unknown/GCD timer into a real cooldown.
-  if active and event == "SPELL_UPDATE_COOLDOWN" and ReadBoolean(info.isOnGCD) == nil then
-    status.onCooldown, status.onGCD = nil, nil
-  end
-  if active and event == "SPELL_UPDATE_COOLDOWN" and ReadBoolean(info.isOnGCD) ~= nil then
-    local onGCD = info.isOnGCD == true
-    -- The public event-scoped flag is sufficient; do not delay a visible GCD.
-    status.onCooldown, status.onGCD = not onGCD, onGCD
-  end
-  return status.onCooldown, true, status.onGCD
+  lastInvalidated.event, lastInvalidated.batch, lastInvalidated.at = event, batch, now
+  Private.InvalidateSpellCooldownCache()
 end
+local gcdUpdatedAt = {}
+local function FeedGCDFlag(spellID, event)
+  if event ~= "SPELL_UPDATE_COOLDOWN" or not Private.UpdateSpellCooldownGCD then return end
+  local batch = Private.cdmScanBatch
+  if batch then
+    batch.gcdFed = batch.gcdFed or {}
+    if batch.gcdFed[spellID] then return end
+    batch.gcdFed[spellID] = true
+  else
+    local now = GetTime()
+    if gcdUpdatedAt[spellID] == now then return end
+    gcdUpdatedAt[spellID] = now
+  end
+  Private.UpdateSpellCooldownGCD(spellID)
+end
+-- The reader's answers for one update (GetSpellCooldownData refills it).
+local cdmCooldownScratch = {}
 
 local function QueueRefresh()
   Private.QueueCDMRefresh()
@@ -558,11 +669,17 @@ local function BuildCooldownViewerStates(allstates, selected, event, showGCD, tr
     return true
   end
   if not IsAvailable() then return true end
+  -- ForeverAuras (Dan: a Frost Armor Missing display never showed): "Show If
+  -- Unit Does Not Exist" unticked means "only with an attackable target", and
+  -- that applied to every aura, player buffs included, which have no unit to
+  -- be missing. It now applies only to entries whose auras target an enemy
+  -- (CDMSpellsTargetEnemy), decided per entry below.
+  local noAttackableTarget = false
   if requireTarget and event ~= "OPTIONS" then
     local exists = UnitExists("target")
     local attackable = UnitCanAttack("player", "target")
-    if not IsReadable(exists) or not IsReadable(attackable) then return true end
-    if not exists or not attackable then return true end
+    if not IsReadable(exists) or not IsReadable(attackable) then noAttackableTarget = true
+    elseif not exists or not attackable then noAttackableTarget = true end
   end
 
   for index, cooldownID in ipairs(selected) do
@@ -610,6 +727,7 @@ local function BuildCooldownViewerStates(allstates, selected, event, showGCD, tr
           if #entryIDs == 0 then entryIDs = nil end
         end
         state.cdmAuraSpellIDs = state.cdmBuff and (bindingIDs or (exactID and {exactID}) or selected.buffSpellIDs or entryIDs or {identity.spellID}) or nil
+        do
         state.cdmTextPreview = event == "OPTIONS"
         -- Clear native fallback identity before selecting a fresh buff clone;
         -- an absent/changed viewer must not retain the previous aura's slot.
@@ -695,28 +813,26 @@ local function BuildCooldownViewerStates(allstates, selected, event, showGCD, tr
             state.insufficientResources = ReadBoolean(insufficientResources)
           end
           -- Spell Count, as on the spell Cooldown trigger (the count a spell
-          -- shows on its button: reagent-limited casts and the like).
-          local GetSpellCount = GetSpellCount or (C_Spell and C_Spell.GetSpellCastCount)
-          if GetSpellCount then
-            local ok, count = pcall(GetSpellCount, spellID)
-            state.spellCount = ok and IsReadable(count) and type(count) == "number" and count or nil
+          -- shows on its button: reagent-limited casts and the like); the
+          -- reader's value when it has one, so the client is asked once.
+          FreshenCooldownReader(event)
+          FeedGCDFlag(spellID, event)
+          local readerTrack = track == "charges" and "charges" or track == "cooldown" and "cooldown" or nil
+          local cooldown = Private.GetSpellCooldownData(spellID, readerTrack, showGCD, false, cdmCooldownScratch)
+          if cooldown then
+            state.spellCount = IsReadable(cooldown.count) and type(cooldown.count) == "number" and cooldown.count or nil
+          else
+            local GetSpellCount = GetSpellCount or (C_Spell and C_Spell.GetSpellCastCount)
+            if GetSpellCount then
+              local ok, count = pcall(GetSpellCount, spellID)
+              state.spellCount = ok and IsReadable(count) and type(count) == "number" and count or nil
+            end
           end
-          local onCooldown, hasCooldownFlags, onGCD = GetSpellCooldownState(spellID, event)
-          -- Keep the GCD-free text source independent of native frame flags, which
-          -- can be unavailable in combat or refer to the previous viewer refresh.
-          local realDuration = Private.GetSpellCooldownDurationWithoutGCD(spellID, onGCD)
-          local textDuration = realDuration
+          -- Blizzard's viewer frame supplements what the reader cannot know:
+          -- range, and the cooldown or charges while the reader has no answer.
           local native = Private.CDMGetNativeCooldown(frames[cooldownID], identity.spellID)
-          -- Text and desaturation share a copied timer during Shoot; native state
-          -- and swipe keep the current cooldown.
-          local wandHeld
-          textDuration, wandHeld = Private.GetWandCooldownDuration(spellID, textDuration, "cdm")
-          state.wandAppearanceDuration = wandHeld and textDuration or nil
           state.cdmNativeRevision = native and native.revision
-          -- A hidden GCD must not re-enter through the viewer's unfiltered swipe.
-          local duration = showGCD and native and native.duration or realDuration
           state.cdmNativePaused = native and native.paused == true or false
-          if state.cdmNativePaused then state.wandAppearanceDuration = nil end
           if native then
             state.inRange = native.inRange
             state.stacks = native.charges
@@ -728,51 +844,67 @@ local function BuildCooldownViewerStates(allstates, selected, event, showGCD, tr
             end
             if native.recharging ~= nil then state.recharging = native.recharging end
           end
-          -- Native frame flags can be secret even when these API flags are public.
-          if onCooldown ~= nil then
-            state.onCooldown, state.isReady = onCooldown, not onCooldown
-            if onCooldown then
-              duration = realDuration
-              state.cdmGCDOnly, state.cdmNativePaused = false, false
-            elseif onGCD then
-              duration = showGCD and C_Spell.GetSpellCooldownDuration(spellID) or nil
-              state.cdmGCDOnly, state.cdmNativePaused = true, false
+          local duration, textDuration
+          if cooldown then
+            -- Availability. A spell with charges is available while a charge
+            -- remains, whatever its recharge timer does: a readable count
+            -- decides (the reader's, else the viewer frame's), and with
+            -- neither readable it stays as the frame left it (unknown). The
+            -- reader's onCooldown for such a spell means "a charge is
+            -- recharging" and is not availability (Astra's dev.2 review).
+            if cooldown.charges ~= nil or cooldown.maxCharges ~= nil then
+              local count = IsReadable(cooldown.charges) and type(cooldown.charges) == "number" and cooldown.charges or nil
+              if count == nil and native and type(native.charges) == "number" then count = native.charges end
+              if count ~= nil then
+                state.stacks = count
+                state.isReady, state.onCooldown = count > 0, count == 0
+              end
+              local recharging = ReadBoolean(cooldown.recharging)
+              if recharging ~= nil then state.recharging = recharging end
+            elseif cooldown.onCooldown ~= nil then
+              state.onCooldown, state.isReady = cooldown.onCooldown, not cooldown.onCooldown
+            end
+            -- Each of the reader's answers stands on its own (Astra's dev.7
+            -- review): the GCD-free text timer and the wand hold whenever the
+            -- reader has them; the swipe from the reader when it has one, or
+            -- none when the reader knows the state (ready, paused) but has no
+            -- timer; the viewer frame's swipe and flags only when the reader
+            -- knows nothing of the spell's state.
+            if cooldown.textDuration ~= nil then textDuration = cooldown.textDuration end
+            state.wandAppearanceDuration = not cooldown.paused and cooldown.wandAppearanceDuration or nil
+            local readerKnows = cooldown.onCooldown ~= nil or cooldown.duration ~= nil or cooldown.paused == true
+            if cooldown.duration ~= nil then
+              state.cdmGCDOnly = cooldown.gcdOnly == true
+              state.cdmNativePaused = cooldown.paused == true
+              duration = cooldown.duration
+              if state.cdmGCDOnly and not showGCD then duration = nil end
+            elseif readerKnows then
+              state.cdmGCDOnly = cooldown.gcdOnly == true
+              state.cdmNativePaused = cooldown.paused == true
+              duration = nil
             else
-              duration = realDuration
-              state.cdmGCDOnly, state.cdmNativePaused = false, false
+              -- (Astra's dev.5 review, item 4: a usable native GCD swipe was
+              -- dropped here when the client gave the reader no timer.)
+              local realDuration = Private.GetSpellCooldownDurationWithoutGCD(spellID, state.cdmGCDOnly == true)
+              if textDuration == nil then textDuration = realDuration end
+              duration = showGCD and native and native.duration or realDuration
+              if state.cdmGCDOnly and not showGCD then duration = nil end
             end
-          elseif hasCooldownFlags and not state.cdmGCDOnly then
-            -- Unknown GCD status still honors the explicit swipe choice. Text uses
-            -- the separately filtered duration and needs no readable timing values.
-            duration = showGCD and C_Spell.GetSpellCooldownDuration(spellID) or realDuration
-            state.cdmNativePaused = false
+          else
+            -- No cooldown data for the spell (not known to the client): the
+            -- viewer frame alone.
+            local realDuration = Private.GetSpellCooldownDurationWithoutGCD(spellID, state.cdmGCDOnly == true)
+            textDuration = realDuration
+            local wandHeld
+            textDuration, wandHeld = Private.GetWandCooldownDuration(spellID, textDuration, "cdm")
+            state.wandAppearanceDuration = wandHeld and textDuration or nil
+            if state.cdmNativePaused then state.wandAppearanceDuration = nil end
+            duration = showGCD and native and native.duration or realDuration
+            if state.cdmGCDOnly and not showGCD then duration = nil end
           end
-          local charges = C_Spell.GetSpellCharges and C_Spell.GetSpellCharges(spellID)
-          if charges then
-            local count = charges.currentCharges
-            local recharging = ReadBoolean(charges.isActive)
-            if recharging ~= nil then state.recharging = recharging end
-            if IsReadable(count) and type(count) == "number" then
-              state.stacks = count
-              state.isReady, state.onCooldown = count > 0, count == 0
-            elseif native and native.recharging == true then
-              state.isReady, state.onCooldown = true, false
-            end
-          end
-          if C_Spell.GetSpellChargeDuration and (track == "charges" or (track == "auto" and state.recharging == true)) then
-            local chargeDuration = C_Spell.GetSpellChargeDuration(spellID)
-            if chargeDuration then
-              -- Recharge numbers remain visible even when the spell timer is a GCD.
-              duration, textDuration = chargeDuration, chargeDuration
-              state.wandAppearanceDuration = nil -- Never suppress real recharge appearance.
-              state.cdmGCDOnly, state.cdmNativePaused = false, false
-            end
-          end
-          -- Show GCD takes effect on the first update, including consecutive casts.
-          -- Text suppression is independent and must not temporarily blank the swipe.
-          if state.cdmGCDOnly and not showGCD then
-            duration = nil
-          end
+          -- ForeverAuras (Astra's dev.8 review, item 5): a paused cooldown
+          -- (whichever source said so last) shows no held ready appearance.
+          if state.cdmNativePaused then state.wandAppearanceDuration = nil end
           state.cdmSuppressGCD = not duration
           if duration then
             state.progressType, state.durationObject = "durationObject", duration
@@ -792,6 +924,16 @@ local function BuildCooldownViewerStates(allstates, selected, event, showGCD, tr
           end
         end
         if event ~= "OPTIONS" then
+          -- (noAttackableTarget) a target aura's display needs an attackable
+          -- target when the trigger says so, whatever the show mode; decided
+          -- after the aura's source is known (the remembered viewer source
+          -- first, the spells' harmfulness otherwise). A player buff is never
+          -- hidden by it.
+          if noAttackableTarget and state.cdmBuff then
+            local targetAura = state.cdmAuraSourceSeen and state.cdmAuraUnit == "target"
+            if not state.cdmAuraSourceSeen then targetAura = Private.CDMSpellsTargetEnemy(state.cdmAuraSpellIDs) end
+            if targetAura then state.show = false end
+          end
           -- These opt-in modes leave existing show modes and preview behavior unchanged.
           if showMode == "usable" then state.show = state.isUsable == true
           elseif showMode == "unusable" then state.show = state.isUsable == false end
@@ -841,6 +983,7 @@ local function BuildCooldownViewerStates(allstates, selected, event, showGCD, tr
           end
         end
         state.hasTimer = state.durationObject ~= nil or state.progressType == "timed"
+        end
       end
     end
   end
@@ -962,6 +1105,252 @@ Private.ExecEnv.UpdateCDMSpell = function(allstates, config, event, ...)
   return Private.UpdateCooldownViewerStates(allstates, selected, event, config.showGCD, config.track, config.hideGCDText, config.showMode, config.cdmExact and tonumber(config.cdmSpell) or nil, config.requireTarget, config.use_ignoreSpellKnown)
 end
 
+-- ForeverAuras: CDM Cooldown triggers that name their spells (Name(s), Exact
+-- Spell ID(s), or the older single spell field) run on the standard spell
+-- cooldown service, as a Cooldown Progress (Spell) trigger does: the spell
+-- is resolved by the client (Private.ExecEnv.GetEffectiveSpellId), watched
+-- with WeakAuras.WatchSpellCooldown, updated on the service's own events
+-- (SPELL_COOLDOWN_CHANGED, COOLDOWN_REMAINING_CHECK, the GCD events) and
+-- read through the shared reader. No Blizzard viewer entry, frame or catalog
+-- is needed or consulted: a named cooldown works with its viewer entry
+-- hidden or absent (Dan's direction, Astra's handoff). Range comes from
+-- WeakAuras.IsSpellInRange, usability from the spell API. Picker selections
+-- (saved entry IDs), items and Buff/Debuff triggers keep the catalog path.
+function Private.CDMStandardSpellTrigger(trigger)
+  if trigger.type ~= "cdm" or trigger.event ~= "Blizzard Cooldown Manager" then return false end
+  if trigger.cdmUseNames or trigger.cdmUseExactIDs then return true end
+  return trigger.cdmSpell ~= nil and tostring(trigger.cdmSpell):find("%S") ~= nil
+end
+-- The spells a standard-path trigger names: {query = text, exact = bool} each.
+function Private.CDMStandardSpellQueries(trigger)
+  local list, seen = {}, {}
+  local function Add(values, exact)
+    for _, value in ipairs(values or {}) do
+      local query = tostring(value):match("^%s*(.-)%s*$")
+      local key = (exact and "id:" or "name:") .. query
+      if query ~= "" and not seen[key] then
+        seen[key] = true
+        list[#list + 1] = {query = query, exact = exact == true}
+      end
+    end
+  end
+  if trigger.cdmUseNames or trigger.cdmUseExactIDs then
+    if trigger.cdmUseNames then Add(trigger.cdmNames, false) end
+    if trigger.cdmUseExactIDs then Add(trigger.cdmExactIDs, true) end
+  else
+    Add({trigger.cdmSpell}, trigger.cdmExact == true)
+  end
+  return list
+end
+-- The configured spell of a query: an exact ID as given; a name as the ID the
+-- client gives for it, which it does only for spells the character knows (the
+-- rank it knows). This is the identity the service watches and announces
+-- (SendEventsForSpell fires for the configured ID as well as the current
+-- effective one), as the Spell trigger's spellName is. nil when unknown.
+-- (Astra's dev.6 review: watching the resolved replacement instead lost the
+-- updates of a later replacement.)
+-- ForeverAuras (Astra's dev.8 review, item 1): a name's configured spell is
+-- the ID it first resolved to this session and stays that, however the
+-- client's answer for the name changes afterwards (a new rank learned): the
+-- trigger watches, listens and announces on one identity, and the service
+-- remaps it to the current rank (CheckSpellKnown), as it does for the Spell
+-- trigger's own spell. Re-resolving on every rebuild had the threshold
+-- wakeup announce the new rank while the listener was on the old one.
+local standardIdentity = {}
+local function ConfiguredStandardSpell(query)
+  if query.exact then
+    local id = tonumber(query.query)
+    return id and id > 0 and id or nil
+  end
+  if query.query == nil or query.query == "" then return nil end
+  local name = query.query:lower()
+  local known = standardIdentity[name]
+  if known then return known end
+  local id = select(7, Private.ExecEnv.GetSpellInfo(query.query))
+  if type(id) == "number" and id > 0 then
+    standardIdentity[name] = id
+    return id
+  end
+  return nil
+end
+Private.CDMResolveStandardSpell = ConfiguredStandardSpell
+
+-- ForeverAuras (Astra's dev.8 review, item 1): triggers naming a spell the
+-- character did not know when they loaded, by trigger table, with the
+-- display and trigger number LoadEvent passed. When the spell is learned
+-- (SPELLS_CHANGED, after the service's own remap) the trigger's registration
+-- is renewed through the load lifecycle (Private.ReloadTriggerEvents): the
+-- spell is watched, its cooldown events listened for, and one cooldown
+-- change announced so the state appears. Nothing is installed on ordinary
+-- cooldown events, and nothing polls.
+local standardPending = setmetatable({}, {__mode = "k"})
+local function NoteUnresolvedStandardSpells(trigger, id, triggernum)
+  if id == nil or triggernum == nil then return end
+  local unresolved
+  for _, query in ipairs(Private.CDMStandardSpellQueries(trigger)) do
+    if not ConfiguredStandardSpell(query) then
+      unresolved = unresolved or {}
+      unresolved[#unresolved + 1] = query
+    end
+  end
+  standardPending[trigger] = unresolved and {id = id, triggernum = triggernum, queries = unresolved} or nil
+end
+function Private.CDMStandardSpellsChanged()
+  if next(standardPending) == nil or not Private.ReloadTriggerEvents then return end
+  local renew
+  for trigger, where in pairs(standardPending) do
+    for _, query in ipairs(where.queries) do
+      local configured = ConfiguredStandardSpell(query)
+      if configured then
+        renew = renew or {}
+        renew[trigger] = renew[trigger] or {where = where, learned = {}}
+        local learned = renew[trigger].learned
+        learned[#learned + 1] = configured
+      end
+    end
+  end
+  if not renew then return end
+  local learnedSpells
+  for trigger, record in pairs(renew) do
+    -- ReloadTriggerEvents runs loadFunc again, which notes the trigger anew
+    -- while any of its names is still unknown.
+    standardPending[trigger] = nil
+    if Private.ReloadTriggerEvents(record.where.id, record.where.triggernum, trigger) then
+      learnedSpells = learnedSpells or {}
+      for _, configured in ipairs(record.learned) do
+        learnedSpells[configured] = true
+      end
+    end
+  end
+  -- ForeverAuras (Astra's dev.9 review, item 3): register every eligible
+  -- listener first, then announce each learned spell once. Announcing inside
+  -- the registration loop repeatedly rebuilt earlier listeners when several
+  -- displays were waiting for the same spell (20 displays: 210 updates).
+  if learnedSpells then
+    for configured in pairs(learnedSpells) do
+      Private.ScanEventsByID("SPELL_COOLDOWN_CHANGED", configured)
+    end
+  end
+end
+-- The spell read and drawn now for a configured spell: the service's own
+-- remapping (overrides; the known rank for a name), as the Spell trigger does.
+local function EffectiveStandardSpell(configured, exact)
+  local effective = Private.ExecEnv.GetEffectiveSpellId(configured, exact, true)
+  if type(effective) ~= "number" or effective <= 0 then return configured end
+  return effective
+end
+
+local standardScratch = {}
+local function BuildStandardSpellState(state, configured, exact, config, event, index)
+  for field in pairs(state) do state[field] = nil end
+  local spellID = EffectiveStandardSpell(configured, exact)
+  local spell = C_Spell.GetSpellInfo(spellID)
+  state.show, state.changed, state.autoHide = true, true, false
+  state.index, state.name, state.icon = index, spell and spell.name or ("Spell " .. spellID), spell and spell.iconID or 134400
+  state.spellId, state.cdmBuff = spellID, false
+  -- The identity the service announces for, for the Remaining Time wakeup.
+  state.cdmConfiguredSpell = configured
+  state.cdmTextPreview = event == "OPTIONS"
+  state.cdmHideGCDText, state.cdmGCDOnly, state.cdmSuppressGCD = config.hideGCDText == true, false, false
+  if event == "OPTIONS" then
+    state.progressType, state.duration, state.expirationTime = "timed", 6, GetTime() + 6
+    state.onCooldown, state.isReady, state.stacks = true, false, 3
+    state.cdmHideGCDText = false
+    state.hasTimer = true
+    return
+  end
+  -- Known: as the Spell trigger, unless the trigger ignores it.
+  if not config.ignoreSpellKnown and not WeakAuras.IsSpellKnownIncludingPet(spellID) then
+    state.show = false
+    return
+  end
+  -- Usability and resources, as on the catalog path.
+  if C_Spell.IsSpellUsable then
+    local usable, insufficientResources = C_Spell.IsSpellUsable(spellID)
+    state.isUsable = ReadBoolean(usable)
+    state.insufficientResources = ReadBoolean(insufficientResources)
+  end
+  -- Range against the target: 1 in range, 0 out, nil unknown.
+  if UnitExists("target") then
+    local range = WeakAuras.IsSpellInRange(spellID, "target")
+    if range ~= nil then state.inRange = range == 1 end
+  end
+  FreshenCooldownReader(event)
+  FeedGCDFlag(spellID, event)
+  local readerTrack = config.track == "charges" and "charges" or config.track == "cooldown" and "cooldown" or nil
+  local cooldown = Private.GetSpellCooldownData(spellID, readerTrack, config.showGCD, false, standardScratch)
+  local duration, textDuration
+  if cooldown then
+    state.spellCount = IsReadable(cooldown.count) and type(cooldown.count) == "number" and cooldown.count or nil
+    -- As the Spell trigger (Dan: standard behaviour): On Cooldown is the
+    -- selected timer running (under Charge Recharge and Auto, a recharge);
+    -- Is Ready is whether the spell can be used now: a usable charge, else
+    -- not on cooldown. A secret count leaves Is Ready unknown.
+    if cooldown.onCooldown ~= nil then state.onCooldown = cooldown.onCooldown end
+    if cooldown.charges ~= nil or cooldown.maxCharges ~= nil then
+      local count = IsReadable(cooldown.charges) and type(cooldown.charges) == "number" and cooldown.charges or nil
+      if count ~= nil then
+        state.stacks = count
+        state.isReady = count > 0
+      end
+      local recharging = ReadBoolean(cooldown.recharging)
+      if recharging ~= nil then state.recharging = recharging end
+    elseif cooldown.onCooldown ~= nil then
+      state.isReady = not cooldown.onCooldown
+    end
+    state.cdmGCDOnly = cooldown.gcdOnly == true
+    state.cdmNativePaused = cooldown.paused == true
+    duration, textDuration = cooldown.duration, cooldown.textDuration
+    state.wandAppearanceDuration = not cooldown.paused and cooldown.wandAppearanceDuration or nil
+    if state.cdmGCDOnly and not config.showGCD then duration = nil end
+  end
+  state.cdmSuppressGCD = not duration
+  if duration then
+    state.progressType, state.durationObject = "durationObject", duration
+  else
+    state.progressType, state.duration, state.expirationTime = "timed", 0, 0
+  end
+  if config.hideGCDText then
+    state.cdmTextDurationObject, state.cdmTextDurationRequired = textDuration, true
+  end
+  local showMode = config.showMode or "always"
+  if showMode == "usable" then state.show = state.isUsable == true
+  elseif showMode == "unusable" then state.show = state.isUsable == false
+  elseif showMode == "cooldown" then state.show = state.onCooldown == true
+  elseif showMode == "ready" then state.show = state.onCooldown == false end
+  state.hasTimer = state.durationObject ~= nil or state.progressType == "timed"
+end
+
+local standardOutputs = setmetatable({}, {__mode = "k"})
+local standardClones = setmetatable({}, {__mode = "k"})
+function Private.ExecEnv.UpdateCDMStandardSpells(allstates, config, event)
+  if event == "PLAYER_TARGET_CHANGED" then SettleTarget(); return false end
+  local outputs = standardOutputs[allstates]
+  if outputs then wipe(outputs) else outputs = {}; standardOutputs[allstates] = outputs end
+  local clones = standardClones[allstates]
+  if not clones then clones = {}; standardClones[allstates] = clones end
+  local queries = config.queries
+  for index, query in ipairs(queries) do
+    local configured = ConfiguredStandardSpell(query)
+    if configured then
+      -- ForeverAuras (Astra's dev.9 review, item 1): one state per query, not
+      -- per configured ID: a name and an exact ID can share a configured ID
+      -- while resolving to different spells after a rank is learned.
+      local state = clones[index]
+      if not state then state = {}; clones[index] = state end
+      BuildStandardSpellState(state, configured, query.exact, config, event, index)
+      -- ForeverAuras (Astra's dev.8 review, item 6): one display per current
+      -- spell. Each query keeps its own watch and state, but two queries that
+      -- the client resolves to the same spell now (a name and its ID, two IDs
+      -- sharing an override) draw one icon: the first in the list, unless it
+      -- is hidden and a later one shows.
+      local key = #queries == 1 and "" or ("spell:" .. tostring(state.spellId or configured))
+      if not outputs[key] or (state.show and not outputs[key].show) then outputs[key] = state end
+    end
+  end
+  return CommitStates(allstates, outputs)
+end
+
 local listOutputs = setmetatable({}, {__mode = "k"})
 local listClones = setmetatable({}, {__mode = "k"})
 -- Auto-Clone off: the buff clones of a Names/IDs list fold into one state
@@ -986,13 +1375,53 @@ local function PreferredClone(a, b, mode)
   return rb < ra and b or a
 end
 
-local function MergeClones(outputs, mode)
-  local best, unknown, any = nil, {}, false
+-- ForeverAuras: one display for a list of auras (Auto-Clone off). Found and
+-- Always follow the preferred active aura. Missing (Dan: three armors, none
+-- shown when one was up) means none of the listed auras is up: an active
+-- aura hides the display whatever the others do; with none active and some
+-- unreadable (combat) the native binding decides as for Found; all readable
+-- and absent shows it.
+-- The unit a clone's aura lives on: what the viewer reported, else the spells.
+-- ForeverAuras (Astra's dev.8 review, item 4): the native source a clone's
+-- aura would be followed on, as the renderer decides it (CDMAuraProgress):
+-- a public render unit first, then the unit and filter the viewer frame
+-- reported, else the spells' own classification (a harmful spell's aura is
+-- the player's debuff on the target). Unit and aura kind (helpful/harmful)
+-- make the source; clones of different sources cannot share one native gate.
+local function CloneSource(state)
+  local unit, filter = state.cdmAuraRenderUnit, state.cdmAuraFilter
+  if unit ~= "target" and unit ~= "player" then
+    if state.cdmAuraSourceSeen and (state.cdmAuraUnit == "target" or state.cdmAuraUnit == "player") then
+      unit = state.cdmAuraUnit
+    elseif Private.CDMSpellsTargetEnemy(state.cdmAuraSpellIDs) then
+      unit, filter = "target", "HARMFUL"
+    else
+      unit, filter = "player", "HELPFUL"
+    end
+  end
+  local kind = type(filter) == "string" and filter:find("HARMFUL") and "HARMFUL" or "HELPFUL"
+  return unit .. ":" .. kind
+end
+local function MergeClones(outputs, mode, showMode)
+  -- ForeverAuras (Astra's dev.6 review): one display can watch one native
+  -- source. A list mixing a player buff and a target debuff, or a helpful
+  -- and a harmful target aura, is left as its clones (no merge) rather than
+  -- silently watching one source for both; one Missing reminder across mixed
+  -- sources is not supported.
+  local source
+  for key, state in pairs(outputs) do
+    if key ~= "" then
+      local u = CloneSource(state)
+      if source == nil then source = u elseif source ~= u then return end
+    end
+  end
+  local best, unknown, any, active = nil, {}, false, nil
   for key, state in pairs(outputs) do
     if key ~= "" then
       any = true
-      if state.auraActive == true and state.show then
-        best = best and PreferredClone(best, state, mode) or state
+      if state.auraActive == true then
+        active = active and PreferredClone(active, state, mode) or state
+        if state.show then best = best and PreferredClone(best, state, mode) or state end
       elseif state.auraActive == nil then
         unknown[#unknown + 1] = state
       end
@@ -1000,7 +1429,11 @@ local function MergeClones(outputs, mode)
   end
   if not any then return end
   local merged = {}
-  if best then
+  if showMode == "missing" and active then
+    -- An aura is up: nothing is missing. The active aura's clone, hidden.
+    for field, value in pairs(active) do merged[field] = value end
+    merged.show = false
+  elseif best then
     for field, value in pairs(best) do merged[field] = value end
   elseif #unknown > 0 then
     for field, value in pairs(unknown[1]) do merged[field] = value end
@@ -1059,7 +1492,7 @@ function Private.ExecEnv.UpdateCDMSelectionList(allstates, queries, event, autoC
       if not outputs[key] or not outputs[key].show or state.show then outputs[key] = state end
     end
   end
-  if autoClone == false and queries[1] and queries[1].event == "Blizzard CDM Buff" then MergeClones(outputs, combineMode) end
+  if autoClone == false and queries[1] and queries[1].event == "Blizzard CDM Buff" then MergeClones(outputs, combineMode, queries[1].showMode) end
   return CommitStates(allstates, outputs)
 end
 
@@ -1082,8 +1515,45 @@ Private.CooldownViewerPrototype = {
   cooldownViewerProgress = true,
   automaticrequired = true,
   force_events = "PLAYER_ENTERING_WORLD",
-  internal_events = {"FA_CDM_REFRESH", "FA_CDM_LAYOUT_CHANGED", "FA_CDM_TARGET_SETTLED"},
+  internal_events = function(trigger)
+    -- A standard-path trigger is driven by the spell service (loadInternalEventFunc).
+    if Private.CDMStandardSpellTrigger(trigger) then return {"FA_CDM_TARGET_SETTLED"} end
+    return {"FA_CDM_REFRESH", "FA_CDM_LAYOUT_CHANGED", "FA_CDM_TARGET_SETTLED"}
+  end,
+  loadInternalEventFunc = function(trigger)
+    if not Private.CDMStandardSpellTrigger(trigger) then return {} end
+    local events = {"FA_WAND_TEXT_REFRESH", "WA_DELAYED_PLAYER_ENTERING_WORLD", "WA_SPELL_RANGECHECK"}
+    for _, query in ipairs(Private.CDMStandardSpellQueries(trigger)) do
+      local id = Private.CDMResolveStandardSpell(query)
+      if id then
+        events[#events + 1] = "SPELL_COOLDOWN_CHANGED:" .. id
+        events[#events + 1] = "COOLDOWN_REMAINING_CHECK:" .. id
+      end
+    end
+    if trigger.use_cdmShowGCD then
+      for _, e in ipairs({"GCD_START", "GCD_CHANGE", "GCD_END", "GCD_UPDATE"}) do events[#events + 1] = e end
+    end
+    return events
+  end,
+  loadFunc = function(trigger, id, triggernum)
+    if not Private.CDMStandardSpellTrigger(trigger) then return end
+    for _, query in ipairs(Private.CDMStandardSpellQueries(trigger)) do
+      local spellID = Private.CDMResolveStandardSpell(query)
+      if spellID then WeakAuras.WatchSpellCooldown(spellID, false, query.exact, true) end
+    end
+    -- A name not known yet registers once it is learned (Private.CDMStandardSpellsChanged).
+    NoteUnresolvedStandardSpells(trigger, id, triggernum)
+    if trigger.use_cdmShowGCD then WeakAuras.WatchGCD() end
+  end,
   GetNameAndIcon = function(trigger)
+    if Private.CDMStandardSpellTrigger(trigger) then
+      for _, query in ipairs(Private.CDMStandardSpellQueries(trigger)) do
+        local id = Private.CDMResolveStandardSpell(query)
+        local spell = id and C_Spell.GetSpellInfo(id)
+        if spell then return spell.name, spell.iconID end
+      end
+      return "Cooldown Manager", 134400
+    end
     local entries, frames = GetCatalog(), Private.CDMFrames()
     for _, id in ipairs(GetSelections(trigger)) do
       local info = entries[id] and C_CooldownViewer.GetCooldownViewerCooldownInfo(id)
@@ -1094,7 +1564,12 @@ Private.CooldownViewerPrototype = {
     end
     return "Cooldown Manager", 134400
   end,
-  events = function()
+  events = function(trigger)
+    if trigger and Private.CDMStandardSpellTrigger(trigger) then
+      -- The spell service announces cooldown changes (loadInternalEventFunc); the
+      -- trigger itself listens only for what changes the spell or the target.
+      return {events = {"PLAYER_ENTERING_WORLD", "PLAYER_SPECIALIZATION_CHANGED", "SPELLS_CHANGED", "PLAYER_TARGET_CHANGED", "SPELL_UPDATE_ICON"}, unit_events = {}}
+    end
     local events = {"PLAYER_ENTERING_WORLD", "PLAYER_SPECIALIZATION_CHANGED", "SPELLS_CHANGED", "SPELL_UPDATE_COOLDOWN", "SPELL_UPDATE_CHARGES", "SPELL_UPDATE_ICON", "PLAYER_EQUIPMENT_CHANGED", "BAG_UPDATE_COOLDOWN", "PLAYER_TARGET_CHANGED", "PLAYER_TOTEM_UPDATE"}
     if IsAvailable() then
       events[#events + 1] = "COOLDOWN_VIEWER_DATA_LOADED"
@@ -1127,6 +1602,15 @@ Private.CooldownViewerPrototype = {
         trigger.cdmUseCharges and tostring(trigger.cdmChargeCount or 1) or "", trigger.cdmChargeOperator or ">=",
         trigger.cdmUseSpellCount and tostring(trigger.cdmSpellCount or 1) or "", trigger.cdmSpellCountOperator or ">=")
     end
+    if Private.CDMStandardSpellTrigger(trigger) then
+      local parts = {}
+      for _, query in ipairs(Private.CDMStandardSpellQueries(trigger)) do
+        parts[#parts + 1] = ("{query=%q,exact=%s}"):format(query.query, tostring(query.exact))
+      end
+      return ("local config={queries={%s},showMode=%q,showGCD=%s,track=%q,hideGCDText=%s,ignoreSpellKnown=%s}\nreturn function(allstates,event,...) return Private.ExecEnv.UpdateCDMStandardSpells(allstates,config,event) end"):format(
+        table.concat(parts, ","), trigger.cdmShow or "always", tostring(trigger.use_cdmShowGCD == true), trigger.cdmTrack or "auto",
+        tostring(trigger.cdmHideGCDText ~= false), tostring(trigger.use_ignoreSpellKnown == true))
+    end
     local queries = Private.CDMSpellQueries(trigger)
     if queries then
       local serialized = {}
@@ -1136,8 +1620,11 @@ Private.CooldownViewerPrototype = {
           tostring(query.showGCD), query.track, tostring(query.hideGCDText), query.showMode, tostring(query.requireTarget))
       end
       -- Auto-Clone (buffs): unset means clones, as before the option existed.
+      -- ForeverAuras (Dan): Aura(s) Missing is one display for the whole list
+      -- (a clone per missing aura meant nothing), whatever Auto-Clone says.
+      local oneDisplay = trigger.event == "Blizzard CDM Buff" and (trigger.cdmAutoClone == false or (trigger.cdmBuffShow or "active") == "missing")
       return ("local queries={%s}\nreturn function(allstates,event) return Private.ExecEnv.UpdateCDMSelectionList(allstates,queries,event,%s,%q) end"):format(table.concat(serialized, ","),
-        tostring(not (trigger.event == "Blizzard CDM Buff" and trigger.cdmAutoClone == false)), trigger.cdmCombineMode or "showLowest")
+        tostring(not oneDisplay), trigger.cdmCombineMode or "showLowest")
     end
     if trigger.type == "cdm" then trigger.cdmSource = trigger.event == "Blizzard CDM Buff" and "buff" or "cooldown" end
     if trigger.cdmSpell ~= nil and tostring(trigger.cdmSpell):find("%S") and trigger.event ~= "Blizzard CDM Item" then
@@ -1596,10 +2083,24 @@ function Private.ExecEnv.UpdateCDMCooldownFilters(allstates, rawStates, event, r
     if nextCheck then
       local wakeup = {at = nextCheck}
       cooldownWakeups[rawStates] = wakeup
+      -- ForeverAuras (Astra's dev.6 review): a named (standard-path) trigger
+      -- does not take the CDM refresh; its threshold wakeup is the service's
+      -- own COOLDOWN_REMAINING_CHECK for the configured spell, which the
+      -- trigger listens for. Catalog-path states take the CDM refresh as
+      -- before.
+      local configuredSpells = {}
+      for _, state in pairs(rawStates) do
+        if state.cdmConfiguredSpell then configuredSpells[state.cdmConfiguredSpell] = true end
+      end
       local function Refresh()
         if cooldownWakeups[rawStates] == wakeup then
           cooldownWakeups[rawStates] = nil
-          Private.QueueCDMRefresh()
+          local any = false
+          for id in pairs(configuredSpells) do
+            any = true
+            Private.ScanEventsByID("COOLDOWN_REMAINING_CHECK", id)
+          end
+          if not any then Private.QueueCDMRefresh() end
         end
       end
       local delay = math.max(0.001, nextCheck - GetTime())
@@ -1623,8 +2124,26 @@ Private.CooldownViewerUtilityPrototype.name = L["Cooldown"]
 Private.CooldownViewerItemPrototype.name = L["Item"]
 local spellArgs = {}
 for i, arg in ipairs(Private.CooldownViewerPrototype.args) do spellArgs[i] = arg end
+-- ForeverAuras (Astra's dev.6 review): range is evaluated live, as the Spell
+-- trigger's Spell In Range condition is, on the range clock's and the target
+-- events (the clock calls the condition handler, not the trigger); the state's
+-- own inRange (the viewer frame's flag on the catalog path) is the fallback
+-- when the live answer is unknown.
 spellArgs[#spellArgs + 1] = {name = "inRange", display = L["Spell In Range"], hidden = true,
-  conditionType = "bool", conditionTest = BooleanCondition("inRange")}
+  conditionType = "bool",
+  conditionTest = function(state, needle)
+    if not state or not state.show then return false end
+    local id = state.spellId
+    -- ForeverAuras (Astra's dev.8 review, item 3): no target, no range; a
+    -- range remembered from the last target does not stand in.
+    if not UnitExists("target") then return false end
+    if id then
+      local range = WeakAuras.IsSpellInRange(id, "target")
+      if range ~= nil then return (range == 1) == (needle == 1) end
+    end
+    return state.inRange ~= nil and state.inRange == (needle == 1)
+  end,
+  conditionEvents = Private.AddTargetConditionEvents and Private.AddTargetConditionEvents({"WA_SPELL_RANGECHECK"}) or {"WA_SPELL_RANGECHECK", "PLAYER_TARGET_CHANGED"}}
 -- Only spell cooldown triggers expose usability and resource checks; item and aura triggers retain their conditions.
 spellArgs[#spellArgs + 1] = {name = "isUsable", display = L["Spell Usable"], hidden = true,
   conditionType = "bool", conditionTest = BooleanCondition("isUsable")}
@@ -1634,8 +2153,8 @@ Private.CooldownViewerPrototype.args = spellArgs
 Private.CooldownViewerUtilityPrototype.args = spellArgs
 -- Resource, stance and reactive-action changes can occur without a cooldown change.
 local cooldownEvents = Private.CooldownViewerPrototype.events
-local function SpellCooldownEvents()
-  local result = cooldownEvents()
+local function SpellCooldownEvents(trigger)
+  local result = cooldownEvents(trigger)
   for _, event in ipairs({"ACTIONBAR_UPDATE_USABLE", "ACTION_USABLE_CHANGED", "SPELL_UPDATE_USABLE", "UPDATE_SHAPESHIFT_FORM"}) do
     result.events[#result.events + 1] = event
   end
@@ -1655,7 +2174,7 @@ end
 Private.memoryRootAccessors = Private.memoryRootAccessors or {}
 Private.memoryRootAccessors["CooldownViewerTrigger: resolved"] = function() return resolved end
 Private.memoryRootAccessors["CooldownViewerTrigger: rememberedEntrySpells"] = function() return rememberedEntrySpells end
-Private.memoryRootAccessors["CooldownViewerTrigger: spellCooldowns"] = function() return spellCooldowns end
+Private.memoryRootAccessors["CooldownViewerTrigger: gcdUpdatedAt"] = function() return gcdUpdatedAt end
 Private.memoryRootAccessors["CooldownViewerTrigger: built"] = function() return built end
 Private.memoryRootAccessors["CooldownViewerTrigger: snapshots"] = function() return snapshots end
 Private.memoryRootAccessors["CooldownViewerTrigger: persistentOutputs"] = function() return persistentOutputs end

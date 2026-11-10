@@ -1594,8 +1594,25 @@ function LoadEvent(id, triggernum, data)
   end
 
   if (data.loadFunc) then
-    data.loadFunc(data.trigger);
+    -- ForeverAuras (Astra's dev.8 review, item 1): the display and trigger
+    -- number are passed too, so a trigger whose spell is not known yet can
+    -- ask for its registration to be renewed (Private.ReloadTriggerEvents).
+    data.loadFunc(data.trigger, id, triggernum);
   end
+end
+
+-- ForeverAuras (Astra's dev.8 review, item 1): renews one loaded trigger's
+-- event registration and load function, as LoadEvent did when its display
+-- loaded. A CDM Cooldown trigger naming a spell the character did not know
+-- at load uses it once the spell is learned (SPELLS_CHANGED), so the spell
+-- is watched and its cooldown events listened for; a trigger table that is
+-- no longer the loaded one (re-added display) is left alone. Registering an
+-- event twice is harmless: the listener tables are keyed by display.
+function Private.ReloadTriggerEvents(id, triggernum, trigger)
+  local data = loaded_auras[id] and events[id] and events[id][triggernum]
+  if not data or data.trigger ~= trigger then return false end
+  LoadEvent(id, triggernum, data)
+  return true
 end
 
 local function trueFunction()
@@ -3116,6 +3133,9 @@ do
         SpellDetails.quietSecretCheck = nil
       elseif(event == "SPELLS_CHANGED") then
         SpellDetails:CheckSpellKnown()
+        -- ForeverAuras (Astra's dev.8 review, item 1): CDM Cooldown triggers
+        -- naming a spell that was unknown when they loaded register now.
+        if Private.CDMStandardSpellsChanged then Private.CDMStandardSpellsChanged() end
         -- ForeverAuras (dev.107, Astra's dev.105 hitch candidate): share the queued cooldown pass while
         -- keeping spell remapping immediate (the event ran a full sweep here AND the queued one: twice
         -- the visits in the frame of a spell change).

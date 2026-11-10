@@ -181,8 +181,14 @@ local function getRotateOffset(object, degrees, point)
 end
 local fontObjectCounter = 0
 
+-- ForeverAuras (1.3.6-dev.2, Dan's stray count): every text element ever
+-- made, for the /fa textcheck diagnostic (Private.TextCheck), which lists
+-- texts still shown without a live owner. Weak keys; nothing else reads it.
+Private.subTextFrames = Private.subTextFrames or setmetatable({}, {__mode = "k"})
+
 local function create()
   local region = CreateFrame("Frame", nil, UIParent);
+  Private.subTextFrames[region] = true
 
   local text = region:CreateFontString(nil, "OVERLAY");
   region.text = text;
@@ -207,6 +213,7 @@ local function create()
 end
 
 local function onAcquire(subRegion)
+  subRegion.faState = "live"   -- ForeverAuras (1.3.6-dev.4): lifecycle for /fa textcheck
   subRegion:Show()
 end
 
@@ -214,11 +221,16 @@ local function onRelease(subRegion)
   -- A pooled subtext must not resume the previous aura's native timer slot.
   Private.CDMAuraProgress.HideText(subRegion)
   Private.BlizzardAuraDisplay.HideLinkedText(subRegion)
+  -- ForeverAuras (1.3.6-dev.4): lifecycle for /fa textcheck; "pooled" only once the hide went through
+  subRegion.faState = "release attempted"
   subRegion:Hide()
+  subRegion.faState = "pooled"
 end
 
 local function modify(parent, region, parentData, data, first)
   region:SetParent(parent)
+  -- ForeverAuras (1.3.6-dev.2): the display this element was last given to, for /fa textcheck
+  region.faOwnerId, region.faOwnerClone = parent.id, parent.cloneId
   local text = region.text;
   local fontObject = region.fontObject
 
@@ -812,3 +824,321 @@ end
 
 WeakAuras.RegisterSubRegionType("subtext", L["Text"], supports, create, modify, onAcquire, onRelease,
                                 default, addDefaultsForNewAura, properties)
+
+-- ForeverAuras (1.3.6-dev.4, Dan's stray count; Astra's textcheck reviews):
+-- "/fa textcheck" is a READ-ONLY report of the addon's text elements (the
+-- SubText wrappers made since the reload; native countdowns, linked copies,
+-- Text displays and custom-code strings are NOT covered, so a clean report
+-- does not rule those out, and a stale record is evidence, not proof that it
+-- paints a given glyph). For every element whose wrapper or FontString has
+-- its visible flag set (IsVisible: an ancestry check, not pixels on screen),
+-- or whose visibility cannot be read, it classifies the element:
+--   live      listed by the display it is parented to, and that display is the
+--             one it was last given to, by aura id AND clone key
+--   stale     parented to a display that does not list it, or last given to a
+--             different display or clone, or its FontString left its wrapper
+--   pooled    released to the pool (release completed) yet visible
+--   detached  a detached element of a Modern display (parent is not the display by design)
+--   unknown   a read failed or returned a secret value somewhere on the way
+-- and prints the records that are not plainly live (and live ones whose text
+-- is secret or unreadable, as information). Every lookup and call is
+-- guarded and classified before use; one unreadable object marks its own
+-- record unknown and the rest of the report still prints. There is no hide.
+local function Call(object, method, ...)
+  if object == nil then return false, "nil object" end
+  local okF, fn = pcall(function() return object[method] end)
+  if not okF then return false, fn end
+  if type(fn) ~= "function" then return false, "no " .. tostring(method) end
+  local results = {pcall(fn, object, ...)}
+  if not results[1] then return false, results[2] end
+  for i = 2, #results do if issecretvalue(results[i]) then return false, "secret" end end
+  return true, unpack(results, 2)
+end
+local function Field(object, key)
+  if object == nil then return false, "nil object" end
+  local ok, value = pcall(function() return object[key] end)
+  if not ok then return false, value end
+  if issecretvalue(value) then return false, "secret" end
+  return true, value
+end
+local function SameClone(a, b)
+  if a == nil or a == "" then a = nil end
+  if b == nil or b == "" then b = nil end
+  return a == b
+end
+local function Describe(frame)
+  if frame == nil then return "nil" end
+  if frame == UIParent then return "UIParent" end
+  local okI, id = Field(frame, "id")
+  if okI and id ~= nil then
+    local okC, clone = Field(frame, "cloneId")
+    return ("display %s (clone %s)"):format(tostring(id), okC and tostring(clone) or "unreadable")
+  end
+  local okN, name = Call(frame, "GetName")
+  if okN and name then return tostring(name) end
+  local okT, kind = Call(frame, "GetObjectType")
+  return okT and ("a %s"):format(tostring(kind)) or "unreadable"
+end
+-- true / false / nil (unknown: the list could not be read)
+local function Lists(region, frame)
+  if region == nil then return false end
+  local ok, subs = Field(region, "subRegions")
+  if not ok then return nil end
+  if type(subs) ~= "table" then return false end
+  local okI, found = pcall(function() for _, sub in ipairs(subs) do if sub == frame then return true end end return false end)
+  if not okI then return nil end
+  return found
+end
+
+function Private.TextCheck()
+  local counted, failed, counts, records = 0, 0, {}, 0
+  for frame in pairs(Private.subTextFrames or {}) do
+    local okW, wrapperVisible = Call(frame, "IsVisible")
+    local okX, text = Field(frame, "text")
+    local okTV, textVisible = Call(okX and text or nil, "IsVisible")
+    local anyVisible = (okW and wrapperVisible == true) or (okTV and textVisible == true)
+    local readable = okW and okTV
+    if not readable then failed = failed + 1 end
+    if anyVisible or not readable then
+      counted = counted + 1
+      local okP, parent = Call(frame, "GetParent")
+      local okTP, textParent = Call(okX and text or nil, "GetParent")
+      local okPI, parentId = Field(okP and parent or nil, "id")
+      local okPC, parentClone = Field(okP and parent or nil, "cloneId")
+      local okPR, parentRegionType = Field(okP and parent or nil, "regionType")
+      local parentIsDisplay = okP and okPR and type(parentRegionType) == "string"
+      local okPS, parentShown = Call(okP and parent or nil, "IsShown")
+      local ownerId, ownerClone = frame.faOwnerId, frame.faOwnerClone
+      local ownerRegion = ownerId and WeakAuras.GetRegion(ownerId, (ownerClone ~= nil and ownerClone ~= "") and ownerClone or nil) or nil
+      local listedByParent = false
+      if parentIsDisplay then listedByParent = Lists(parent, frame) end
+      local listedByOwner = Lists(ownerRegion, frame)
+      local okT, value = Call(okX and text or nil, "GetText")
+      local state
+      if not (readable and okP and okTP and okX) or (parentIsDisplay and not (okPI and okPC and okPS)) or listedByParent == nil or listedByOwner == nil then state = "unknown"
+      elseif frame.secretAuraDetached then state = "detached"
+      elseif frame.faState == "pooled" then state = "pooled"
+      elseif textParent ~= frame then state = "stale"
+      elseif parentIsDisplay and listedByParent == true and (ownerId == nil or (parentId == ownerId and SameClone(parentClone, ownerClone))) then state = "live"
+      else state = "stale" end
+      counts[state] = (counts[state] or 0) + 1
+      -- A live element whose text cannot be read (secret) is printed too, as information, not as a fault.
+      if state ~= "live" or not okT then
+        records = records + 1
+        local okA, _, anchor = Call(okX and text or nil, "GetPoint", 1)
+        WeakAuras.prettyPrint(("Text check %d: %s; wrapper under %s%s; text under %s; last given to %s (clone %s); listed by parent: %s, by owner: %s; lifecycle %s; text %s; anchored to %s"):format(
+          records, state, okP and Describe(parent) or "unreadable",
+          parentIsDisplay and (okPS and (parentShown and ", shown" or ", hidden") or ", visibility unreadable") or "",
+          okTP and (textParent == frame and "its wrapper" or Describe(textParent)) or "unreadable",
+          tostring(ownerId), tostring(ownerClone),
+          listedByParent == nil and "unknown" or tostring(listedByParent), listedByOwner == nil and "unknown" or tostring(listedByOwner),
+          tostring(frame.faState),
+          okT and ("%q"):format(tostring(value)) or ("unreadable (%s)"):format(tostring(value)),
+          okA and Describe(anchor) or "unreadable"))
+      end
+    end
+  end
+  WeakAuras.prettyPrint(("Text check: %d elements with a visible flag or an unreadable one: %d live, %d stale, %d pooled, %d detached, %d unknown (%d with a failed read). Visible flag is an ancestry check, not pixels on screen. Covers the addon's text elements only, not native countdowns, linked copies, Text displays or custom strings; a stale record is evidence, not proof."):format(
+    counted, counts.live or 0, counts.stale or 0, counts.pooled or 0, counts.detached or 0, counts.unknown or 0, failed))
+end
+
+-- ForeverAuras (1.3.6-dev.5, Dan's stray count): "/fa textcheck native" sweeps
+-- every aura container frame the client knows (EnumerateFrames; forbidden
+-- frames skipped) and reports the ones that have a visible string the addon
+-- cannot read (a countdown or stack count the client draws from secret
+-- data), with the container's state and the frames above it, up to the
+-- display or named frame that owns it. Read-only; every lookup and call is
+-- guarded, one unreadable object marks its own record. It covers strings
+-- inside aura containers only; a string drawn elsewhere is not listed.
+local function Chain(frame)
+  local parts, cursor, depth, ownedByDisplay = {}, frame, 0, false
+  while cursor and depth < 8 do
+    local okP, parent = Call(cursor, "GetParent")
+    if not okP then parts[#parts + 1] = "unreadable parent"; break end
+    if parent == nil then break end
+    parts[#parts + 1] = Describe(parent)
+    local okI, id = Field(parent, "id")
+    if okI and id ~= nil then ownedByDisplay = true; break end
+    if parent == UIParent then break end
+    cursor = parent
+    depth = depth + 1
+  end
+  return table.concat(parts, " < "), ownedByDisplay
+end
+local coverage = {regionsFailed = 0, childrenFailed = 0, depthBound = 0, forbiddenSkipped = 0, forbiddenUnknown = 0}
+local function Strings(frame, found, depth)
+  if depth > 6 then coverage.depthBound = coverage.depthBound + 1; return end
+  local okR, regions = pcall(function() return {frame:GetRegions()} end)
+  if not okR then coverage.regionsFailed = coverage.regionsFailed + 1 end
+  if okR then
+    for _, region in ipairs(regions) do
+      local okK, kind = Call(region, "GetObjectType")
+      if okK and kind == "FontString" then
+        local okV, visible = Call(region, "IsVisible")
+        if not okV or visible == true then
+          local okT, value = Call(region, "GetText")
+          found[#found + 1] = {ok = okT, text = value}
+        end
+      end
+    end
+  end
+  local okC, children = pcall(function() return {frame:GetChildren()} end)
+  if not okC then coverage.childrenFailed = coverage.childrenFailed + 1 end
+  if okC then for _, child in ipairs(children) do Strings(child, found, depth + 1) end end
+end
+function Private.TextCheckNative()
+  local containers, reported, kinds = 0, 0, {}
+  for k in pairs(coverage) do coverage[k] = 0 end
+  local frame = EnumerateFrames()
+  while frame do
+    local okF, forbidden = Call(frame, "IsForbidden")
+    if not okF then coverage.forbiddenUnknown = coverage.forbiddenUnknown + 1
+    elseif forbidden then coverage.forbiddenSkipped = coverage.forbiddenSkipped + 1 end
+    if okF and not forbidden then
+      -- An aura container is known by its API, not by its object type name
+      -- (the client does not report "AuraContainer" for it).
+      local okM, addSlot = Field(frame, "AddAuraSlot")
+      local okK, kind = Call(frame, "GetObjectType")
+      if okM and type(addSlot) == "function" then
+        containers = containers + 1
+        kinds[tostring(okK and kind or "?")] = (kinds[tostring(okK and kind or "?")] or 0) + 1
+        local okV, visible = Call(frame, "IsVisible")
+        if not okV or visible == true then
+          local found = {}
+          Strings(frame, found, 0)
+          local texts, blanks, unreadable = {}, 0, 0
+          for _, entry in ipairs(found) do
+            if not entry.ok then unreadable = unreadable + 1
+            elseif entry.text == nil or entry.text == "" then blanks = blanks + 1
+            else texts[#texts + 1] = ("%q"):format(tostring(entry.text)) end
+          end
+          local chain, ownedByDisplay = Chain(frame)
+          -- Reported: a string the addon cannot read, or real text in a
+          -- container that no ForeverAuras display owns (custom code's own
+          -- native slots, such as the Consumes backend's roots under UIParent).
+          if unreadable > 0 or (not ownedByDisplay and #texts > 0) then
+            reported = reported + 1
+            local okE, enabled = Call(frame, "IsEnabled")
+            local okS, shown = Call(frame, "IsShown")
+            local before = coverage.regionsFailed + coverage.childrenFailed + coverage.depthBound
+            WeakAuras.prettyPrint(("Native check %d: %s container, %s, %s; above it: %s; text: %s; %d blank, %d unreadable%s"):format(reported,
+              ownedByDisplay and "display-owned" or "NOT display-owned",
+              okS and (shown and "shown" or "hidden") or "shown unreadable",
+              okE and (enabled and "enabled" or "disabled") or "enabled unreadable",
+              chain, #texts > 0 and table.concat(texts, ", ") or "none readable", blanks, unreadable,
+              (coverage.regionsFailed + coverage.childrenFailed + coverage.depthBound) > before and "; part of this container could not be walked" or ""))
+          end
+        end
+      end
+    end
+    frame = EnumerateFrames(frame)
+  end
+  local kindList = {}
+  for kind, n in pairs(kinds) do kindList[#kindList + 1] = ("%s x%d"):format(kind, n) end
+  WeakAuras.prettyPrint(("Native check: %d aura containers (object types: %s), %d reported (an unreadable string, or readable text in a container no display owns). Coverage: %d forbidden frames skipped, %d frames whose forbidden state could not be read, %d region lists and %d child lists unreadable, %d subtrees cut at the depth bound. Strings outside aura containers are not covered; an uninspectable subtree is unknown, not empty."):format(
+    containers, table.concat(kindList, ", "), reported, coverage.forbiddenSkipped, coverage.forbiddenUnknown, coverage.regionsFailed, coverage.childrenFailed, coverage.depthBound))
+end
+
+-- ForeverAuras (1.3.6-dev.8, Astra's native review): "/fa textcheck consumes"
+-- maps the Clickable Consumes backend's own native layer by its actual
+-- records (aura_env.natives and aura_env.nativePool of "FCR: Consumes
+-- (Backend)"): per category and cache signature, the root's state, the
+-- display the native was last drawn for versus the category's current
+-- display, every chain's count text and what that count is anchored to, and
+-- pooled (not current) natives whose frames are still shown. Read-only; all
+-- reads guarded; failures are reported as unknown.
+function Private.TextCheckConsumes()
+  local accessor = Private.memoryRootAccessors and Private.memoryRootAccessors["aura environments"]
+  local envs = accessor and accessor()
+  local env = envs and envs["FCR: Consumes (Backend)"]
+  if not env then WeakAuras.prettyPrint("Consumes check: the backend's environment is not loaded (aura not loaded or renamed)."); return end
+  local click = env.CLICK or "FCR: Consumes Bar"
+  local function FrameState(f)
+    if f == nil then return "none" end
+    local okS, shown = Call(f, "IsShown"); local okV, visible = Call(f, "IsVisible")
+    local okE, enabled = Call(f, "IsEnabled")
+    return (okS and (shown and "shown" or "hidden") or "shown?") .. "/" .. (okV and (visible and "visible" or "not visible") or "visible?")
+      .. (okE and (enabled and "/enabled" or "/disabled") or "")
+  end
+  -- ForeverAuras (1.3.6-dev.11): strata/level of the frame that draws an element (a font string's parent)
+  -- and where it sits on screen, each read guarded; a font string reports its own position.
+  local function Layer(element)
+    if element == nil then return "none" end
+    local frame = element
+    local okO, objectType = Call(element, "GetObjectType")
+    if okO and (objectType == "FontString" or objectType == "Texture") then
+      local okP, parent = Call(element, "GetParent")
+      frame = okP and parent or nil
+    end
+    local okS, strata = Call(frame, "GetFrameStrata"); local okL, level = Call(frame, "GetFrameLevel")
+    local okX, left = Call(element, "GetLeft"); local okY, top = Call(element, "GetTop")
+    local okW, width = Call(element, "GetWidth")
+    return ("%s/%s at %s,%s w%s"):format(okS and tostring(strata) or "strata?", okL and tostring(level) or "level?",
+      okX and left and ("%.0f"):format(left) or "?", okY and top and ("%.0f"):format(top) or "?",
+      okW and width and ("%.0f"):format(width) or "?")
+  end
+  local function CountInfo(chain, currentRegion)
+    local count = chain.count
+    if not count then return "no count" end
+    local okT, text = Call(count, "GetText")
+    local okV, visible = Call(count, "IsVisible")
+    local okA, _, anchor = Call(count, "GetPoint", 1)
+    local where = "anchor unreadable"
+    if okA then
+      local okP, anchorParent = Call(anchor, "GetParent")
+      if anchor == nil then where = "no anchor"
+      elseif anchor == currentRegion or (okP and anchorParent == currentRegion) then where = "anchored on the CURRENT display"
+      elseif okP and anchorParent ~= nil and Field(anchorParent, "id") then where = "anchored on " .. Describe(anchorParent) .. " (NOT the current display)"
+      else where = "anchored on " .. Describe(anchor) end
+    end
+    return ("text %s, %s, %s"):format(okT and ("%q"):format(tostring(text)) or ("unreadable (%s)"):format(tostring(text)),
+      okV and (visible and "visible" or "not visible") or "visibility unreadable", where)
+  end
+  local function Report(key, native, current)
+    local okR, regions = pcall(function() return WeakAuras.GetRegion(click, key) end)
+    local region = okR and regions or nil
+    local visualRegion = native.visual and native.visual.region
+    WeakAuras.prettyPrint(("Consumes check: %s native for %s, signature %s: root %s, %s; drawn for %s, current display %s%s"):format(
+      current and "CURRENT" or "POOLED", tostring(key), tostring(native.signature), FrameState(native.root),
+      native.disabled and "disabled" or "enabled",
+      Describe(visualRegion), Describe(region), visualRegion == region and "" or " (DIFFERENT)"))
+    for index, chain in ipairs(native.chains or {}) do
+      local level = chain.levels and chain.levels[1]
+      local container = level and level.container
+      if chain.count or (container and select(2, Call(container, "IsVisible")) == true) then
+        WeakAuras.prettyPrint(("  chain %d (%d of %d requirements%s): container %s, button %s; %s"):format(index, #(chain.members or {}), native.n or 0,
+          chain.full and ", full" or "", FrameState(container), level and level.button and "built" or "not built", CountInfo(chain, region)))
+        -- ForeverAuras (1.3.6-dev.11, Consumes doubled digit): the draw order the chains actually have, so a
+        -- lower chain's count showing through a fuller chain's picture can be told from a wrong number.
+        local last = chain.levels and chain.levels[#(chain.members or {})]
+        WeakAuras.prettyPrint(("    layers: first container %s, last skin %s, count %s"):format(
+          Layer(container), Layer(last and last.skin), Layer(chain.count)))
+      end
+    end
+    local subText = region and region.subRegions
+    local textLine = "no sub-text"
+    if type(subText) == "table" then
+      for _, sub in ipairs(subText) do
+        if type(sub) == "table" and sub.text then textLine = "sub-text " .. Layer(sub.text); break end
+      end
+    end
+    WeakAuras.prettyPrint(("    display layers: region %s, native root %s, %s"):format(Layer(region), Layer(native.root), textLine))
+  end
+  local seen = 0
+  for key, native in pairs(env.natives or {}) do seen = seen + 1; Report(key, native, true) end
+  local pooledShown = 0
+  for key, pool in pairs(env.nativePool or {}) do
+    for signature, native in pairs(pool) do
+      if native ~= (env.natives or {})[key] then
+        local okV, visible = Call(native.root, "IsVisible")
+        local anyChain = false
+        for _, chain in ipairs(native.chains or {}) do
+          local level = chain.levels and chain.levels[1]
+          if level and level.container and select(2, Call(level.container, "IsVisible")) == true then anyChain = true end
+        end
+        if (okV and visible) or anyChain or not okV then pooledShown = pooledShown + 1; Report(key, native, false) end
+      end
+    end
+  end
+  WeakAuras.prettyPrint(("Consumes check: %d current natives, %d pooled natives still visible or unreadable. A count anchored on a display other than its category's current one, or a pooled native still visible, is the lead; anything unreadable is unknown."):format(seen, pooledShown))
+end

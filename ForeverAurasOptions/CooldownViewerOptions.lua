@@ -58,11 +58,19 @@ function OptionsPrivate.AddCooldownViewerOptions(options, data, triggernum)
   -- ForeverAuras: a Buff/Debuff trigger cannot read its aura in combat; the
   -- trigger stays active then and Blizzard shows or hides the display, as
   -- for an Aura (Modern) trigger, and that is said here the same way.
+  -- ForeverAuras (Dan): the long explanation of that is gone; a short line
+  -- says it. The "spells must be active in the CDM" line is gone too: named
+  -- and exact-ID cooldowns no longer need a viewer entry, and buffs are
+  -- selected by name here.
   if trigger.cdmSource == "buff" then
     Add("alwaysActive", {type = "description", fontSize = "medium", width = "full",
-      name = L["|cffffffffNote: Trigger Always Active while the aura is secret|r: the addon cannot read the aura then, so the trigger stays active and Blizzard's own aura display shows or hides the display. Lua conditions on this trigger's aura do not update until the aura is readable again."]})
+      name = L["|cffffffffNote:|r in combat this trigger stays active and Blizzard shows or hides the display."]})
+    -- ForeverAuras (Dan's mage test): Blizzard lists a proc under its
+    -- talent's name (Clearcasting is "Arcane Concentration"), so the name
+    -- typed here must be the one the Cooldown Manager shows.
+    Add("cdmNamesNote", {type = "description", fontSize = "medium", width = "full",
+      name = L["Use the name Blizzard's Cooldown Manager shows for the buff: a proc is listed under its talent (Clearcasting is Arcane Concentration)."]})
   end
-  Add("help", {type = "description", name = L["Spells must be active in the CDM to be displayed. Type /cdm and add them."], width = "full"})
   -- Blizzard's Cooldown Manager flags some entries as not known although the
   -- spell is (its Bane of Agony entry, 199777): it builds no viewer item for
   -- them, so their aura is secret in combat and the trigger falls back to the
@@ -299,22 +307,35 @@ function OptionsPrivate.AddCooldownViewerOptions(options, data, triggernum)
       get = function() return trigger.cdmBuffShow or "active" end, set = function(_, value) Save("cdmBuffShow", value) end})
     -- As on an Aura trigger, the option applies to Missing and Always: with
     -- Aura(s) Found no target means no aura, and the display hides.
+    -- ForeverAuras (Dan): only for a list that holds a target aura; a
+    -- player buff has no unit to be missing.
+    local function TargetAuras()
+      local P = OptionsPrivate.Private
+      if not (P.CDMSpellQueries and P.ResolveCDMSpell and P.CDMSpellsTargetEnemy) then return true end
+      for _, query in ipairs(P.CDMSpellQueries(trigger) or {}) do
+        local ok, selected = pcall(P.ResolveCDMSpell, query, "OPTIONS")
+        if ok and type(selected) == "table" and P.CDMSpellsTargetEnemy(selected.buffSpellIDs) then return true end
+      end
+      return false
+    end
     Add("unitExists", {type = "toggle", name = L["Show If Unit Does Not Exist"], width = WeakAuras.normalWidth,
       desc = L["Unticked, the trigger only shows while you have a target you can attack."],
-      hidden = function() return (trigger.cdmBuffShow or "active") == "active" end,
+      hidden = function() return (trigger.cdmBuffShow or "active") == "active" or not TargetAuras() end,
       get = function() return not trigger.cdmRequireTarget end,
       set = function(_, value) Save("cdmRequireTarget", not value) end})
     -- Auto-Clone: one clone per listed aura (the default, as before the
     -- option), or one display chosen by Preferred Match, as on a legacy Aura.
+    -- ForeverAuras (Dan): Aura(s) Missing is always one display for the list.
     Add("autoClone", {type = "toggle", name = L["Auto-Clone (Show All Matches)"], width = WeakAuras.normalWidth,
       desc = L["One display per listed aura; unticked, one display for whichever matches."],
+      hidden = function() return (trigger.cdmBuffShow or "active") == "missing" end,
       get = function() return trigger.cdmAutoClone ~= false end,
       set = function(_, value) Save("cdmAutoClone", value) end})
     Add("combineMode", {type = "select", name = L["Preferred Match"], width = WeakAuras.normalWidth,
       desc = L["Which listed aura the display follows while several are up. Remaining times that are secret cannot be compared: an aura with a readable time is preferred, and when aura information is hidden, Blizzard selects the aura shown."],
       values = {showLowest = L["Least remaining time"], showHighest = L["Most remaining time"], showFirst = L["First in the list"]},
       sorting = {"showLowest", "showHighest", "showFirst"},
-      hidden = function() return trigger.cdmAutoClone ~= false end,
+      hidden = function() return trigger.cdmAutoClone ~= false or (trigger.cdmBuffShow or "active") == "missing" end,
       get = function()
         local mode = trigger.cdmCombineMode or "showLowest"
         if mode ~= "showLowest" and mode ~= "showHighest" then mode = "showFirst" end

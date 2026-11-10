@@ -1,5 +1,20 @@
 # Changelog
 ## VERSIONS
+## 1.3.6
+- Fixed: "Aura Missing" reminders vanished after you released spirit and only came back after a reload. They now come back by themselves.
+- Fixed: auras could stay faded or stuck after dying and resurrecting.
+- Smoother end of combat when using nameplate auras.
+- Slightly less work when cooldowns change in combat.
+- Fixed: icons, timers or numbers from one aura could appear on top of another aura's icon. This happened when an icon frame was reused by another aura while the old aura's overlay was still attached. Overlays are now removed when the frame is released.
+- If the game blocks that clean-up during combat, it is finished as soon as combat ends, and the frame is not given to another aura until then.
+- Cooldown Manager triggers set up by spell name or spell ID now track cooldowns the same way the normal Cooldown Progress (Spell) trigger does: charges, range and "remaining time" conditions all work, and the spell no longer has to be visible in Blizzard's Cooldown Manager. Triggers set up by picking an entry, and item cooldowns, keep working as they did.
+- Cooldown updates keep coming after a spell is replaced or a new rank is learned, a spell you learn during the session is picked up by its name, and "remaining time" filters now update at the moment they should.
+- Several Buff/Debuff fixes: the armor "Aura Missing" reminders work, buffs on yourself no longer wrongly need a target, and alternatives that live on the same unit share one Missing reminder (buffs and debuffs on different units stay separate).
+- The Buff/Debuff options are simpler. Type the name shown in Blizzard's Cooldown Manager, for example Arcane Concentration for Clearcasting.
+- When Blizzard's Cooldown Manager data is not available, the addon no longer keeps rebuilding its list a few times a second; it tries a limited number of times and picks up again when the data appears.
+- Range conditions no longer match when you have no target, two entries that turn out to be the same spell draw one icon instead of two, and a paused cooldown no longer shows a stale "ready" look.
+- In the editor, the guide markers no longer jump to the corner when a countdown preview runs out.
+
 ## 1.3.2
 - Leaving combat is smoother. Out-of-combat reminders used to all load in the frame the fight ended; now they load a few per frame, and nothing else running at that moment pulls the waiting ones in early.
 - Auras loaded this way still get every update that happened while they waited, exactly once. Re-entering combat or opening the options window mid-way cancels cleanly.
@@ -50,13 +65,13 @@ Fixes
 - /fa modern throwing on protected geometry; a false "count is not zero" profiler warning.
 
 ## 1.1.0
-- Modern Aura Groups now behave like Dynamic Groups. The row starts where you place the group, and each display's X/Y Offset moves only that display. Groups you made before 1.1.0 keep their old layout automatically (a single “Use old row layout” checkbox in the group settings), so nothing you have changes.
+- Modern Aura Groups now behave like Dynamic Groups. The row starts where you place the group, and each display's X/Y Offset moves only that display. Groups you made before 1.1.0 keep their old layout automatically (a single "Use old row layout" checkbox in the group settings), so nothing you have changes.
 - Bars, progress textures and textures can now sit anywhere in a Modern Aura Group row, after a Modern list, and move with it, including in combat. Bars keep their overlays, ticks and texts; progress textures work in both their straight and circular forms.
 - The options preview now lays rows out the same way the live row does, including the display limit's cut-off.
 - Fixed member offsets in Modern Aura Groups being measured from the wrong display, which pushed rows and neighboring icons sideways.
 - Fixed Centered growth rows not centering correctly, and ordinary displays landing in the wrong place in mixed rows.
 - Fixed the Grid preview showing members that the live grid leaves out, and the Lua error when switching a row group to Grid with the editor open.
-- Fixed an error after reloading during combat (“Auras cannot be accessed when secret”).
+- Fixed an error after reloading during combat ("Auras cannot be accessed when secret").
 - Cooldown Manager: entries are found more reliably, including on login and when Blizzard's viewers load late, and no longer loop on failed lookups.
 - Spell Known triggers wait for spell data when it isn't loaded yet instead of reporting the spell as unknown.
 - Many option tooltips and warnings rewritten to say exactly what the addon does; confusing or outdated ones removed.

@@ -55,9 +55,21 @@ local nativeRefreshQueued = false
 -- ForeverAuras: see CDMCatalog. True when the current catalog was built
 -- without the layout and a viewer frame now exists for an entry whose
 -- placement it does not know.
+-- ForeverAuras: also true for a viewer frame whose entry the catalog does not
+-- have at all (Astra's catalog review): once the timed rebuilds of an
+-- incomplete catalog are spent (GetCatalog), a cooldown the viewer shows
+-- later would otherwise stay unknown until a refresh event. Once per entry
+-- per episode (cdmLateEntries, cleared by a refresh event's rebuild), so a
+-- frame whose ID the category data never lists cannot start the rebuild
+-- loop again.
+Private.cdmLateEntries = {}
+function Private.CDMResetLateEntries()
+  wipe(Private.cdmLateEntries)
+end
 function Private.CDMCatalogStale()
   local catalog = Private.cdmCatalogForDebug and Private.cdmCatalogForDebug()
-  if not catalog or not (Private.cdmNoLayoutCatalogs and Private.cdmNoLayoutCatalogs[catalog]) then return false end
+  if not catalog then return false end
+  local noLayout = Private.cdmNoLayoutCatalogs and Private.cdmNoLayoutCatalogs[catalog] == true
   for _, name in ipairs(viewerNames) do
     local viewer = _G[name]
     local pool = viewer and viewer.itemFramePool
@@ -65,7 +77,11 @@ function Private.CDMCatalogStale()
       for frame in pool:EnumerateActive() do
         local id = Number(frame.cooldownID)
         local entry = id and catalog[id]
-        if entry and entry.displayed == nil then return true end
+        if entry and noLayout and entry.displayed == nil then return true end
+        if id and not entry and not Private.cdmLateEntries[id] then
+          Private.cdmLateEntries[id] = true
+          return true
+        end
       end
     end
   end

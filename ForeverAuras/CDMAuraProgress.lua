@@ -90,10 +90,12 @@ local function TargetDebuffFallback(region, index, allowActive)
   -- the spells decide: a harmful spell's aura is the player's debuff on the
   -- target, a helpful one the player's own buff (the unit the viewer frame
   -- reported while readable, kept in the state, wins when it was seen).
+  -- ForeverAuras (Astra's dev.5 review, item 3): the trigger's "requires a
+  -- target" setting is about visibility, not about where the aura lives; it
+  -- used to force a player buff onto the target here. The source is decided
+  -- from what was seen and from the spells alone.
   local unit, filter
-  if trigger.cdmRequireTarget then
-    unit, filter = "target", "HARMFUL|PLAYER"
-  elseif state.cdmAuraSourceSeen and (state.cdmAuraUnit == "target" or state.cdmAuraUnit == "player") then
+  if state.cdmAuraSourceSeen and (state.cdmAuraUnit == "target" or state.cdmAuraUnit == "player") then
     unit = state.cdmAuraUnit
     filter = unit == "target" and ((state.cdmAuraFilter or ""):find("HELPFUL") and "HELPFUL|PLAYER" or "HARMFUL|PLAYER") or "HELPFUL"
   else

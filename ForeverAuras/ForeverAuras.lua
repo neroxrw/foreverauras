@@ -257,6 +257,16 @@ function SlashCmdList.WeakAuras(input)
     WeakAuras.StopProfile();
   elseif msg == "pprint" then
     WeakAuras.PrintProfile();
+  elseif msg == "bindcheck" then
+    -- ForeverAuras (diagnostic): native bindings that disagree with their frames (BlizzardAuraDisplay.lua)
+    if Private.BlizzardAuraDisplay.BindingCheck then Private.BlizzardAuraDisplay.BindingCheck() end
+  elseif msg == "textcheck" then
+    -- ForeverAuras (1.3.6-dev.8, diagnostic, read-only): text elements not plainly owned by a live display (SubText.lua)
+    if args[1] == "native" then
+      if Private.TextCheckNative then Private.TextCheckNative() end
+    elseif args[1] == "consumes" then
+      if Private.TextCheckConsumes then Private.TextCheckConsumes() end
+    elseif Private.TextCheck then Private.TextCheck() end
   elseif msg == "memscan" then
     -- ForeverAuras 1.2.4 (Dan's combat-drop hitches): where the addon's Lua memory sits
     Private.MemoryScan()
@@ -532,7 +542,13 @@ local clones = Private.clones;
 -- Unused regions that are kept around for clones
 local clonePool = {}
 -- ForeverAuras: clones released while chained in a secure Modern Aura Group
--- row (see Private.ReleaseClone), per region type; reused only by auras in
+-- ForeverAuras (Astra's overlay-reuse review, dev.4 follow-up): clones whose
+-- custom overlay the client would not let go of when they were released
+-- (AuraOverlay.lua); kept out of every pool, keyed by frame with the region
+-- type to pool them under, until Private.PoolHeldClones gets them retired.
+-- (Kept on Private: this file is at the Lua limit of local variables.)
+Private.heldClones = {}
+-- row (see Private.ReleaseClone), per region type; reused only by auras in-- row (see Private.ReleaseClone), per region type; reused only by auras in
 -- such a group, whose clones end up protected the same way.
 local securePool = {}
 local function InModernGroup(data)
@@ -4267,7 +4283,14 @@ function Private.SetRegion(data, cloneId)
         if (not region or region.regionType ~= data.regionType) then
           if (region) then
             clonePool[region.regionType] = clonePool[region.regionType] or {};
-            tinsert(clonePool[region.regionType], region);
+            -- ForeverAuras (Astra's overlay-reuse review, dev.4 follow-up): custom
+            -- overlays leave a pooled frame (AuraOverlay.lua); a frame whose overlay
+            -- the client would not let go of yet is held back, not pooled.
+            if Private.ReleaseAuraOverlays and not Private.ReleaseAuraOverlays(region) then
+              Private.heldClones[region] = region.regionType
+            else
+              tinsert(clonePool[region.regionType], region);
+            end
             region:Hide();
             -- ForeverAuras: a clone of the old type goes back to the pool without its combat-hide driver.
             Private.UpdateCombatHideDriver(region)
@@ -4464,6 +4487,17 @@ function Private.ReleaseClone(id, cloneId, regionType)
   end
   local region = clones[id][cloneId];
   clones[id][cloneId] = nil;
+  -- ForeverAuras (Astra's overlay-reuse review, dev.4 follow-up): overlays
+  -- custom code drew over this frame are retired before it goes back to the
+  -- shared pool, so the next display given the frame does not inherit them
+  -- (AuraOverlay.lua). A frame whose overlay the client refused to let go of
+  -- is held out of every pool until the restriction-end retry finishes it
+  -- (Private.PoolHeldClones); the clone bookkeeping above still happens.
+  if Private.ReleaseAuraOverlays and not Private.ReleaseAuraOverlays(region) then
+    Private.UpdateCombatHideDriver(region)
+    Private.heldClones[region] = regionType
+    return
+  end
   -- ForeverAuras: a pooled clone may be reused by another aura; it drops its
   -- secure combat-hide driver (RegionPrototype.lua) and gets one again on modify if wanted.
   Private.UpdateCombatHideDriver(region)
@@ -4493,6 +4527,27 @@ function Private.ReleaseClone(id, cloneId, regionType)
   else
     clonePool[regionType][#clonePool[regionType] + 1] = region;
   end
+end
+
+-- ForeverAuras (Astra's overlay-reuse review, dev.4 follow-up): called from
+-- the restriction-end drain (BlizzardAuraDisplay.lua) after the owed
+-- overlay retirements were tried again; a held clone whose overlays are all
+-- gone now goes to the plain clone pool (a protected one stays held, as a
+-- protected frame must not reach an unrelated aura). Returns how many wait.
+function Private.PoolHeldClones()
+  local waiting = 0
+  for region, regionType in pairs(Private.heldClones) do
+    if Private.ReleaseAuraOverlays(region) then
+      Private.heldClones[region] = nil
+      if not region:IsProtected() then
+        clonePool[regionType] = clonePool[regionType] or {}
+        clonePool[regionType][#clonePool[regionType] + 1] = region
+      end
+    else
+      waiting = waiting + 1
+    end
+  end
+  return waiting
 end
 
 local function SendChatAction(region, message, channel, language, target)
