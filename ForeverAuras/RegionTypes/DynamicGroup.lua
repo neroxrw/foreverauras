@@ -1177,6 +1177,7 @@ local function modify(parent, region, data)
 
     controlPoint.regionData = regionData
     Private.HitchCount("child SetParent")
+    if Private.HitchCounting and Private.HitchCounting() then Private.HitchCount("child SetParent: " .. tostring(childID)) end   -- (1.3.6-dev.17, diagnostic: the child reparented)
     childRegion:SetParent(controlPoint)
     region.controlledChildren[childID] = region.controlledChildren[childID] or {}
     region.controlledChildren[childID][cloneID] = controlPoint

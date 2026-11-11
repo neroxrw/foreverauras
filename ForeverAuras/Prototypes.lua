@@ -8476,13 +8476,18 @@ local rangeState = inRange and "inRange" or (checksRange and "outOfRange") or "n
           for i = 1, C_LossOfControl.GetActiveLossOfControlDataCount() do
             local data = C_LossOfControl.GetActiveLossOfControlData(i)
             if data then
+              -- ForeverAuras (1.3.6-dev.15, Dan's "Warrior - Crowd Controlled" error): in combat the client
+              -- can hand back secret numbers here; arithmetic on them is an error. A secret start or
+              -- duration leaves the timer off (the display still shows the control), and a secret
+              -- lockout school cannot be tested against the chosen one.
               if (not use_controlType)
-              or (data.locType == controlType and (controlType ~= "SCHOOL_INTERRUPT" or ((not use_interruptSchool) or bit.band(data.lockoutSchool, interruptSchool) > 0)))
+              or (data.locType == controlType and (controlType ~= "SCHOOL_INTERRUPT" or ((not use_interruptSchool)
+                or (not issecretvalue(data.lockoutSchool) and bit.band(data.lockoutSchool, interruptSchool) > 0))))
               then
                 spellId = data.spellID
                 spellName, _, icon = Private.ExecEnv.GetSpellInfo(data.spellID)
-                duration = data.duration
-                if data.startTime and data.duration then
+                if data.startTime and data.duration and not issecretvalue(data.startTime) and not issecretvalue(data.duration) then
+                  duration = data.duration
                   expirationTime = data.startTime + data.duration
                 end
                 locType = data.locType
