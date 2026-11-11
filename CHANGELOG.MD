@@ -1,5 +1,12 @@
 # Changelog
 ## VERSIONS
+## 1.3.8
+- Much less memory churn from nameplate auras: when a nameplate appears or disappears, only that nameplate’s icons are re-anchored (before, every nameplate event re-did all 40 nameplates for every aura in the group).
+- Fixed: a Lua error from the "Crowd Controlled" trigger in combat
+- Smoother end of combat: auras set to load out of combat now appear a few at a time over a couple of frames instead of all at once.
+- Less memory churn when cooldowns change in combat.
+- Opening the editor with many auras no longer runs the preview refresh inside the same click (fewer "script ran too long" errors).
+
 ## 1.3.6
 - Fixed: "Aura Missing" reminders vanished after you released spirit and only came back after a reload. They now come back by themselves.
 - Fixed: auras could stay faded or stuck after dying and resurrecting.

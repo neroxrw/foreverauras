@@ -55,7 +55,11 @@ function OptionsPrivate.SyncAllVisibility()
       C_Timer.After(0, Step)
     end
   end
-  Step()
+  -- ForeverAuras (1.3.6-dev.19, Dan's "script ran too long" in PauseAllDynamicGroups on opening the
+  -- editor): the first batch ran inside the click that opens the editor, on top of the whole options
+  -- build, and with many auras that one script run reached the client's time limit. Every batch now
+  -- runs on its own frame; the previews sync a frame after the editor appears.
+  C_Timer.After(0, Step)
 end
 
 local spellCache = WeakAuras.spellCache;

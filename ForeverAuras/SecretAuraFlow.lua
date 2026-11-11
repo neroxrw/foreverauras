@@ -355,7 +355,11 @@ local function TrackEnabled(container)
       Display.BuildReport(("%s: list disabled by %s"):format(tostring(self.faReportDisable), okS and tostring(stack):gsub("\n", " | ") or "?"))
     end
     self.faEnabled = enabled
-    if Private.HitchCount then Private.HitchCount(enabled and "container enable" or "container disable") end
+    if Private.HitchCount then
+      Private.HitchCount(enabled and "container enable" or "container disable")
+      -- ForeverAuras (1.3.6-dev.17, diagnostic): the owning display, capture only
+      if Private.HitchCounting and Private.HitchCounting() then Private.HitchCount((enabled and "container enable: " or "container disable: ") .. tostring(self.faOwnerId)) end
+    end
     return setEnabled(self, enabled)
   end
   return container
@@ -368,11 +372,13 @@ function Display.CreateAuraContainer(parent, data, optOut)
     if ok and container then
       -- ForeverAuras (combat-reload probe): noted at allocation (BlizzardAuraDisplay.lua, NoteAllocation).
       if Display.NoteAllocation then Display.NoteAllocation(parent, container) end
+      container.faOwnerId = data and data.id   -- (1.3.6-dev.17, diagnostic) for the capture's attribution
       return TrackEnabled(container), true
     end
   end
   local container = CreateFrame("AuraContainer", nil, parent, "CustomAuraContainerTemplate")
   if Display.NoteAllocation then Display.NoteAllocation(parent, container) end
+  container.faOwnerId = data and data.id   -- (1.3.6-dev.17, diagnostic)
   return TrackEnabled(container), false
 end
 
@@ -2504,8 +2510,23 @@ function Display.BeginFlowBatch() batch, gridBatch = batch or {}, gridBatch or {
 function Display.EndFlowBatch()
   local groups, grids = batch, gridBatch
   batch, gridBatch = nil, nil
-  for group in pairs(groups or {}) do Display.RelinkFlowUnits(group) end
+  -- (1.3.8) a group noted for some units only is relinked for those; true means every unit
+  for group, units in pairs(groups or {}) do Display.RelinkFlowUnits(group, units ~= true and units or nil) end
   for group in pairs(grids or {}) do Display.RefreshGrid(group) end
+end
+
+-- ForeverAuras (1.3.8, Dan's combat garbage; the nameplate handlers at
+-- 52 KB per plate event): a relink asked for one unit (a plate that came or
+-- went, a unit frame that changed) works that unit's row only. The rows are
+-- independent per unit (last[unit], lastShadow[unit]), so the result for that
+-- unit is the same as a full relink's; the other units' containers are left
+-- as they are, instead of every container of every member being re-anchored
+-- and a placement table made for each on every plate event. onlyUnits is
+-- nil (every unit), one token, or a set of tokens.
+local function UnitWanted(onlyUnits, unit)
+  if onlyUnits == nil then return true end
+  if type(onlyUnits) == "table" then return onlyUnits[unit] == true end
+  return onlyUnits == unit
 end
 
 -- During a batch, each grid is refreshed once at its end.
@@ -2519,10 +2540,19 @@ function Display.FlowUnitStart(group)
   return (AlignedPoints(group, GROWTH[GrowthKey(group)]))
 end
 
-function Display.RelinkFlowUnits(group)
+function Display.RelinkFlowUnits(group, onlyUnits)
   local mode = group and group.blizzardFlowFrames
   if mode ~= "UNITFRAME" and mode ~= "NAMEPLATE" then return end
-  if batch then batch[group] = true; return end
+  if batch then
+    -- (1.3.8) the batch keeps the union of the units asked for; a request for every unit wins
+    local noted = batch[group]
+    if onlyUnits == nil or noted == true then batch[group] = true
+    else
+      if type(noted) ~= "table" then noted = {}; batch[group] = noted end
+      if type(onlyUnits) == "table" then for unit in pairs(onlyUnits) do noted[unit] = true end else noted[onlyUnits] = true end
+    end
+    return
+  end
   local g = GROWTH[GrowthKey(group)]
   -- The group's own Position and Size settings, relative to each frame.
   local point, frameX, frameY = FramePosition(group)
@@ -2541,6 +2571,7 @@ function Display.RelinkFlowUnits(group)
       if native and native.active then
         for _, instance in ipairs(native.instances) do
           local unit = instance.visible and instance.boundUnit
+          if unit and not UnitWanted(onlyUnits, unit) then unit = nil end   -- (1.3.8) another unit's row
           local shadow = unit and instance.flowShadowActive and instance.flowShadow
           if shadow and not Busy(shadow) then
             shadow:ClearAllPoints()
@@ -2588,7 +2619,7 @@ function Display.RelinkFlowUnits(group)
       end
       for _, instance in ipairs(native.instances) do
         local unit = instance.visible and instance.boundUnit
-        if unit and not Busy(instance.container) then
+        if unit and UnitWanted(onlyUnits, unit) and not Busy(instance.container) then
           local container = instance.container
           container:ClearAllPoints()
           local previous = last[unit]

@@ -2082,8 +2082,13 @@ end
 -- is owed to it too. Nothing runs while the queue is empty. Login, zoning and
 -- entering combat are not paced. (Kept on Private: the file is at Lua's
 -- limit of 200 locals.)
+-- ForeverAuras (1.3.6-dev.16, Dan's combat-end captures: "display loaded on
+-- WA_SECRET_STATE_UPDATE x5" beside "display load paced x9"): the secret
+-- state (addon restrictions) ends in the same frame combat does, and its own
+-- load scan ran unpaced, loading at once what the combat-end scan would have
+-- paced; that scan is paced the same way now.
 Private.pacedLoads = {
-  events = {PLAYER_REGEN_ENABLED = true},
+  events = {PLAYER_REGEN_ENABLED = true, WA_SECRET_STATE_UPDATE = true},
   first = 4,      -- loaded in the scan's own frame
   perFrame = 4,   -- re-checked per frame afterwards
   queue = {}, queued = {}, head = 1,
@@ -2278,6 +2283,13 @@ local function scanForLoadsImpl(toCheck, event, arg1, ...)
   -- scan that is not paced still carries its event for displays it leaves
   -- waiting (Owe); none is made for a scan without an event.
   local pacing, accepted, deferred = Private.pacedLoads.Applies(event, arg1, ...), 0, 0
+  -- ForeverAuras (1.3.6-dev.16): two paced scans in one frame (the secret
+  -- state ending, then combat ending) share one frame budget: the second
+  -- starts where the first stopped instead of loading its own first few.
+  if pacing then
+    local paced = Private.pacedLoads
+    if paced.frameAt == GetTime() then accepted = paced.frameAccepted or 0 else paced.frameAt = GetTime() end
+  end
   local carried = event and not pacing and not Private.pacedLoads.running and {n = select("#", ...) + 2, event, arg1, ...} or nil
 
   -- Profiling breakdown of a load scan (no cost unless profiling runs).
@@ -2347,12 +2359,13 @@ local function scanForLoadsImpl(toCheck, event, arg1, ...)
         changed = changed + 1;
         toLoad[id] = true;
         accepted = accepted + 1
+        if pacing then Private.pacedLoads.frameAccepted = accepted end
         -- ForeverAuras: timed apart from the load functions, to tell a slow
         -- load condition from the regions built for auras loading now; both
         -- counted for /fa phitch ("display loaded", "region created"), and
         -- the scan that loaded it is named in a capture.
         Private.HitchCount("display loaded")
-        if Private.HitchCounting() then Private.HitchCount("display loaded on " .. tostring(event or "scan")) end
+        if Private.HitchCounting() then Private.HitchCount("display loaded on " .. tostring(event or "scan")); Private.HitchCount("display loaded: " .. tostring(id)) end
         if not WeakAuras.GetRegion(id) then Private.HitchCount("region created") end
         Private.StartProfileSystem("load: ensure regions")
         Private.EnsureRegion(id)
@@ -2366,6 +2379,8 @@ local function scanForLoadsImpl(toCheck, event, arg1, ...)
         toUnload[id] = true;
         changed = changed + 1;
         Private.HitchCount("display unloaded")
+        -- ForeverAuras (1.3.6-dev.17, diagnostic, Astra's combat-start question): which displays, capture only
+        if Private.HitchCounting() then Private.HitchCount("display unloaded: " .. tostring(id)) end
         for parent in Private.TraverseParents(data) do
           parentsToCheck[parent.id] = true
         end

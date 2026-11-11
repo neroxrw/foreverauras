@@ -2669,7 +2669,11 @@ do
     CheckSpellCooldowns = function(self, runeDuration, budget, maxSpells)
       local pending = self.pendingIds
       if not pending or not (budget or maxSpells) then
-        pending = {}
+        -- ForeverAuras (1.3.6-dev.18, Dan's allocation profile: "cd tracking" 5.8 KB a run): the
+        -- list of watched spells is one kept table refilled per full pass, not a new one each time.
+        pending = self.pendingScratch
+        if not pending then pending = {}; self.pendingScratch = pending end
+        wipe(pending)
         for id in pairs(self.data) do pending[#pending + 1] = id end
         self.pendingIds, self.pendingIndex = pending, 1
         -- Whether this pass is a quiet one (see HandleEvent): a louder request
@@ -2876,6 +2880,10 @@ do
 
     SendEventsForSpell = function(self, effectiveSpellId, event, ...)
       local watchedSpells = self.data[effectiveSpellId] and self.data[effectiveSpellId].watched
+      -- ForeverAuras (1.3.6-dev.18, Astra's allocation question): the triggers' reaction to a
+      -- cooldown change, timed and measured apart from the checks themselves inside
+      -- "generictrigger cd tracking" (/fa pprint); a no-op unless profiling runs.
+      Private.StartProfileSystem("generictrigger cd tracking: trigger events")
       Private.ScanEventsByID(event, effectiveSpellId, ...)
       if watchedSpells then
         for userSpellId in pairs(watchedSpells) do
@@ -2884,6 +2892,7 @@ do
           end
         end
       end
+      Private.StopProfileSystem("generictrigger cd tracking: trigger events")
     end,
 
     GetSpellCharges = function(self, effectiveSpellId, ignoreSpellKnown)

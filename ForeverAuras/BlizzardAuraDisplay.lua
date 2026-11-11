@@ -55,8 +55,15 @@ end
 -- (dev.63) showed the chained members only after combat, and the stop's
 -- reason is in these reports. Printed under pcall: a report may carry a
 -- client error text.
+-- ForeverAuras (1.3.8, Dan's combat garbage): the reports on the hot paths (every unit refresh,
+-- every instance, every target change) formatted their text before this function dropped it, about
+-- 4 KB of strings per 40-slot pass with the flag off. Those sites ask BuildReporting() first.
+local function BuildReporting()
+  return type(ForeverAurasSaved) == "table" and ForeverAurasSaved.rowCellsDebug == true
+end
+Display.BuildReporting = BuildReporting   -- (the hot sites read it through Display: a review harness runs them as slices)
 local function CombatBuildReport(msg)
-  if type(ForeverAurasSaved) == "table" and ForeverAurasSaved.rowCellsDebug then
+  if BuildReporting() then
     pcall(print, "|cff88ccff" .. L["FA build:"] .. "|r " .. tostring(msg))
   end
 end
@@ -1455,7 +1462,7 @@ local function QuietInstance(region, instance)
     -- pass restores the container; disabling here was the reset
   else
     -- (dev.94) said with "/fa cells debug on" for a chained member: the quiet that disables, and why it was not retained
-    if CombatBuildReport and instance.chained then
+    if instance.chained and Display.BuildReporting and Display.BuildReporting() then
       CombatBuildReport(("%s: list quieted (retaining %s, restricted %s, applied %s, enabled %s, retained %s)"):format(tostring(instance.data and instance.data.id),
         tostring(editorRetaining), tostring(Restricted()), tostring(instance.applied), tostring(instance.container.faEnabled), tostring(instance.retainedMuted)))
     end
@@ -2665,6 +2672,7 @@ local function RefreshUnits(region, removedUnit, changedUnit, unitChanged)
     if tokenSet then local n = 0; for _ in pairs(tokenSet) do n = n + 1 end; what = ("%d owed tokens, one pass"):format(n)
     elseif changedUnit then what = "one token" elseif removedUnit then what = "one removed" end
     Private.HitchCount(("units refresh %s: %s"):format(tostring(trigger.unit), what))
+    Private.HitchCount("units refresh: " .. tostring(data.id))   -- (1.3.6-dev.17, diagnostic) the display
   end
   for index, instance in ipairs(native.instances) do
     local container = instance.container
@@ -2703,7 +2711,7 @@ local function RefreshUnits(region, removedUnit, changedUnit, unitChanged)
           accepted, refused = accepted + a, refused + r
         end
       end
-      if unitChanged and CombatBuildReport then CombatBuildReport(("%s: container %d is locked: content refresh requests accepted %d, refused %d (the full refresh waits for restrictions to end)"):format(tostring(data.id), index, accepted, refused)) end
+      if unitChanged and Display.BuildReporting and Display.BuildReporting() then CombatBuildReport(("%s: container %d is locked: content refresh requests accepted %d, refused %d (the full refresh waits for restrictions to end)"):format(tostring(data.id), index, accepted, refused)) end
       if counting and (accepted > 0 or refused > 0) then
         Private.HitchCount("units refresh: locked content requests accepted", accepted)
         Private.HitchCount("units refresh: locked content requests refused", refused)
@@ -2904,7 +2912,7 @@ local function RefreshUnits(region, removedUnit, changedUnit, unitChanged)
       -- that kept unit, parent and anchors needs no full refresh.
       if container.faEnabled ~= shown or (shown and not unchanged) then
         -- (dev.91) said with "/fa cells debug on" for a chained member: the write that resets the list's buttons
-        if CombatBuildReport and instance.chained then
+        if instance.chained and Display.BuildReporting and Display.BuildReporting() then
           CombatBuildReport(("%s: list %s (enabled %s -> %s, unchanged %s: unit %s/%s, parent %s, visible %s, removed %s, changed %s, preview %s, muted %s)"):format(tostring(data.id),
             shown and "enabled and re-read" or "disabled", tostring(container.faEnabled), tostring(shown), tostring(unchanged), tostring(instance.boundUnit), tostring(unit),
             tostring(container:GetParent() == parent), tostring(instance.visible), tostring(removedUnit), tostring(changedUnit), tostring(IsPreview()), tostring(muted)))
@@ -2912,18 +2920,21 @@ local function RefreshUnits(region, removedUnit, changedUnit, unitChanged)
         container:SetEnabled(shown)
         -- (1.3.6-dev.1) the enable cycle, apart from the re-read in place below
         Private.HitchCount(shown and "units refresh: container enabled" or "units refresh: container disabled")
-        if shown then container:UpdateAllAuras(); Private.HitchCount("UpdateAllAuras") end
-        if unitChanged and CombatBuildReport then CombatBuildReport(("%s: container %s (unit %s)"):format(tostring(data.id), shown and "enabled and re-read" or "disabled", tostring(unit))) end
+        if shown then
+          container:UpdateAllAuras(); Private.HitchCount("UpdateAllAuras")
+          if counting then Private.HitchCount("UpdateAllAuras: " .. tostring(data.id)) end   -- (1.3.6-dev.17, diagnostic)
+        end
+        if unitChanged and Display.BuildReporting and Display.BuildReporting() then CombatBuildReport(("%s: container %s (unit %s)"):format(tostring(data.id), shown and "enabled and re-read" or "disabled", tostring(unit))) end
       elseif shown and unitChanged then
         Private.HitchCount("units refresh: re-read in place")
-        if CombatBuildReport then CombatBuildReport(("%s: list re-read in place (unit changed; unit %s, bound %s)"):format(tostring(data.id), tostring(unit), tostring(instance.boundUnit))) end
+        if Display.BuildReporting and Display.BuildReporting() then CombatBuildReport(("%s: list re-read in place (unit changed; unit %s, bound %s)"):format(tostring(data.id), tostring(unit), tostring(instance.boundUnit))) end
         -- A new unit behind a kept token: the client only re-reads a container
         -- on UNIT_AURA for its unit or when it is shown or enabled again, so
         -- it would keep showing the previous unit's auras. Re-read in place,
         -- without the enable cycle (which clears and lays out again).
         container:UpdateAllAuras(); Private.HitchCount("UpdateAllAuras")
       end
-      if unitChanged and unchanged and not shown and CombatBuildReport then CombatBuildReport(("%s: unit changed but the container is not shown (unit %s, eligible %s)"):format(tostring(data.id), tostring(unit), tostring(wouldShow))) end
+      if unitChanged and unchanged and not shown and Display.BuildReporting and Display.BuildReporting() then CombatBuildReport(("%s: unit changed but the container is not shown (unit %s, eligible %s)"):format(tostring(data.id), tostring(unit), tostring(wouldShow))) end
       Private.StopProfileSystem("aura (modern) - units: status")
       -- (dev.90) the muted container hidden by alpha; shown again as it was when the editor closes
       if muted then
@@ -3019,7 +3030,8 @@ local function RefreshUnits(region, removedUnit, changedUnit, unitChanged)
   -- Every display in the group relinks all of them, so the order in which
   -- they rebind their units does not matter.
   Private.StartProfileSystem("aura (modern) - units: relink")
-  if frameMode then Display.RelinkFlowUnits(Display.FlowGroup(data)) end
+  -- (1.3.8) a targeted pass relinks the rows of the units it served only (SecretAuraFlow.lua)
+  if frameMode then Display.RelinkFlowUnits(Display.FlowGroup(data), changedUnit) end
   Private.StopProfileSystem("aura (modern) - units: relink")
   Private.StartProfileSystem("aura (modern) - units: levels")
   Display.UpdateDetachedFrameLevels(region)
@@ -3132,7 +3144,7 @@ local function ApplyInstance(region, data, index, instance)
   if Display.FlowChain and Display.FlowChain(data) then instance.container.faReportDisable = data.id end   -- (dev.94 diagnostic, SecretAuraFlow.lua TrackEnabled)
   -- (dev.91) said with "/fa cells debug on", for a member of a row with cells: whether the list was kept or
   -- configured again, and why (Dan: the A icons still move)
-  if CombatBuildReport and Display.FlowChain and Display.FlowChain(data) then
+  if Display.FlowChain and Display.FlowChain(data) and Display.BuildReporting and Display.BuildReporting() then
     CombatBuildReport(("%s: list %s (%s)"):format(tostring(data.id), keep and "kept" or "configured again",
       keep and "same configuration" or (not instance.applied and "first build" or instance.appliedConfig ~= config and ("configuration changed: " .. tostring(instance.appliedConfig) .. " -> " .. tostring(config))
         or instance.container.faEnabled ~= true and "container not live" or instance.styleEarly and "styled early" or Restricted() and "restricted" or "?")))
@@ -4838,7 +4850,7 @@ events:SetScript("OnEvent", function(_, event, unit)
     -- hidden target displays rebound on every target change).
     if not region:IsShown() then
       -- nothing
-      if event == "PLAYER_TARGET_CHANGED" and mode == "target" then CombatBuildReport(("%s: target changed, display hidden (no unit work)"):format(tostring(region.id))) end
+      if event == "PLAYER_TARGET_CHANGED" and mode == "target" and Display.BuildReporting and Display.BuildReporting() then CombatBuildReport(("%s: target changed, display hidden (no unit work)"):format(tostring(region.id))) end
     elseif event == "UNIT_FACTION" then
       -- A plate's side changed (PvP flag, mind control): re-check its hostility.
       if mode == "nameplate" then
@@ -4853,18 +4865,23 @@ events:SetScript("OnEvent", function(_, event, unit)
       if Display.UsesNameplates(region.blizzardAuraDisplay.data) then
         -- (1.3.6-dev.1) one count per display handling the plate event
         Private.HitchCount(event == "NAME_PLATE_UNIT_REMOVED" and "nameplate removed: displays refreshed" or "nameplate added: displays refreshed")
+        -- ForeverAuras (1.3.6-dev.18, Astra's allocation question): the plate event's work
+        -- is attributed to the display in the profile (/fa pprint: aura list, KB and ms);
+        -- a no-op unless profiling runs.
+        Private.StartProfileAura(region.id)
         if mode == "nameplate" then
           RefreshUnits(region, event == "NAME_PLATE_UNIT_REMOVED" and unit or nil, unit, true)
         else
           RefreshUnits(region, nil, nil, true)
         end
+        Private.StopProfileAura(region.id)
       end
     elseif pending[region] and not Restricted() then
       -- Rebuilt below; refreshing it first would be wasted.
       -- ForeverAuras 1.2.1 (Dan's stale target countdown, Astra's trace): said under /fa cells debug
-      if event == "PLAYER_TARGET_CHANGED" and mode == "target" then CombatBuildReport(("%s: target changed, a rebuild is pending (no refresh now)"):format(tostring(region.id))) end
+      if event == "PLAYER_TARGET_CHANGED" and mode == "target" and Display.BuildReporting and Display.BuildReporting() then CombatBuildReport(("%s: target changed, a rebuild is pending (no refresh now)"):format(tostring(region.id))) end
     elseif NeedsUnitRefresh(mode, event, unit, trigger) then
-      if event == "PLAYER_TARGET_CHANGED" and mode == "target" then CombatBuildReport(("%s: target changed, refreshing its units (restricted %s)"):format(tostring(region.id), tostring(Restricted()))) end
+      if event == "PLAYER_TARGET_CHANGED" and mode == "target" and Display.BuildReporting and Display.BuildReporting() then CombatBuildReport(("%s: target changed, refreshing its units (restricted %s)"):format(tostring(region.id), tostring(Restricted()))) end
       RefreshUnits(region, nil, nil, true)
     end
     if not region:IsShown() then
