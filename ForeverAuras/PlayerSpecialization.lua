@@ -137,6 +137,13 @@ local function TalentPoints()
     if not Readable(spent) or type(spent) ~= "number" then return nil end
     points[tab] = {spent = spent, name = Readable(name) and name or nil}
   end
+  -- ForeverAuras (1.3.9): Forever 1.60 still answers the classic API with one
+  -- tab named after the class and no points (seen: "tab 1: Rogue, 0 points"
+  -- on a 8/35/0 rogue); the talents live in the trait tree, which is read
+  -- instead. Without a readable trait tree the single tab is of no use either.
+  local total = 0
+  for _, info in ipairs(points) do total = total + info.spent end
+  if #points < 2 or total == 0 then return TraitPoints() end
   return points
 end
 
@@ -175,7 +182,9 @@ local function ComputeSpecialization()
         best, bestPoints = entry[1], info.spent
       end
     end
-    return best
+    -- ForeverAuras (1.3.9): no tree at 21 points (or points the client could
+    -- not attribute): the known final talent decides, as without talent data.
+    if best then return best end
   end
   for _, entry in ipairs(trees) do
     for _, spellID in ipairs(entry[5]) do
