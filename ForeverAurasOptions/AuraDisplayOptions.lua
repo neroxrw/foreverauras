@@ -294,6 +294,40 @@ function OptionsPrivate.PrepareSecretActionOptions(data, action)
       return L["Play when one of the trigger's exact spell IDs is %s. Works even if Blizzard cannot display the aura. Uses the selected unit and exact spell IDs, excluding ignored IDs; other display filters do not affect sounds."]:format(added and L["added"] or L["removed"])
     end
   end
+  -- ForeverAuras (1.3.9): On Stack Gain, a third sound slot (data.actions.stack)
+  -- registered with Blizzard's ApplicationsIncreased trigger. The Actions tab's
+  -- own get/set split keys at the first underscore, so "stack_sound" reads and
+  -- writes data.actions.stack.sound like the On Show / On Hide fields.
+  local soundValues = action.args.start_sound.values
+  local function stackOn() return (data.actions.stack or {}).do_sound end
+  action.args.stack_header = {type = "header", name = L["On Stack Gain"], order = 40.5}
+  action.args.stack_do_sound = {
+    type = "toggle", width = WeakAuras.normalWidth, name = L["Play Sound"], order = 41,
+    desc = L["Play each time one of the trigger's exact spell IDs gains a stack on the selected unit. Blizzard plays it on every stack gained; it cannot wait for a Stack Count filter."],
+  }
+  action.args.stack_sound = {
+    type = "select", width = WeakAuras.normalWidth, name = L["Sound"], order = 41.4,
+    itemControl = "WeakAurasMediaSound", values = soundValues,
+    sorting = OptionsPrivate.Private.SortOrderForValues(soundValues),
+    disabled = function() return not stackOn() end,
+  }
+  action.args.stack_sound_channel = {
+    type = "select", width = WeakAuras.normalWidth, name = L["Sound Channel"], order = 41.5,
+    values = OptionsPrivate.Private.sound_channel_types,
+    disabled = function() return not stackOn() end,
+    get = function() return (data.actions.stack or {}).sound_channel or "Master" end,
+  }
+  action.args.stack_sound_path = {
+    type = "input", width = WeakAuras.doubleWidth, name = L["Sound File Path"], order = 42,
+    hidden = function() return (data.actions.stack or {}).sound ~= " custom" end,
+    disabled = function() return not stackOn() end,
+  }
+  action.args.stack_sound_fojji = {
+    type = "input", name = "Recorded phrase", width = "full", order = 41.41,
+    hidden = function() return (data.actions.stack or {}).sound ~= " Fojji" end,
+    disabled = function() return not stackOn() end,
+    desc = "Exact phrase in your selected FojjiCore recorded voice pack. Live TTS is not supported.",
+  }
   -- Reuse the native unit-glow settings, never the Lua On Show glow action.
   local settings = data.blizzardAuraDisplay
   local function SaveGlow(key, value)

@@ -1,5 +1,10 @@
 # Changelog
 ## VERSIONS
+## 1.3.9
+- Fixed: your specialization was not recognized on some clients (talents shown as one empty "class" tab), so class packs fell back to their default bars. The talent tree is now read properly, and the final talent you know is used as a backup.
+- New: "On Stack Gain" sound for Aura (Modern) auras, on the Actions tab. Plays each time the tracked aura gains a stack.
+- New: if an Aura (Modern) aura has a Stack Count, Total Duration or Remaining Time filter and plays a sound, the trigger now tells you that sounds play on any stack, not when the filter is met.
+
 ## 1.3.8
 - Much less memory churn from nameplate auras: when a nameplate appears or disappears, only that nameplate’s icons are re-anchored (before, every nameplate event re-did all 40 nameplates for every aura in the group).
 - Fixed: a Lua error from the "Crowd Controlled" trigger in combat

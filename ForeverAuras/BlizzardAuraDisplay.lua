@@ -960,7 +960,8 @@ local function SyncSounds(region)
     local trigger = Display.GetTrigger(native.data)
     local actions = native.data.actions or {}
     local parts = {}
-    for _, key in ipairs({"start", "finish"}) do
+    -- ForeverAuras (1.3.9): "stack" is the On Stack Gain slot (Actions tab, Aura (Modern) only).
+    for _, key in ipairs({"start", "finish", "stack"}) do
       local action = actions[key] or {}
       parts[#parts + 1] = table.concat({tostring(action.do_sound), tostring(action.sound), tostring(action.sound_path),
         tostring(action.sound_fojji), tostring(action.sound_channel)}, ",")
@@ -979,7 +980,7 @@ local function SyncSounds(region)
   SoundWarning(data)
   if not live then return end
   local actions = data.actions or {}
-  if not ((actions.start or {}).do_sound or (actions.finish or {}).do_sound) then return end
+  if not ((actions.start or {}).do_sound or (actions.finish or {}).do_sound or (actions.stack or {}).do_sound) then return end
   if not C_UnitAuras or not C_UnitAuras.AddAuraSound or not C_UnitAuras.RemoveAuraSound
     or not Enum.UnitAuraSoundTrigger then
     SoundWarning(data, L["This client does not provide native aura sound registration."])
@@ -1006,10 +1007,19 @@ local function SyncSounds(region)
   -- On Show / On Hide follow the display: with Show On Missing the display
   -- appears when the aura is removed, so the sounds swap over.
   local showOnMissing = Display.RawShowOn(trigger) == "showOnMissing"
-  for _, event in ipairs({"Added", "Removed"}) do
-    local onShow = (event == "Added") ~= showOnMissing
-    local action = actions[onShow and "start" or "finish"] or {}
-    if action.do_sound then
+  -- ForeverAuras (1.3.9): On Stack Gain registers Blizzard's ApplicationsIncreased
+  -- trigger (every stack gained, no threshold); clients without it get a warning.
+  for _, event in ipairs({"Added", "Removed", "ApplicationsIncreased"}) do
+    local action
+    if event == "ApplicationsIncreased" then
+      action = actions.stack or {}
+    else
+      local onShow = (event == "Added") ~= showOnMissing
+      action = actions[onShow and "start" or "finish"] or {}
+    end
+    if action.do_sound and not Enum.UnitAuraSoundTrigger[event] then
+      failure = L["This client has no sound trigger for stacks gained."]
+    elseif action.do_sound then
       local file, message
       if action.sound == " Fojji" then
         file, message = Private.ResolveFojjiRecordedSound(action.sound_fojji or "")
@@ -1034,7 +1044,7 @@ local function SyncSounds(region)
             if ok and id then
               native.soundIDs[#native.soundIDs + 1] = id
             else
-              failure = L["Blizzard could not register the %s sound for spell %s."]:format(event:lower(), spellID)
+              failure = L["Blizzard could not register the %s sound for spell %s."]:format(event == "ApplicationsIncreased" and L["stack gain"] or event:lower(), spellID)
             end
           end
         end

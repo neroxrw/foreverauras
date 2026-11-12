@@ -353,6 +353,13 @@ function Display.TriggerStatus(data, trigger)
   if Display.InDynamicGroup(data) then
     text = text .. " " .. ORANGE .. L["In a Dynamic Group it keeps a fixed position; a Modern Aura Group is recommended."] .. "|r"
   end
+  -- ForeverAuras (1.3.9): Blizzard plays Actions sounds when the aura is gained,
+  -- lost or gains a stack; a Stack Count / Total Duration / Remaining Time
+  -- filter only clips the picture, so the sound ignores it. Say so here.
+  local actions = data.actions or {}
+  if ((actions.start or {}).do_sound or (actions.finish or {}).do_sound or (actions.stack or {}).do_sound) and Display.UsesGate(data) then
+    text = text .. " " .. ORANGE .. L["Sounds play on any stack: when the aura is gained, lost or gains a stack, not when the Stack Count / Total Duration / Remaining Time filter is met."] .. "|r"
+  end
   -- Only a list Icon with a Total Duration = / >= filter or a Remaining Time
   -- window still estimates the duration for its timed glow; the rest are exact.
   -- Only a list Icon with a Remaining Time window still estimates the

@@ -3871,7 +3871,8 @@ function Private.UpdateSoundIcon(data)
   local soundCondition, ttsCondition = testConditions()
 
   -- sound
-  if data.actions.start.do_sound or data.actions.finish.do_sound then
+  -- ForeverAuras (1.3.9): the On Stack Gain slot (Aura (Modern)) counts as a sound action too.
+  if data.actions.start.do_sound or data.actions.finish.do_sound or (data.actions.stack and data.actions.stack.do_sound) then
     Private.AuraWarnings.UpdateWarning(data.uid, "sound_action", "sound", L["This aura plays a sound via an action."])
   else
     Private.AuraWarnings.UpdateWarning(data.uid, "sound_action")
@@ -3919,9 +3920,10 @@ function Private.ClearSounds(uid, severity)
       end
     end
 
-    if severity == "sound" and (child.actions.start.do_sound or child.actions.finish.do_sound) then
+    if severity == "sound" and (child.actions.start.do_sound or child.actions.finish.do_sound or (child.actions.stack and child.actions.stack.do_sound)) then
       child.actions.start.do_sound = false
       child.actions.finish.do_sound = false
+      if child.actions.stack then child.actions.stack.do_sound = false end -- ForeverAuras (1.3.9)
       changed = true
     elseif severity == "tts" then
       if child.actions.start.do_message and child.actions.start.message_type == "TTS" then
