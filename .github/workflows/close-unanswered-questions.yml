@@ -1,0 +1,28 @@
+name: Close unanswered questions
+
+on:
+  schedule:
+    - cron: "0 0 * * *"   # runs once a day
+  workflow_dispatch:       # lets you run it manually too
+
+permissions:
+  issues: write
+
+jobs:
+  stale:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/stale@v10
+        with:
+          only-issue-labels: "question"
+          days-before-issue-stale: 5    # warn after 5 quiet days
+          days-before-issue-close: 2    # close 2 days after the warning (7 total)
+          stale-issue-label: "awaiting-response"
+          stale-issue-message: >
+            This question has had no response for 5 days. It will be closed
+            in 2 days unless someone comments.
+          close-issue-message: >
+            Closing because there was no response for a week. Feel free to
+            reopen if you still need help.
+          days-before-pr-stale: -1      # leave pull requests alone
+          days-before-pr-close: -1
