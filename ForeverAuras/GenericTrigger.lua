@@ -4538,6 +4538,8 @@ do
     if not(tenchFrame) then
       tenchFrame = CreateFrame("Frame");
       tenchFrame:RegisterEvent("PLAYER_ENTERING_WORLD");
+      -- Hearthstones and layer changes show a loading screen without PLAYER_ENTERING_WORLD.
+      tenchFrame:RegisterEvent("LOADING_SCREEN_DISABLED");
       do
         tenchFrame:RegisterEvent("WEAPON_ENCHANT_CHANGED")
       end
@@ -4613,7 +4615,7 @@ do
           return
         end
         local time = GetTime();
-        local nextExpiry
+        local nextExpiry, lost
         for hand, slot in pairs(slots) do
           weaponIcons[hand] = GetInventoryItemTexture("player", slot)
           local lines, used = nil, {}
@@ -4628,6 +4630,9 @@ do
             local old = records[kind]
             local exp = entry and entry.timeLeft and (time + entry.timeLeft / 1000)
             if not entry then
+              -- An enchant seen before can read as gone for a moment (a loading
+              -- screen, a resurrection); no event follows when nothing changes.
+              if old then lost = true end
               records[kind] = nil
             elseif not old or old.enchantID ~= entry.enchantID or math.abs((old.exp or 0) - (exp or 0)) > 1 then
               lines = lines or TenchLines(slot)
@@ -4653,13 +4658,20 @@ do
         end
         -- Re-read once at the earliest expiry, including when no inventory event fires.
         if nextExpiry then expiryTimer = C_Timer.NewTimer(nextExpiry + 0.1, tenchUpdate) end
+        -- Read again shortly after an enchant reads as gone, in case it was not reported yet.
+        if lost then C_Timer.After(1.5, tenchUpdate); C_Timer.After(5, tenchUpdate) end
         Private.ScanEvents("TENCH_UPDATE");
         Private.StopProfileSystem("generictrigger temporary enchant");
       end
 
       -- Inventory and enchant events can arrive together; retain only one pending read.
       local updatePending
-      tenchFrame:SetScript("OnEvent", function()
+      tenchFrame:SetScript("OnEvent", function(_, event)
+        -- Right after a loading screen the weapon's enchant may not be reported
+        -- yet, and nothing reads again when nothing changes: read a little later.
+        if event == "PLAYER_ENTERING_WORLD" or event == "LOADING_SCREEN_DISABLED" then
+          C_Timer.After(2, tenchUpdate); C_Timer.After(6, tenchUpdate)
+        end
         if updatePending then return end
         updatePending = true
         timer:ScheduleTimer(function()
