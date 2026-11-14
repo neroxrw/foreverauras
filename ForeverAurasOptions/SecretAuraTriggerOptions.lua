@@ -35,6 +35,17 @@ local function GetOptions(data, triggernum)
     -- inside (SecretAuraTrigger.lua). Kept short on request.
     alwaysActive = {type = "description", order = 1.95, width = "full", fontSize = "medium",
       name = L["|cffffffffNote: Trigger Always Active|r"]},
+    -- ForeverAuras (1.3.10-dev.9, Dan; wording from Astra's dev.8 review): Show On:
+    -- Aura(s) Gained on a target or nameplate unit flashes an existing aura again
+    -- whenever the client re-reads the unit's auras, so a target swap or a plate
+    -- that leaves and returns looks like a gain.
+    gainedUnitNote = {type = "description", order = 1.96, width = "full", fontSize = "medium",
+      name = L["|cffff8800Aura(s) Gained: changing targets, or a nameplate disappearing and returning, can make an existing aura appear newly gained.|r"],
+      hidden = function()
+        if not (display.RawShowOn(trigger) == "showOnActive" and trigger.secretGained) then return true end
+        local unit = trigger.unit
+        return not (unit == "target" or unit == "targettarget" or unit == "focustarget" or unit == "pettarget" or unit == "nameplate" or unit == "mouseover" or unit == "boss" or unit == "arena")
+      end},
     -- Green/red status for this trigger's own selection (Display.TriggerStatus).
     help = {type = "description", order = 2, width = "full", fontSize = "small",
       name = function() return display.TriggerStatus(data, trigger) end},

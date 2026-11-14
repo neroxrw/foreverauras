@@ -202,6 +202,8 @@ function Editor.AddOptions(options, data, triggernum)
         Save()
       end}
     options.gainedSeconds = {type = "input", name = L["Shown for (seconds)"], order = 71.2, width = WeakAuras.normalWidth,
+      -- ForeverAuras 1.3.10 (atom's report): the flash is an animation on the client's aura button, which goes with the aura.
+      desc = L["Shows for up to this many seconds. Hides sooner if the aura ends."],
       hidden = function() return not (display.RawShowOn(trigger) == "showOnActive" and trigger.secretGained) end,
       validate = function(_, value)
         local seconds = tonumber(Seconds(value))

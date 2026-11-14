@@ -953,6 +953,20 @@ local function SyncSounds(region)
   pendingSounds[region] = nil
   local native = region.blizzardAuraDisplay
   if not native then return end
+  -- ForeverAuras (1.3.10-dev.1, Astra's nameplate review, same principle as item 1): a display
+  -- with no sound action and no registration has no signature to compare; it leaves before
+  -- the eligible-unit scan (40 nameplate tokens judged, strings built) that every plate event
+  -- asked of every display with a unit filter, sounds or not.
+  do
+    local actions = native.data.actions or {}
+    if not ((actions.start or {}).do_sound or (actions.finish or {}).do_sound or (actions.stack or {}).do_sound)
+      and not (native.soundIDs and next(native.soundIDs)) and native.soundSignature == nil then
+      -- The warning slot is cleared once, as the full path did on its first signature.
+      if not native.soundQuiet then native.soundQuiet = true; SoundWarning(native.data) end
+      return
+    end
+    native.soundQuiet = nil
+  end
   -- Unchanged units, spells and sound actions: the registrations stand.
   local signature
   local live = native.active and Display.GetTrigger(native.data) ~= nil and region:IsShown() and not IsPreview()
@@ -1784,6 +1798,25 @@ local function StyleFlash(native, data)
     out:SetFromAlpha(1); out:SetToAlpha(0); out:SetDuration(FLASH_OUT); out:SetOrder(3)
     flash = {group = group, hold = hold}
     native.flash = flash
+    -- ForeverAuras (1.3.10-dev.7/dev.9, diagnostics only; Astra's dev.8 review):
+    -- the client plays this group whenever it assigns an aura to the button, new
+    -- or already there (a rebuilt or re-enabled display, a unit change, a plate
+    -- back), and stops it before every assignment as well as when it clears the
+    -- button. So "played" is not "newly gained" and "stopped" is not "removed";
+    -- the counts and prints say only what the animation did. Whether these
+    -- scripts run at all under restrictions is what the probe is for.
+    group:SetScript("OnPlay", function()
+      Private.HitchCount("gained: flash animation played")
+      if Private.gainedDebug then print("|cff88ccffFA gained|r", tostring(data.id), "flash animation played at", string.format("%.2f", GetTime())) end
+    end)
+    group:SetScript("OnStop", function()
+      Private.HitchCount("gained: flash animation stopped")
+      if Private.gainedDebug then print("|cff88ccffFA gained|r", tostring(data.id), "flash animation stopped at", string.format("%.2f", GetTime())) end
+    end)
+    group:SetScript("OnFinished", function()
+      Private.HitchCount("gained: flash animation finished")
+      if Private.gainedDebug then print("|cff88ccffFA gained|r", tostring(data.id), "flash animation finished at", string.format("%.2f", GetTime())) end
+    end)
   end
   flash.hold:SetDuration(seconds)
   if not flash.registered then
@@ -2565,6 +2598,15 @@ end
 function Display.UpdateDetachedFrameLevels(region)
   local native = region.blizzardAuraDisplay
   if not native or not native.active then return end
+  -- ForeverAuras (1.3.10-dev.1, Astra's nameplate review, item 1): the scan of every
+  -- container's level only serves detached elements; a display with none (every
+  -- nameplate debuff display) leaves without touching its containers. Read from the
+  -- region's actual elements, not assumed from the display kind.
+  local detached = false
+  for _, element in ipairs(region.subRegions or {}) do
+    if element.secretAuraDetached then detached = true; break end
+  end
+  if not detached then return end
   local level = region:GetFrameLevel()
   for _, instance in ipairs(native.instances) do
     -- A Modern Aura Group's containers may report a secret level; they sit
@@ -4837,6 +4879,87 @@ Private.callbacks:RegisterCallback("WEAKAURAS_LOGIN_COMPLETE", function()
   end
 end)
 
+-- ForeverAuras (1.3.10-dev.1, Astra's nameplate review, item 2): the plates added in a frame,
+-- per display: a set of tokens for a nameplate display, true for a display that watches
+-- nameplates another way (a full pass). Flushed once, from the next frame, in one flow batch.
+local plateAdds = setmetatable({}, {__mode = "k"})
+local plateFlushQueued = false
+-- ForeverAuras (1.3.10-dev.2, the reviewer's lost-work and selection-boundary cases): one display's
+-- whole plate pass, selection included, runs under one error boundary, and its work is owned before
+-- anything fallible runs. Queued tokens go into the display's owed set (pendingTokens) first; the
+-- pass is handed that very set, retires each token as its instance completes (RefreshUnits), and a
+-- pass that stops early leaves the failed token and the unvisited ones owed to the restriction-end
+-- drain, exactly as a refused drain pass does. A full-pass request is noted in lockedUnits before
+-- the pass and only taken back when the pass ran to the end without noting debt of its own. No
+-- new retry path: the established drain serves what is left.
+local FULL_PASS_REQUEST = "plates"
+local function SelectionOf(owed)
+  local set = {}
+  for token in pairs(owed) do set[token] = true end
+  return set
+end
+local function PlatePass(region, native, tokens)
+  local trigger = Display.GetSavedTrigger(native.data)
+  local mode = trigger and trigger.unit
+  if tokens ~= true and mode == "nameplate" then
+    local owed = pendingTokens[region] or {}
+    pendingTokens[region] = owed
+    for token in pairs(tokens) do owed[token] = true end
+    -- A token whose plate is gone is unbound already by its own event; its request is cancelled.
+    local count = 0
+    for token in pairs(owed) do
+      local plate = C_NamePlate.GetNamePlateForUnit(token)
+      if plate and not plate:IsForbidden() then count = count + 1 else owed[token] = nil end
+    end
+    if count == 0 then pendingTokens[region] = nil; return end
+    Private.HitchCount("nameplate added: displays refreshed")
+    if count > 1 then Private.HitchCount("nameplate added: plates bound in one pass", count) end
+    -- The pass selects rows by the set it is handed and retires the owed set as it goes; the
+    -- two are separate tables, or the rows to position would be gone by the time the group is
+    -- relinked (the dev.2 review's layout case).
+    RefreshUnits(region, nil, SelectionOf(owed), true)
+    return
+  end
+  Private.HitchCount("nameplate added: displays refreshed")
+  local before = lockedUnits[region]
+  lockedUnits[region] = FULL_PASS_REQUEST
+  RefreshUnits(region, nil, nil, true)
+  if lockedUnits[region] == FULL_PASS_REQUEST then lockedUnits[region] = before end
+end
+local function FlushPlateAdds()
+  plateFlushQueued = false
+  local adds = plateAdds
+  plateAdds = setmetatable({}, {__mode = "k"})
+  Display.BeginFlowBatch()
+  for region, tokens in pairs(adds) do
+    local native = region.blizzardAuraDisplay
+    -- A display unloaded, replaced or hidden since its plates were queued does no unit work
+    -- (its OnShow refreshes its units); its queue is simply dropped.
+    if activeRegions[region] and native and native.active and region:IsShown() and Display.UsesNameplates(native.data) then
+      Private.StartProfileAura(region.id)
+      local ok = xpcall(PlatePass, geterrorhandler(), region, native, tokens)
+      Private.StopProfileAura(region.id)
+      -- A full-pass request that failed stays whole-region debt for the drain; owed tokens
+      -- are already in pendingTokens.
+      if not ok and lockedUnits[region] == FULL_PASS_REQUEST then lockedUnits[region] = true end
+    end
+  end
+  Display.EndFlowBatch()
+end
+local function QueuePlateAdd(region, token)
+  local noted = plateAdds[region]
+  if token == true or noted == true then
+    plateAdds[region] = true
+  else
+    if type(noted) ~= "table" then noted = {}; plateAdds[region] = noted end
+    noted[token] = true
+  end
+  if not plateFlushQueued then
+    plateFlushQueued = true
+    C_Timer.After(0, FlushPlateAdds)
+  end
+end
+
 events:SetScript("OnEvent", function(_, event, unit)
   if event == "UI_SCALE_CHANGED" or event == "DISPLAY_SIZE_CHANGED" then
     for region in pairs(activeRegions) do pending[region] = region.blizzardAuraDisplay.data; if MarkRequest then MarkRequest(region) end end
@@ -4871,16 +4994,25 @@ events:SetScript("OnEvent", function(_, event, unit)
         -- A target, focus or specific unit changed side: its display re-checks the filter.
         RefreshUnits(region, nil, nil, true)
       end
-    elseif event == "NAME_PLATE_UNIT_ADDED" or event == "NAME_PLATE_UNIT_REMOVED" then
+    elseif event == "NAME_PLATE_UNIT_ADDED" then
+      -- ForeverAuras (1.3.10-dev.1, Astra's nameplate review, item 2): plates that appear in one
+      -- frame are bound in one pass per display at the end of it (FlushPlateAdds), one relink of
+      -- their group and one finishing round, instead of a pass, a relink and a round per plate.
+      -- Removals stay immediate (below): nothing owed can hide a replacement plate. The pass
+      -- reads each token's current plate when it runs.
+      if Display.UsesNameplates(region.blizzardAuraDisplay.data) then
+        QueuePlateAdd(region, mode == "nameplate" and unit or true)
+      end
+    elseif event == "NAME_PLATE_UNIT_REMOVED" then
       if Display.UsesNameplates(region.blizzardAuraDisplay.data) then
         -- (1.3.6-dev.1) one count per display handling the plate event
-        Private.HitchCount(event == "NAME_PLATE_UNIT_REMOVED" and "nameplate removed: displays refreshed" or "nameplate added: displays refreshed")
+        Private.HitchCount("nameplate removed: displays refreshed")
         -- ForeverAuras (1.3.6-dev.18, Astra's allocation question): the plate event's work
         -- is attributed to the display in the profile (/fa pprint: aura list, KB and ms);
         -- a no-op unless profiling runs.
         Private.StartProfileAura(region.id)
         if mode == "nameplate" then
-          RefreshUnits(region, event == "NAME_PLATE_UNIT_REMOVED" and unit or nil, unit, true)
+          RefreshUnits(region, unit, unit, true)
         else
           RefreshUnits(region, nil, nil, true)
         end
@@ -4956,7 +5088,14 @@ events:SetScript("OnEvent", function(_, event, unit)
       local tokens = pendingTokens[region]
       if tokens then
         local native = region.blizzardAuraDisplay
-        if native and native.active then RefreshUnits(region, nil, tokens, true) else pendingTokens[region] = nil end
+        -- ForeverAuras (1.3.10-dev.3, the dev.2 review's layout case): the pass is handed a copy of
+        -- the owed set for its row selection; it retires the owed set itself as each token completes,
+        -- so handing that set left the relink with no rows to position.
+        if native and native.active then
+          local selection = {}
+          for token in pairs(tokens) do selection[token] = true end
+          RefreshUnits(region, nil, selection, true)
+        else pendingTokens[region] = nil end
       end
     end
   end
@@ -4965,6 +5104,9 @@ events:SetScript("OnEvent", function(_, event, unit)
   -- clones held out of the pool for them are pooled (AuraOverlay.lua,
   -- Private.PoolHeldClones in ForeverAuras.lua). Both sets are normally empty.
   if Private.RetryAuraOverlayRetirements then Private.RetryAuraOverlayRetirements() end
+  -- ForeverAuras (Item Manager battleground report, 1.3.10-dev.2): overlay
+  -- texture and border writes the client refused (AuraOverlay.lua).
+  if Private.RetryAuraOverlayLooks then Private.RetryAuraOverlayLooks() end
   if Private.PoolHeldClones then Private.PoolHeldClones() end
   -- ForeverAuras (dev.95): retained containers that could not be quieted when the editor closed
   if Display.QuietRetainedLater then Display.QuietRetainedLater() end
