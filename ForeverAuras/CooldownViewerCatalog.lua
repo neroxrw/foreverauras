@@ -359,9 +359,61 @@ function Private.CDMFrames()
 end
 
 local rememberedKnown = {}
-function Private.CDMCatalog()
+-- ForeverAuras (1.3.10-dev.4/dev.5, the shapeshift captures): a refresh event means
+-- "this may have changed", not "everything has changed". The build reads the
+-- live data as before (every notification is honoured; nothing is skipped).
+-- Each entry keeps the client's info record and the spell its viewer frame
+-- shows, and the read is compared entry by entry with the standing catalog
+-- while it runs: when every entry reads exactly as before, the standing
+-- catalog is kept and no entry table is made; the triggers' resolved spell
+-- matches are keyed on the catalog table (CooldownViewerTrigger.lua), and
+-- that file decides separately which notifications may keep them. An entry
+-- with an unreadable field never compares equal, so a catalog built under
+-- secrecy is replaced as before.
+-- (dev.5, the dev.4 review) every field the matching reads is compared:
+-- CDMAuraSpellIDs reads spellID, overrideSpellID, overrideTooltipSpellID,
+-- linkedSpellID and linkedSpellIDs; ExactMatch the same; CDMIdentity those plus
+-- equipSlot and spellCategoryID; CDMEntryMatches equipSlot and spellCategoryID.
+local infoFields = {"spellID", "overrideSpellID", "overrideTooltipSpellID", "linkedSpellID", "equipSlot", "spellCategoryID"}
+local function SameList(a, b)
+  if a == b then return true end
+  if type(a) ~= "table" or type(b) ~= "table" or #a ~= #b then return false end
+  for i = 1, #a do
+    if a[i] ~= b[i] then return false end
+  end
+  return true
+end
+local function ListSecret(ids)
+  if type(ids) ~= "table" then return ids ~= nil and not Readable(ids) end
+  for i = 1, #ids do
+    if not Readable(ids[i]) then return true end
+  end
+  return false
+end
+local function FieldSecret(value)
+  return value ~= nil and not Readable(value)
+end
+local function InfoSecret(info)
+  if not Readable(info.isKnown) or ListSecret(info.linkedSpellIDs) then return true end
+  for i = 1, #infoFields do
+    if FieldSecret(info[infoFields[i]]) then return true end
+  end
+  return false
+end
+local function SameInfo(a, b)
+  if a == b then return true end
+  for i = 1, #infoFields do
+    local field = infoFields[i]
+    if Number(a[field]) ~= Number(b[field]) then return false end
+  end
+  return SameList(a.linkedSpellIDs, b.linkedSpellIDs)
+end
+-- The scan's per-entry values, kept in reused arrays so an unchanged read
+-- allocates nothing of its own; an id listed under two categories takes the
+-- later listing, as the plain build did.
+local scanSlot, scanIDs, scanInfos, scanCategories, scanPlacements, scanDisplayed, scanKnown, scanFrameSpells, scanSecret = {}, {}, {}, {}, {}, {}, {}, {}, {}
+function Private.CDMCatalog(previous)
   Private.cdmCatalogSawSecret = false
-  local catalog = {}
   local settings = _G.CooldownViewerSettings
   local provider = settings and settings.GetDataProvider and settings:GetDataProvider()
   provider = provider or _G.CooldownViewerDataProvider
@@ -382,17 +434,19 @@ function Private.CDMCatalog()
   -- Noted on the catalog itself (a weak set): the options window builds
   -- catalogs of its own, which must not clear the triggers' note.
   Private.cdmIncompleteCatalogs = Private.cdmIncompleteCatalogs or setmetatable({}, {__mode = "k"})
-  if (layout == nil or next(layout) == nil) and next(frames) == nil then Private.cdmIncompleteCatalogs[catalog] = true end
+  local incomplete = (layout == nil or next(layout) == nil) and next(frames) == nil
   -- ForeverAuras: without the layout, an entry's placement is known only
   -- through a viewer frame; one frame makes the catalog complete while the
   -- other entries stay unknown. Noted, so a frame arriving later for such an
   -- entry can invalidate the catalog (CDMCatalogStale, from the viewer's
   -- refresh hook) instead of its trigger staying empty until a refresh event.
   Private.cdmNoLayoutCatalogs = Private.cdmNoLayoutCatalogs or setmetatable({}, {__mode = "k"})
-  if layout == nil or next(layout) == nil then Private.cdmNoLayoutCatalogs[catalog] = true end
+  local noLayout = layout == nil or next(layout) == nil
   for _, category in pairs(Enum.CooldownViewerCategory) do
     if type(category) == "number" and category >= 0 then categories[category] = true end
   end
+  wipe(scanSlot)
+  local n, same = 0, previous ~= nil
   for category in pairs(categories) do
     for _, id in ipairs(C_CooldownViewer.GetCooldownViewerCategorySet(category, true) or {}) do
       if Number(id) then
@@ -422,16 +476,54 @@ function Private.CDMCatalog()
             known = rememberedKnown[id]
             Private.cdmCatalogSawSecret = true
           end
-          catalog[id] = {
-            category = placement and placement >= 0 and placement or category,
-            sourceCategory = category,
-            displayed = displayed,
-            known = known,
-          }
+          local frame = frames[id]
+          local frameSpellRaw = frame and frame.GetSpellID and frame:GetSpellID()
+          local secret = InfoSecret(info) or FieldSecret(frameSpellRaw)
+          local slot = scanSlot[id]
+          if not slot then n = n + 1; slot = n; scanSlot[id] = slot end
+          scanIDs[slot], scanInfos[slot], scanCategories[slot], scanPlacements[slot] = id, info, category, placement
+          scanDisplayed[slot], scanKnown[slot], scanFrameSpells[slot], scanSecret[slot] = displayed, known, Number(frameSpellRaw), secret
+          if same then
+            local old = previous[id]
+            same = old ~= nil and not old.secret and not secret and old.sourceCategory == category
+              and old.category == (placement and placement >= 0 and placement or category)
+              and old.displayed == displayed and old.known == known and old.frameSpell == Number(frameSpellRaw)
+              and SameInfo(old.info, info)
+          end
         end
       end
     end
   end
+  if same then
+    local count = 0
+    for _ in pairs(previous) do count = count + 1 end
+    same = count == n
+  end
+  if same then
+    for slot = 1, n do scanInfos[slot] = nil end
+    Private.cdmIncompleteCatalogs[previous] = incomplete or nil
+    Private.cdmNoLayoutCatalogs[previous] = noLayout or nil
+    Private.HitchCount("cdm catalog: unchanged, kept")
+    return previous
+  end
+  local catalog = {}
+  if incomplete then Private.cdmIncompleteCatalogs[catalog] = true end
+  if noLayout then Private.cdmNoLayoutCatalogs[catalog] = true end
+  for slot = 1, n do
+    local placement, category = scanPlacements[slot], scanCategories[slot]
+    catalog[scanIDs[slot]] = {
+      category = placement and placement >= 0 and placement or category,
+      sourceCategory = category,
+      displayed = scanDisplayed[slot],
+      known = scanKnown[slot],
+      info = scanInfos[slot],
+      frameSpell = scanFrameSpells[slot],
+      secret = scanSecret[slot] or nil,
+    }
+  end
+  -- The scan's references are not kept past the build.
+  for slot = 1, n do scanInfos[slot] = nil end
+  Private.HitchCount(previous and "cdm catalog: changed, replaced" or "cdm catalog: built")
   return catalog
 end
 

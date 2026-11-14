@@ -387,8 +387,8 @@ WeakAuras.normalWidth = 1.3
 WeakAuras.halfWidth = WeakAuras.normalWidth / 2
 WeakAuras.doubleWidth = WeakAuras.normalWidth * 2
 local versionStringFromToc = C_AddOns.GetAddOnMetadata("ForeverAuras", "Version")
-local versionString = "1.3.9"
-local buildTime = "2026-10-23"
+local versionString = "1.4.0"
+local buildTime = "2026-11-14"
 
 -- Prerelease labels are case-insensitive; packages use the requested BETA spelling.
 if not versionString:lower():find("beta", 1, true) then

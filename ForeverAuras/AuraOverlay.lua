@@ -277,6 +277,7 @@ function Overlay:AddHarmfulSlot(list)
   })
   if not ok then self.harmful = nil end
   container:SetEnabled(self.enabled)
+  if ok then self:LookForHarmful() end
   return ok, err
 end
 
@@ -304,19 +305,102 @@ function Overlay:SetEnabled(enabled)
   self.container:SetEnabled(self.enabled)
 end
 
-function Overlay:SetBorderColor(r, g, b, a)
-  for _, target in ipairs({self, self.harmful}) do
-    for _, edge in ipairs(target.edges or {}) do edge:SetColorTexture(r, g, b, a or 1) end
-  end
+-- ForeverAuras (Item Manager battleground report, 1.3.10-dev.2): while a
+-- slot shows an aura under the client's restrictions (battlegrounds, some
+-- instanced content), writes to the slot's textures are refused with "Attempt
+-- to access forbidden object", which the aura's trigger then raised on every
+-- run. Each look write (texture, coords, border) runs under pcall per slot;
+-- the latest request is kept, with its own copy of the coords, until every
+-- slot has taken it, and the restriction-end drain (BlizzardAuraDisplay.lua)
+-- tries the refused slots again, as it does refused retirements. A released
+-- overlay drops its owed look and ignores later setter calls.
+local pendingLooks = {}
+
+local function Copy(list)
+  if type(list) ~= "table" then return nil end
+  local copy = {}
+  for i = 1, #list do copy[i] = list[i] end
+  return copy
 end
 
-function Overlay:SetTexture(texture, coords)
-  for _, target in ipairs({self, self.harmful}) do
-    if target.texture then
-      target.texture:SetTexture(texture)
-      if type(coords) == "table" then target.texture:SetTexCoord(unpack(coords)) end
+local function WriteTexture(target, look)
+  if not target.texture then return true end
+  return pcall(function()
+    target.texture:SetTexture(look.texture)
+    if look.coords then target.texture:SetTexCoord(unpack(look.coords)) end
+  end)
+end
+
+local function WriteBorder(target, look)
+  return pcall(function()
+    for _, edge in ipairs(target.edges or {}) do edge:SetColorTexture(unpack(look.border)) end
+  end)
+end
+
+-- Writes what is still owed to each slot; a slot that took its write is not
+-- written again. Returns true when nothing is owed any more.
+local function ApplyLook(overlay)
+  local look = overlay.look
+  if not look or overlay.released then
+    overlay.look = nil
+    pendingLooks[overlay] = nil
+    return true
+  end
+  local owed = false
+  for key, target in pairs({buff = overlay, debuff = overlay.harmful}) do
+    if look.textureOwed and look.textureOwed[key] then
+      if WriteTexture(target, look) then look.textureOwed[key] = nil else owed = true end
+    end
+    if look.borderOwed and look.borderOwed[key] then
+      if WriteBorder(target, look) then look.borderOwed[key] = nil else owed = true end
     end
   end
+  pendingLooks[overlay] = owed or nil
+  return not owed
+end
+
+function Private.RetryAuraOverlayLooks()
+  local waiting = 0
+  for overlay in pairs(pendingLooks) do
+    if not ApplyLook(overlay) then waiting = waiting + 1 end
+  end
+  return waiting
+end
+
+local function Slots(overlay)
+  local slots = {buff = true}
+  if overlay.harmful then slots.debuff = true end
+  return slots
+end
+
+function Overlay:SetBorderColor(r, g, b, a)
+  if self.released then return false end
+  local look = self.look or {}
+  look.border = {r or 1, g or 1, b or 1, a or 1}
+  look.borderOwed = Slots(self)
+  self.look = look
+  return ApplyLook(self)
+end
+
+-- texture nil clears the slot picture; coords nil keeps the ones last asked for.
+function Overlay:SetTexture(texture, coords)
+  if self.released then return false end
+  local look = self.look or {}
+  look.texture, look.asked = texture, true
+  if type(coords) == "table" then look.coords = Copy(coords) end
+  look.textureOwed = Slots(self)
+  self.look = look
+  return ApplyLook(self)
+end
+
+-- The debuff slot built after a look was asked for takes that look too.
+function Overlay:LookForHarmful()
+  if self.released or not self.harmful then return end
+  local look = self.look
+  if not look then return end
+  if look.asked then look.textureOwed = look.textureOwed or {}; look.textureOwed.debuff = true end
+  if look.border then look.borderOwed = look.borderOwed or {}; look.borderOwed.debuff = true end
+  ApplyLook(self)
 end
 
 function Overlay:GetButton()
@@ -344,6 +428,9 @@ local RETIREMENT = {"disable", "hide", "clear", "reparent"}
 function Overlay:Release()
   if self.released and not self.pendingSteps then return true end
   self.released = true
+  -- A look still owed is dropped with the overlay (1.3.10-dev.2).
+  self.look = nil
+  pendingLooks[self] = nil
   local container = self.container
   local steps = self.pendingSteps or {disable = true, hide = true, clear = true, reparent = true}
   if steps.disable and pcall(container.SetEnabled, container, false) then steps.disable = nil end

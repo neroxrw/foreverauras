@@ -325,6 +325,12 @@ function SlashCmdList.WeakAuras(input)
     Private.PrintHelp();
   elseif msg == "cdmsetup" then
     Private.RunCDMSetup()
+  elseif msg == "gaineddebug" then
+    -- ForeverAuras (1.3.10-dev.7): prints when a Show On: Aura(s) Gained flash animation
+    -- is played, stopped or finishes (BlizzardAuraDisplay.lua, StyleFlash). Diagnostics
+    -- only; keep it off during performance captures.
+    Private.gainedDebug = not Private.gainedDebug
+    print("|cff88ccffFA gained|r", Private.gainedDebug and "printing on" or "printing off")
   elseif msg == "modern" then
     -- ForeverAuras: "/fa modern <aura id>" prints an Aura (Modern) display's
     -- state (its spell list, Missing clip and sample) for bug reports.

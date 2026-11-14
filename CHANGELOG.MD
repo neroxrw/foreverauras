@@ -1,5 +1,10 @@
 # Changelog
 ## VERSIONS
+## 1.4.0
+- Smoother with lots of nameplates. When a bunch of nameplates show up at once (walking into a pack), the addon now handles them in one go instead of one at a time, so there's less of a stutter.
+- Less lag when shapeshifting or learning spells. The addon no longer throws away and rebuilds its Cooldown Manager info every time the game says "spells changed". It checks what actually changed and keeps the rest.
+- Aura (Modern), "Aura(s) Gained": the "Shown for (seconds)" box now explains that the icon shows for up to that long but hides sooner if the aura ends. If the trigger is on your target or a nameplate, a note warns that changing targets or a nameplate popping back can make an old aura look newly gained.
+
 ## 1.3.9
 - Fixed: your specialization was not recognized on some clients (talents shown as one empty "class" tab), so class packs fell back to their default bars. The talent tree is now read properly, and the final talent you know is used as a backup.
 - New: "On Stack Gain" sound for Aura (Modern) auras, on the Actions tab. Plays each time the tracked aura gains a stack.

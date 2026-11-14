@@ -7,7 +7,10 @@ local Private = select(2, ...)
 
 local L = WeakAuras.L
 
-local optionsVersion = "1.3.9"
+-- ForeverAuras (1.4.0): read from the toc, so a build that bumps the
+-- version cannot leave this behind (every dev build since 1.3.10-dev.1 did,
+-- and the options refused to open with "doesn't match").
+local optionsVersion = C_AddOns and C_AddOns.GetAddOnMetadata and C_AddOns.GetAddOnMetadata(AddonName, "Version") or "1.4.0"
 
 
 if optionsVersion ~= WeakAuras.versionString then

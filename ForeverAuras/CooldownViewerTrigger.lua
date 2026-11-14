@@ -64,11 +64,41 @@ local function ScheduleCatalogRetry()
     if Private.QueueCDMRefresh then Private.QueueCDMRefresh() end
   end)
 end
--- ForeverAuras: drops the catalog so the next use builds it (CooldownViewerCatalog.lua, CDMCatalogStale).
+-- ForeverAuras: marks the catalog so the next use builds it again (CooldownViewerCatalog.lua,
+-- CDMCatalogStale; the viewer's OnDataChanged). (1.3.10-dev.4) the standing catalog is kept
+-- until then and handed to the build for comparison, so a rebuild that reads the same data
+-- keeps the table and the triggers' spell matches with it.
+local catalogDirty = false
 function Private.InvalidateCDMCatalog()
-  catalog = nil
+  catalogDirty = true
 end
-local function GetCatalog(refresh)
+local resolved = {}
+-- (dev.5, the dev.4 review) the resolved matches also depend on answers that are
+-- not in the catalog: the spellbook (IsSpellKnownIncludingPet), spell names and
+-- ranks (GetSpellInfo, GetSpellSubtext) and equipped items. Those can change
+-- while every catalog entry reads the same, so on the events that can change
+-- them the matches are dropped and made afresh (once per dispatch), whether or
+-- not the catalog table was kept. The narrower notifications (an override
+-- update, the viewer's layout change) keep the matches when the catalog
+-- compares equal, since every field they can change is in the comparison.
+-- Invalidate at the shared catalog entry point: picker-only dispatches must
+-- also retire matches cached for named auras that are not currently loaded.
+local matchEvents = {
+  PLAYER_ENTERING_WORLD = true, PLAYER_SPECIALIZATION_CHANGED = true, SPELLS_CHANGED = true,
+  PLAYER_EQUIPMENT_CHANGED = true, COOLDOWN_VIEWER_DATA_LOADED = true, COOLDOWN_VIEWER_TABLE_HOTFIXED = true,
+}
+local function DropMatches(event)
+  if not matchEvents[event] then return end
+  local batch = Private.cdmScanBatch
+  if batch then
+    if batch.matchesDropped then return end
+    batch.matchesDropped = true
+  end
+  resolved = {}
+  Private.HitchCount("cdm: spell matches dropped (spellbook event)")
+end
+local function GetCatalog(refresh, event)
+  DropMatches(event)
   local batch = Private.cdmScanBatch
   if batch and batch.catalog then return batch.catalog end
   -- ForeverAuras: a catalog built while aura data was secret is rebuilt
@@ -121,11 +151,14 @@ local function GetCatalog(refresh)
     local ok, loaded = pcall(C_AddOns.LoadAddOn, "Blizzard_CooldownViewer")
     if ok and loaded then ScheduleCatalogRetry() end
   end
-  if catalog and not refresh then
+  if catalog and not refresh and not catalogDirty then
     if batch then batch.catalog = catalog end
     return catalog
   end
-  catalog = IsAvailable() and Private.CDMCatalog() or {}
+  catalogDirty = false
+  Private.StartProfileSystem("cdm: catalog build")
+  catalog = IsAvailable() and Private.CDMCatalog(catalog) or {}
+  Private.StopProfileSystem("cdm: catalog build")
   catalogSecret = Private.cdmCatalogSawSecret == true
   catalogTime = GetTime()
   if CatalogIncomplete(catalog) then
@@ -182,7 +215,6 @@ function Private.CDMSpellQueries(trigger)
   return queries
 end
 
-local resolved = {}
 
 -- ForeverAuras: each entry's aura spell IDs as last seen readable. They are
 -- static data, but an entry whose aura is up reports them secret in combat,
@@ -294,10 +326,18 @@ local function BuffNameIndex(entries)
   resolved.buffNames = names
   return names
 end
+local ResolveCDMSpellInner
+-- (1.3.10-dev.4) timed and counted for /fa phitch: how much of a refresh is spell matching.
 function Private.ResolveCDMSpell(trigger, event)
+  Private.StartProfileSystem("cdm: resolve")
+  local selected = ResolveCDMSpellInner(trigger, event)
+  Private.StopProfileSystem("cdm: resolve")
+  return selected
+end
+function ResolveCDMSpellInner(trigger, event)
   if trigger.type == "cdm" then trigger.cdmSource = trigger.event == "Blizzard CDM Buff" and "buff" or "cooldown" end
   if refreshEvents[event] then Private.CDMResetIdentities() end
-  local entries = GetCatalog(CatalogRefresh(event))
+  local entries = GetCatalog(CatalogRefresh(event), event)
   local query = tostring(trigger.cdmSpell or ""):match("^%s*(.-)%s*$")
   if trigger.event == "Blizzard CDM Item" then
     -- Equipment and category-source identities can change without a catalog change.
@@ -357,7 +397,8 @@ function Private.ResolveCDMSpell(trigger, event)
       end
     end
   end
-  if resolved[key] then return resolved[key] end
+  if resolved[key] then Private.HitchCount("cdm: spell match kept"); return resolved[key] end
+  Private.HitchCount("cdm: spell matched afresh")
   local id = tonumber(query)
   if trigger.cdmExact and not id then return {} end
   local spell = id and C_Spell.GetSpellInfo(id)
@@ -521,7 +562,7 @@ end
 
 function Private.GetCDMPickerSelections(trigger, event)
   local selected = {buffSpellIDsByEntry = {}}
-  local entries = GetCatalog(CatalogRefresh(event))
+  local entries = GetCatalog(CatalogRefresh(event), event)
   for key, enabled in pairs(trigger.cdmSpells and trigger.cdmSpells.multi or {}) do
     local id = tonumber(key)
     local entry = id and entries[id]
@@ -649,7 +690,7 @@ local built = {}
 local function BuildCooldownViewerStates(allstates, selected, event, showGCD, track, hideGCDText, showMode, exactID, requireTarget, ignoreSpellKnown)
   wipe(built)
   if event == "PLAYER_SPECIALIZATION_CHANGED" or event == "PLAYER_EQUIPMENT_CHANGED" or event == "PLAYER_ENTERING_WORLD" then Private.CDMResetIdentities() end
-  local available = GetCatalog(CatalogRefresh(event))
+  local available = GetCatalog(CatalogRefresh(event), event)
   local frames = Private.CDMFrames()
   for _, state in pairs(allstates) do
     state.show = false
@@ -1698,7 +1739,7 @@ end
 
 if EventRegistry and EventRegistry.RegisterCallback then
   EventRegistry:RegisterCallback("CooldownViewerSettings.OnDataChanged", function()
-    catalog = nil
+    Private.InvalidateCDMCatalog()
     C_Timer.After(0, function()
       if Private.ScanEvents then Private.ScanEvents("FA_CDM_LAYOUT_CHANGED") end
     end)
