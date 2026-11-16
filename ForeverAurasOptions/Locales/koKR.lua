@@ -1,4 +1,5 @@
--- Modified for ForeverAuras, 2026-09-18.
+-- Modified for ForeverAuras, 2026-11-17.
+-- Credit: Elnarfim
 if not WeakAuras.IsLibsOK() then return end
 
 if (GAME_LOCALE or GetLocale()) ~= "koKR" then
@@ -106,19 +107,12 @@ local L = WeakAuras.L
 |cffff0000Note|r: Without a direct relationship to actual unitIDs, results may vary.
 
 |cffffff00*|r Yellow Unit settings can match multiple units and will default to being active even while no affected units are found without a Unit Count or Match Count setting.]=] ] = [=[• |cff00ff00플레이어|r, |cff00ff00대상|r, |cff00ff00주시 대상|r 및 |cff00ff00소환수|r는 각각의 유닛ID에 직접 대응됩니다.
-
 • |cff00ff00유닛 직접 지정|r으로 추적할 유닛ID를 직접 입력할 수 있습니다.
-
 |cffff0000참고|r: 게임에선 모든 유닛ID에 대해 이벤트를 발동하지 않으므로 일부 유닛ID는 이 활성 조건에서 추적되지 않습니다.
-
 • |cffffff00파티|r, |cffffff00공격대|r, |cffffff00우두머리|r, |cffffff00투기장|r 및 |cffffff00이름표|r는 여러개의 유닛ID와 일치할 수 있습니다.
-
 • |cffffff00스마트 그룹|r은 현재 그룹 형태에 맞춰 조정되는데 그룹이 아니면 "player", 파티일 때 "party" 유닛 ("player" 포함), 공격대일 때 "raid" 유닛으로 맞춰집니다.
-
 • |cffffff00다중 대상|r은 오라가 걸린 유닛 추적을 위해 유닛ID보다 전투 로그 이벤트를 먼저 사용해보려 할 것입니다.
-
 |cffff0000참고|r: 실제 유닛ID와 직접적인 관계가 없기 때문에 다른 결과가 나올 수 있습니다.
-
 
 |cffffff00*|r 노란색 유닛 설정은 여러개의 유닛과 일치할 수 있으며 유닛 수 또는 조건 일치 유닛 수 설정이 적용되지 않은 경우, 오라에 걸린 유닛이 없어도 기본적으로 활성화 상태를 유지합니다.]=]
 	L["A 20x20 pixels icon"] = "20x20 픽셀 아이콘"
@@ -128,7 +122,8 @@ local L = WeakAuras.L
 	L["A 64x64 pixels icon"] = "64x64 픽셀 아이콘"
 	L["A group that dynamically controls the positioning of its children"] = "자식 위크오라의 위치를 동적으로 제어하는 그룹입니다"
 	L[ [=[A timer will automatically be displayed according to default Interface Settings (overridden by some addons).
-Enable this setting if you want this timer to be hidden, or when using a WeakAuras text to display the timer]=] ] = "타이머가 기본 인터페이스 설정(일부 애드온에 의해 설정이 무시됨)에 따라 자동으로 표시됩니다. 이 타이머를 숨기거나 ForeverAuras의 텍스트를 사용해서 표시하고 싶으면 이 설정을 켜세요."
+Enable this setting if you want this timer to be hidden, or when using a WeakAuras text to display the timer]=] ] = [=[타이머가 기본 인터페이스 설정(일부 애드온에 의해 설정이 변경된)에 따라 자동으로 표시됩니다.
+이 타이머를 숨기거나 ForeverAuras의 텍스트를 사용해서 표시하고 싶으면 이 설정을 켜세요.]=]
 	L["A Unit ID (e.g., party1)."] = "유닛 ID입니다. (party1 같은식)"
 	L["Ace: Funkeh, Nevcairiel"] = "Ace: Funkeh, Nevcairiel"
 	L["Active Aura Filters and Info"] = "활성화된 오라의 필터 및 정보"
@@ -175,8 +170,7 @@ Enable this setting if you want this timer to be hidden, or when using a WeakAur
 	L["Animates progress changes"] = "진행 상태의 변화를 부드럽게 표현합니다"
 	L["Animation End"] = "애니메이션 종료 시점"
 	L["Animation Mode"] = "애니메이션 모드"
-	L["Animation relative duration description"] = [=[
-디스플레이 지속시간의 비율로 애니메이션 지속시간을 설정합니다, 분수 (1/2), 백분율 (50%), 또는 소수 (0.5)로 표현합니다.
+	L["Animation relative duration description"] = [=[디스플레이 지속시간의 비율로 애니메이션 지속시간을 설정합니다, 분수 (1/2), 백분율 (50%), 또는 소수 (0.5)로 표현합니다.
 |cFFFF0000참고:|r 디스플레이가 진행 시간이 없으면 (비-지속적 이벤트 활성 조건, 지속시간이 없는 오라, 등등), 애니메이션은 재생되지 않습니다.
 
 |cFF4444FF예시:|r
@@ -194,7 +188,8 @@ Enable this setting if you want this timer to be hidden, or when using a WeakAur
 	L["At the same position as Blizzard's spell alert"] = "블리자드의 주문 경보와 같은 위치"
 	L["Attach to Foreground"] = "전경에 붙임"
 	L[ [=[Aura is
-Off Screen]=] ] = "위크오라가 화면 밖에 있습니다"
+Off Screen]=] ] = [=[위크오라가
+화면 밖입니다]=]
 	L["Aura Name Pattern"] = "오라 이름 패턴"
 	L["Aura Order"] = "위크오라 정렬"
 	L["Aura received from: %s"] = "위크오라 전송자: %s"
@@ -287,14 +282,14 @@ Off Screen]=] ] = "위크오라가 화면 밖에 있습니다"
 	L["Custom Text Update Throttle"] = "사용자 정의 텍스트 업데이트 주기"
 	L["Custom Trigger"] = "사용자 정의 활성 조건"
 	L["Custom trigger event tooltip"] = [=[사용자 정의 활성 조건 확인에 사용할 이벤트를 선택하세요. 쉼표나 공백으로 여러 이벤트를 지정할 수 있습니다.
-
 • "UNIT" 이벤트는 콜론을 사용해 등록할 유닛 ID를 정할 수 있습니다.
 "nameplate", "group", "raid", "party", "arena", "boss"와 같은 유닛 유형을 유닛ID로 사용할 수 있습니다.
 • "CLEU"를 COMBAT_LOG_EVENT UNFILTERED 대신 사용할 수 있고 받고 싶은 "서브이벤트"를 콜론으로 구분해서 지정할 수 있습니다.
 • "TRIGGER" 키워드에 콜론으로 활성 조건 번호를 나누어 지정하면 해당 활성 조건이 업데이트될 때 사용자 정의 활성 조건도 같이 업데이트됩니다.
 
 |cFF4444FF예시:|r
-UNIT_POWER_UPDATE:player, UNIT_AURA:nameplate:group PLAYER_TARGET_CHANGED CLEU:SPELL_CAST_SUCCESS TRIGGER:3:1]=]
+UNIT_POWER_UPDATE:player, UNIT_AURA:nameplate:group PLAYER_TARGET_CHANGED CLEU:SPELL_CAST_SUCCESS TRIGGER:3:1
+]=]
 	L["Custom trigger status tooltip"] = [=[사용자 정의 활성 조건 확인에 사용할 이벤트를 선택하세요. 쉼표나 공백으로 여러 이벤트를 지정할 수 있습니다.
 
 • "UNIT" 이벤트는 콜론을 사용해 등록할 유닛 ID를 정할 수 있습니다.
@@ -305,7 +300,8 @@ UNIT_POWER_UPDATE:player, UNIT_AURA:nameplate:group PLAYER_TARGET_CHANGED CLEU:S
 이 활성 조건은 상태(Status) 유형이므로 지정된 이벤트가 인자가 없어도 WeakAuras에 의해 호출될 수 있습니다.
 
 |cFF4444FF예시:|r
-UNIT_POWER_UPDATE:player, UNIT_AURA:nameplate:group PLAYER_TARGET_CHANGED CLEU:SPELL_CAST_SUCCESS TRIGGER:3:1]=]
+UNIT_POWER_UPDATE:player, UNIT_AURA:nameplate:group PLAYER_TARGET_CHANGED CLEU:SPELL_CAST_SUCCESS TRIGGER:3:1
+]=]
 	L["Custom trigger Update Throttle"] = "사용자 정의 활성 조건 업데이트 주기"
 	L["Custom Trigger: Ignore Lua Errors on OPTIONS event"] = "사용자 정의 활성 조건: OPTIONS 이벤트에서 Lua 오류 무시"
 	L["Custom Trigger: Send fake events instead of STATUS event"] = "사용자 정의 활성 조건: STATUS 이벤트 대신 가짜 이벤트 보내기"
@@ -411,8 +407,10 @@ UNIT_POWER_UPDATE:player, UNIT_AURA:nameplate:group PLAYER_TARGET_CHANGED CLEU:S
 	L[ [=[Filter formats: 'Name', 'Name-Realm', '-Realm'.
 
 Supports multiple entries, separated by commas
-Can use \ to escape -.]=] ] = [=[필터 형식: '이름', '이름-서버', '-서버'. 여러 항목을 지원하며, 각 항목은 쉼표로 구분합니다.
--는 앞에 \를 사용해 이스케이프 처리하면 입력할 수 있습니다.]=]
+Can use \ to escape -.]=] ] = [=[필터 형식: '이름', '이름-서버', '-서버' 입니다.
+
+여러 항목을 지원하며 각 항목은 쉼표로 구분합니다
+-를 이스케이프 처리하려면 \를 사용하세요.]=]
 	L[ [=[Filter to only dispellable de/buffs of the given type(s)
 Bleed classification via LibDispel]=] ] = [=[여러 속성 중 해제가 되는 버프/디버프만 걸러냅니다
 출혈은 LibDispel을 통해서 분류됩니다]=]
@@ -461,7 +459,8 @@ Bleed classification via LibDispel]=] ] = [=[여러 속성 중 해제가 되는 
 |cFF00CC00= 100%%|r는 '%s' 종류의 유닛이 전부 오라에 걸리면 작동합니다
 |cFF00CC00!= 2|r는 '%s' 종류의 유닛 2개가 오라에 걸렸을 때만 빼고 작동합니다
 |cFF00CC00<= 0.8|r '%s' 종류의 유닛 80%% 이하가 오라에 걸리면 작동합니다 (파티원 5명 중 4명, 공대원 10명 중 8명 또는 25명 중 20명)
-|cFF00CC00> 1/2|r '%s' 종류의 유닛 과반이 오라에 걸리면 작동합니다]=]
+|cFF00CC00> 1/2|r '%s' 종류의 유닛 과반이 오라에 걸리면 작동합니다
+]=]
 	L["Group by Frame"] = "프레임별로 그룹 형성"
 	L["Group Description"] = "그룹 설명"
 	L["Group Icon"] = "그룹 아이콘"
@@ -588,14 +587,11 @@ Bleed classification via LibDispel]=] ] = [=[여러 속성 중 해제가 되는 
 	L["Move Up"] = "위로 이동"
 	L["Moving auras: "] = "위크오라 이동중: "
 	L["Multiple Displays"] = "다중 디스플레이"
-	L["Multiselect ignored tooltip"] = [=[
-|cFFFF0000무시|r - |cFF777777단일|r - |cFF777777여럿|r
+	L["Multiselect ignored tooltip"] = [=[|cFFFF0000무시|r - |cFF777777단일|r - |cFF777777여럿|r
 이 옵션은 디스플레이를 불러올 때 조건으로 사용되지 않습니다]=]
-	L["Multiselect multiple tooltip"] = [=[
-|cFF777777무시|r - |cFF777777단일|r - |cFF00FF00여럿|r
+	L["Multiselect multiple tooltip"] = [=[|cFF777777무시|r - |cFF777777단일|r - |cFF00FF00여럿|r
 일치하는 값을 무엇이든 선택할 수 있습니다]=]
-	L["Multiselect single tooltip"] = [=[
-|cFF777777무시|r - |cFF00FF00단일|r - |cFF777777여럿|r
+	L["Multiselect single tooltip"] = [=[|cFF777777무시|r - |cFF00FF00단일|r - |cFF777777여럿|r
 일치하는 값을 하나만 선택할 수 있습니다]=]
 	L["Must be a power of 2"] = "2의 제곱이어야 합니다"
 	L["Name - The name of the display (usually an aura name), or the display's ID if there is no dynamic name"] = "이름 - 이 디스플레이의 이름이며 (일반적으론 오라 이름) 동적 이름이 없을땐 ID가 됩니다"
@@ -627,7 +623,7 @@ every 3 events starting from 2nd and ending at 11th: 2-11/3]=] ] = [=[이벤트 
 값의 범위를 정할 수 있습니다
 쉼표나 공백으로 구분해서 여러 값을 가질 수 있습니다
 
-예:
+예시:
 2번 5번 6번 이벤트: 2, 5, 6
 2번부터 6번까지: 2-6
 2개의 이벤트마다: /2
@@ -853,13 +849,16 @@ every 3 events starting from 2nd and ending at 11th: 2-11/3]=] ] = [=[이벤트 
 	L["This adds %role, %roleIcon as text replacements. Does nothing if the unit is not a group member."] = "이 옵션을 켜면 텍스트 대체 코드에 %role, %roleIcon이 추가됩니다. 유닛이 그룹에 없으면 작동하지 않습니다."
 	L["This adds %tooltip, %tooltip1, %tooltip2, %tooltip3 and %tooltip4 as text replacements and also allows filtering based on the tooltip content/values."] = "이 옵션을 켜면 텍스트 대체 코드에 %tooltip, %tooltip1, %tooltip2, %tooltip3, %tooltip4를 추가해서 툴팁 내용/값 정보를 추출할 수 있게 해줍니다."
 	L[ [=[This aura contains custom Lua code.
-Make sure you can trust the person who sent it!]=] ] = "이 위크오라는 사용자 정의 Lua 코드를 포함하고 있습니다. 보낸 사람이 믿을만한지 확인하세요!"
+Make sure you can trust the person who sent it!]=] ] = [=[이 위크오라는 사용자 정의 Lua 코드를 포함하고 있습니다.
+보낸 사람이 믿을만한지 확인하세요!]=]
 	L["This aura is marked as an update to an aura '%s', but cannot be used to update that aura. This usually happens if an aura is moved out of a group."] = "이 위크오라는 '%s' 위크오라의 업데이트로 표시됐지만 업데이트를 할 수 없었습니다. 보통 이런 현상은 그룹에서 위크오라가 빠져있을 때 발생합니다."
 	L["This aura is marked as an update to auras '%s', but cannot be used to update them. This usually happens if an aura is moved out of a group."] = "이 위크오라는 '%s' 위크오라의 업데이트로 표시됐지만 업데이트를 할 수 없었습니다. 보통 이런 현상은 그룹에서 위크오라가 빠져있을 때 발생합니다."
 	L[ [=[This aura was created with a different version (%s) of World of Warcraft.
-It might not work correctly!]=] ] = "이 위크오라는 월드 오브 워크래프트의 다른 버전 (%s)용으로 제작되었습니다. 제대로 작동하지 않을 수 있습니다!"
+It might not work correctly!]=] ] = [=[이 위크오라는 월드 오브 워크래프트의 다른 버전 (%s)용으로 제작되었습니다.
+제대로 작동하지 않을 수 있습니다!]=]
 	L[ [=[This aura was created with a newer version of WeakAuras.
-Upgrade your version of WeakAuras or wait for next release before installing this aura.]=] ] = "이 위크오라는 보다 최신 버전의 ForeverAuras로 제작되었습니다. ForeverAuras 버전을 업그레이드하거나 이 위크오라를 설치하지 말고 다음 릴리즈를 기다리세요."
+Upgrade your version of WeakAuras or wait for next release before installing this aura.]=] ] = [=[이 위크오라는 보다 최신 버전의 ForeverAuras로 제작되었습니다.
+ForeverAuras 버전을 업그레이드하거나 이 위크오라를 설치하지 말고 다음 버전 출시를 기다리세요.]=]
 	L["This display is currently loaded"] = "이 디스플레이는 불러온 상태입니다"
 	L["This display is not currently loaded"] = "이 디스플레이는 불러오지 않았습니다"
 	L["This display is on standby, it will be loaded when needed."] = "이 디스플레이는 대기 중입니다. 사용할 때 불러들입니다."
@@ -952,17 +951,201 @@ Upgrade your version of WeakAuras or wait for next release before installing thi
 
 |cFFFF0000There is a risk the custom code could be used to kill your hardcore character!|r
 
-Would you like to continue?]=] ] = "하드코어 서버에서 사용자 정의 Lua 코드가 포함된 위크오라를 가져오고 있습니다. |cFFFF0000사용자 정의 코드가 당신의 하드코어 캐릭터를 죽이는 데 사용될 위험이 있습니다!|r 계속하시겠습니까?"
+Would you like to continue?]=] ] = [=[하드코어 서버에서 사용자 정의 Lua 코드가 포함된 위크오라를 가져오고 있습니다.
+
+|cFFFF0000사용자 정의 코드가 당신의 하드코어 캐릭터를 죽이는 데 사용될 위험이 있습니다!|r
+
+계속할까요?]=]
 	L[ [=[You can add a comma-separated list of state values here that (when changed) WeakAuras should also run the Anchor Code on.
 
-WeakAuras will always run custom anchor code if you include 'changed' in this list, or when a region is added, removed, or re-ordered.]=] ] = "이곳에 State 테이블 값들을 쉼표로 구분해서 목록으로 만들어 넣을 수 있으며 (값이 바뀔 때) ForeverAuras가 위치 고정 코드를 실행하게 됩니다. 이 목록에 테이블 값 'changed'를 넣을 경우 또는 표시 영역(region)이 추가, 삭제, 재정렬 될 때 ForeverAuras는 반드시 사용자 정의 고정 코드를 실행합니다."
+WeakAuras will always run custom anchor code if you include 'changed' in this list, or when a region is added, removed, or re-ordered.]=] ] = [=[이곳에 State 테이블 값들을 쉼표로 구분해서 목록으로 만들어 넣을 수 있으며 (값이 바뀔 때) ForeverAuras가 위치 고정 코드를 실행하게 됩니다.
+
+이 목록에 테이블 값 'changed'를 넣거나 표시 영역(region)이 추가, 삭제, 재정렬될 때 ForeverAuras는 무조건 사용자 정의 고정 코드를 실행합니다.]=]
 	L[ [=[You can add a comma-separated list of state values here that (when changed) WeakAuras should also run the Grow Code on.
 
-WeakAuras will always run custom grow code if you include 'changed' in this list, or when a region is added, removed, or re-ordered.]=] ] = "이곳에 State 테이블 값들을 쉼표로 구분해서 목록으로 만들어 넣을 수 있으며 (값이 바뀔 때) ForeverAuras가 그룹 확장 코드를 실행하게 됩니다. 이 목록에 테이블 값 'changed'를 넣을 경우 또는 표시 영역(region)이 추가, 삭제, 재정렬 될 때 ForeverAuras는 반드시 사용자 정의 그룹 확장 코드를 실행합니다."
-	L["You can add a comma-separated list of state values here that (when changed) ForeverAuras should also run the sort code on.ForeverAuras will always run custom sort code if you include 'changed' in this list, or when a region is added, removed."] = "이곳에 State 테이블 값들을 쉼표로 구분해서 목록으로 만들어 넣을 수 있으며 (값이 바뀔 때) ForeverAuras가 정렬 코드를 실행하게 됩니다. 이 목록에 테이블 값 'changed'를 넣을 경우 또는 표시 영역(region)이 추가, 삭제, 재정렬 될 때 ForeverAuras는 반드시 사용자 정의 정렬 코드를 실행합니다."
+WeakAuras will always run custom grow code if you include 'changed' in this list, or when a region is added, removed, or re-ordered.]=] ] = [=[이곳에 State 테이블 값들을 쉼표로 구분해서 목록으로 만들어 넣을 수 있으며 (값이 바뀔 때) ForeverAuras가 그룹 확장 코드를 실행하게 됩니다.
+
+이 목록에 테이블 값 'changed'를 넣거나 표시 영역(region)이 추가, 삭제, 재정렬 될 때 ForeverAuras는 무조건 사용자 정의 그룹 확장 코드를 실행합니다.]=]
+	L["You can add a comma-separated list of state values here that (when changed) ForeverAuras should also run the sort code on.ForeverAuras will always run custom sort code if you include 'changed' in this list, or when a region is added, removed."] = "이곳에 State 테이블 값들을 쉼표로 구분해서 목록으로 만들어 넣을 수 있으며 (값이 바뀔 때) ForeverAuras가 정렬 코드를 실행하게 됩니다. 이 목록에 테이블 값 'changed'를 넣을 경우 또는 표시 영역(region)이 추가, 삭제, 재정렬 될 때 ForeverAuras는 무조건 사용자 정의 정렬 코드를 실행합니다."
 	L["Your Saved Snippets"] = "저장된 스니펫"
 	L["Z Offset"] = "Z 위치 조정"
 	L["Z Rotation"] = "Z 회전"
 	L["Zoom In"] = "확대"
 	L["Zoom Out"] = "축소"
 
+-- ForeverAuras: Aura (Modern), CDM and options window
+L["This display is in an Aura (Modern) group, where the fallback is not available."] = "이 디스플레이는 오라 (신형) 그룹 안에 있어 대체 기능을 사용할 수 없습니다."
+L["This display is anchored to unit frames or nameplates, where the fallback is not available."] = "이 디스플레이는 유닛 프레임이나 이름표에 고정되어 있어 대체 기능을 사용할 수 없습니다."
+L["An Aura (Modern) trigger draws the display itself, so Dynamic Information must come from it. To show another trigger's timer while its aura filters are not met, use \"When Aura (Modern) Filters Are Not Met, Use\" below."] = "오라 (신형) 활성 조건이 디스플레이를 직접 그리기 때문에 동적 정보는 해당 조건에서 가져옵니다. 오라 필터를 충족하지 않을 때 다른 활성 조건의 타이머를 표시하려면 아래에서 \"오라 (신형) 필터를 충족하지 않을 때 사용\"을 사용하세요."
+L["Classes"] = "직업"
+L["Only track units of the selected classes. Units left out get no part of the display."] = "선택한 직업의 유닛만 추적합니다. 해당되지 않는 유닛은 디스플레이에 표시되지 않습니다."
+L["Leave yourself (and your pet) out of the display."] = "나(와 내 소환수)를 디스플레이 대상에서 제외합니다."
+L["Hide a member's part of the display while it is too far away for the client to see."] = "그룹 멤버가 클라이언트가 볼 수 없을 정도로 멀리 떨어져 있는 동안에는 해당 그룹 멤버의 디스플레이 부분을 숨깁니다."
+L["Static (always full)"] = "고정 (항상 가득 참)"
+L["Draw the whole texture while the aura is active instead of filling it by the aura's remaining time."] = "오라의 남은 시간에 따라 채워지는 대신 오라가 활성화되어 있는 동안 텍스처 전체를 표시합니다."
+L["Allow External Display Changes"] = "외부 디스플레이 변경 허용"
+L["Lets another aura or an addon scale this display or set its sizes with ForeverAuras.SetDisplayScale(id, factor) and ForeverAuras.SetDisplayOverrides(id, values). The changes are never saved: the editor always shows the authored values."] = "다른 위크오라나 애드온이 이 디스플레이의 비율이나 크기를 ForeverAuras.SetDisplayScale(id, factor)과 ForeverAuras.SetDisplayOverrides(id, values)로 조정할 수 있게 합니다. 변경 사항은 절대 저장되지 않으며 편집기에는 항상 원본 설정값이 표시됩니다."
+L["Pasted onto an Aura (Modern): %d unsupported element(s) removed, %d text(s) switched off (only %%p, %%s, %%n, %%l or plain text, once each)."] = "오라 (신형)에 붙여넣었습니다: %d개의 지원되지 않는 요소가 제거되었고, 텍스트 %d개가 꺼졌습니다. (%%p, %%s, %%n, %%l 또는 일반 텍스트만 각각 한 번씩 허용됨)"
+L["Spell Count"] = "주문 횟수"
+L["Track Cooldowns"] = "쿨타임 추적"
+L["Show Global Cooldown"] = "글로벌 쿨타임 표시"
+L["Show Global Cooldown Text"] = "글로벌 쿨타임 텍스트 표시"
+L["Charges"] = "충전량"
+L["Usable (legacy)"] = "사용 가능 (구형)"
+L["Not Usable (legacy)"] = "사용 불가 (구형)"
+L["Show GCD text"] = "글쿨 텍스트 표시"
+L["Blizzard's Cooldown Manager does not recognise this spell, so its aura cannot be read in combat: %s. Aura(s) Missing cannot be told with a target in combat."] = "블리자드 재사용 대기시간 관리자가 이 주문을 인식하지 못하므로 전투 중에는 해당 오라를 읽을 수 없습니다: %s. 전투 중인 대상은 오라 없음을 판별할 수 없습니다."
+L["Also allows auras normally returned only for nameplate displays. Other filters still apply."] = "이름표에 표시되는 용도로만 반환되는 오라들도 허용합니다. 다른 필터도 계속 적용됩니다."
+L["Animation Duration"] = "애니메이션 지속시간"
+L["Assets"] = "에셋"
+L["Aura (Modern) Settings"] = "오라 (신형) 설정"
+L["Aura Filters"] = "오라 필터"
+L["Aura growth direction"] = "오라 확장 방향"
+L["Aura spacing"] = "오라 간격"
+L["Aura(s) Gained"] = "오라에 걸림"
+L["Aura(s) Gained: shows an aura only while it is new, for the seconds below."] = "오라에 걸림: 오라에 새로 걸린 시점부터 아래 초단위 시간 동안 오라를 표시합니다."
+L["Auto-Clone (Show All Matches)"] = "자동 복제 (모든 일치 항목 표시)"
+L["Automatic (%s)"] = "자동 (%s)"
+L["Blizzard CDM Entries"] = "블리자드 CDM 항목"
+L["Blizzard CDM Filters"] = "블리자드 CDM 필터"
+L["Blizzard Default"] = "블리자드 기본값"
+L["Blizzard controls aura visibility. Use a condition from another trigger to send chat messages."] = "블리자드가 오라 표시를 제어합니다. 대화 메시지를 보내려면 다른 활성 조건의 조건 탭을 사용하세요."
+L["Blizzard debuff order turns on debuff classification, which can hide auras not classified as debuffs."] = "블리자드 디버프 순서를 켜면 디버프 분류가 활성화되어 디버프로 분류되지 않은 오라가 숨겨질 수 있습니다."
+L["Blizzard: Buff"] = "블리자드: 버프"
+L["Blizzard: Debuff"] = "블리자드: 디버프"
+L["Blizzard: Dispellable"] = "블리자드: 해제 가능"
+L["Border Offset"] = "테두리 위치 조정"
+L["Buff or Debuff"] = "버프 또는 디버프"
+L["Cast value checks:"] = "시전 값 검사:"
+L["Character stat checks:"] = "캐릭터 능력치 검사:"
+L["Charge count checks:"] = "충전 횟수 검사:"
+L["Charge recharge"] = "충전 재충전"
+L["Cooldown time checks:"] = "쿨타임 시간 검사:"
+L["Dispel Type Border %d"] = "디버프 유형 테두리 %d"
+L["Dispel Type Icon %d"] = "디버프 유형 아이콘 %d"
+L["Elapsed Time"] = "경과 시간"
+L["Emojis"] = "이모지"
+L["Enter a Spell ID to track all ranks of that spell."] = "주문 ID를 입력하면 해당 주문의 모든 등급을 추적합니다."
+L["Enter a non-negative number of seconds."] = "양수로 초 단위를 입력하세요."
+L["Enter a non-negative whole number."] = "양의 정수를 입력하세요."
+L["Enter a number of seconds above 0."] = "초 단위로 0보다 큰 수를 입력하세요."
+L["Enter a number of seconds, 0 or more."] = "초 단위로 0 이상을 입력하세요."
+L["Enter a number of seconds."] = "초 단위를 입력하세요."
+L["Enter a positive whole-number Item ID."] = "양의 정수로 된 아이템 ID를 입력하세요."
+L["Enter a positive whole-number Spell ID."] = "양의 정수로 된 주문 ID를 입력하세요."
+L["Enter a unit such as party1, raid5, boss1 or arena2."] = "party1, raid5, boss1 또는 arena2 같은 유닛을 입력하세요."
+L["Enter a whole number from 0 to %d."] = "0부터 %d 사이의 정수를 입력하세요."
+L["Enter character names separated by commas. Include both the first name and surname, keeping the space between them. Capitalization does not matter. Only group members whose names are available to addons can match."] = "캐릭터 이름을 쉼표로 구분하여 입력하세요. 공백을 포함한 전체 이름을 입력하며 대소문자는 가리지 않습니다. 애드온이 이름을 일치시킨 그룹원만 작동합니다."
+L["Exact Item ID(s)"] = "정확한 아이템 ID"
+L["Exact Spell ID"] = "정확한 주문 ID"
+L["Exclude dispel types"] = "제외할 디버프 유형"
+L["Extra Options:"] = "추가 옵션:"
+L["Extra space around the unit frame. Zero follows its edges."] = "유닛 프레임 주변의 추가 여백입니다. 0으로 설정하면 프레임 경계를 그대로 따릅니다."
+L["Filter by Hostility"] = "적대성별 필터링"
+L["Filters active auras using readable CDM stack counts. Missing or secret stack counts do not match. All enabled filters must match."] = "읽을 수 있는 CDM 중첩 수를 사용하여 활성 오라를 필터링합니다. 없거나 비밀값인 중첩 수는 포함되지 않습니다. 활성화된 모든 필터가 일치해야 합니다."
+L["Filters active, timed auras using readable CDM elapsed time. Missing, permanent, or secret timers do not match."] = "읽을 수 있는 CDM 경과 시간을 사용하여 활성화된 시간 제한 오라를 필터링합니다. 없음, 시간 무한, 비밀값인 타이머는 포함되지 않습니다."
+L["Filters active, timed auras using readable CDM remaining time. Missing, permanent, or secret timers do not match."] = "읽을 수 있는 CDM 남은 시간을 사용하여 활성화된 시간 제한 오라를 필터링합니다. 없음, 시간 무한, 비밀값인 타이머는 포함되지 않습니다."
+L["Filters active, timed auras using readable CDM total time. Missing, permanent, or secret timers do not match."] = "읽을 수 있는 CDM 총 시간을 사용하여 활성화된 시간 제한 오라를 필터링합니다. 없음, 시간 무한, 비밀값인 타이머는 포함되지 않습니다."
+L["Full Bar"] = "가득 찬 바"
+L["Glow Anchored Unit Frame"] = "고정된 유닛 프레임 반짝임"
+L["Group Role"] = "그룹 내 역할"
+L["Group Roles"] = "그룹 내 역할"
+L["Hardcoded text. Use Conditions from other triggers to show, hide or change this message."] = "직접 입력한 텍스트입니다. 이 메시지를 표시하거나 숨기거나 변경하려면 다른 활성 조건의 조건 탭을 사용하세요."
+L["Healer"] = "힐러"
+L["Hide GCD text"] = "글쿨 텍스트 숨기기"
+L["Hide global cooldown text"] = "글로벌 쿨타임 텍스트 숨기기"
+L["Hide this unit's part of the display while it is dead or a ghost."] = "이 유닛이 죽었거나 유령 상태인 동안에는 디스플레이에서 해당 부분을 숨깁니다."
+L["Hide this unit's part of the display while it is offline."] = "이 유닛이 오프라인 상태인 동안에는 디스플레이에서 해당 부분을 숨깁니다."
+L["Hides GCD countdown numbers, including %p and %t text. Spell cooldown and charge recharge text remain visible while the GCD swipe is shown."] = "글쿨 초읽기 숫자를 %p, %t 텍스트와 함께 숨깁니다. 주문 쿨타임과 충전 재충전 텍스트는 글쿨 회전이 표시되는 동안 표시됩니다."
+L["Icon growth direction"] = "아이콘 확장 방향"
+L["Icon spacing"] = "아이콘 간격"
+L["Icons per row"] = "줄당 아이콘 수"
+L["Ignored Exact Spell ID(s)"] = "무시할 정확한 주문 ID"
+L["Ignored Spell ID"] = "무시할 주문 ID"
+L["Include dispel types"] = "포함할 디버프 유형"
+L["Include nameplate-only auras"] = "이름표 전용 오라 포함"
+L["Keep border thickness and offset in screen pixels, regardless of UI or parent scale. Use a size of 1 for a one-pixel border."] = "테두리 두께와 위치 조정을 화면 픽셀 기준으로 유지하고 UI나 부모 프레임 비율에 영향을 받지 않습니다. 크기 1을 사용하면 1픽셀 테두리가 됩니다."
+L["Layout"] = "레이아웃"
+L["Legacy Auras rarely function in combat as most are Blizzard-controlled."] = "구형 오라는 대부분 블리자드가 제어하기 때문에 전투 중에 작동하는 것이 거의 없습니다."
+L["Maximum auras"] = "최대 오라 수"
+L["Maximum auras per unit. Drag up to 40, or type a larger number."] = "유닛당 최대 오라 수입니다. 최대 40까지 드래그하거나 더 큰 숫자를 직접 입력할 수 있습니다."
+L["Maximum icons"] = "최대 아이콘 수"
+L["Minutes and seconds"] = "분 및 초"
+L["Modern Blizzard (1h 3m | 3m 7s | 10s)"] = "현재 블리자드식 (1h 3m | 3m 7s | 10s)"
+L["Native aura layout uses a fixed text area."] = "기본 오라 배치는 고정 텍스트 영역을 사용합니다."
+L["New rows"] = "새 행"
+L["Not available for secret aura On Show/On Hide. Sound files are supported; live TTS and custom callbacks are not."] = "비밀 상태인 오라의 표시될 때/숨겨질 때 동작에서는 사용할 수 없습니다. 소리 파일은 지원되지만 실시간 TTS 및 사용자 정의 콜백은 지원되지 않습니다."
+L["Not supported by Blizzard's native aura display."] = "블리자드의 기본 오라 디스플레이에서는 지원되지 않습니다."
+L["Not supported by native aura text."] = "기본 오라 텍스트에서는 지원되지 않습니다."
+L["Old Blizzard (2h | 3m | 10s)"] = "구 블리자드식 (2h | 3m | 10s)"
+L["One aura is shown, chosen by Sort by under Aura (Modern) Settings in Display."] = "오라 하나가 디스플레이의 오라 (신형) 설정의 정렬 기준에 의해 표시됩니다."
+L["Only match auras Blizzard marks for display on all nameplates."] = "블리자드가 모든 이름표에 뜨도록 표시한 오라만 포함됩니다."
+L["Only match auras marked for Blizzard's personal-debuff display on nameplates. This does not refer to your personal resource bar."] = "블리자드가 이름표에 개인 디버프로 나오도록 표시한 오라만 포함됩니다. 개인 자원 표시의 바를 말하는게 아닙니다."
+L["Only show this trigger's auras while you have a target you can attack. Applies to all selected entries and all Show modes."] = "이 활성 조건의 오라는 공격할 수 있는 대상이 있을 때만 표시됩니다. 선택한 모든 항목과 모든 표시 모드에 적용됩니다."
+L["Only track members with the selected assigned group roles. This also limits configured aura sounds. Player-name and role filters must both match when enabled."] = "선택한 그룹 내 역할을 가진 구성원만 추적합니다. 이 옵션은 설정된 오라 소리도 제한합니다. 활성화된 경우 플레이어 이름과 역할 필터가 모두 일치해야 합니다."
+L["Only track these group members. This also limits which units can play configured aura sounds."] = "선택한 그룹원만 추적합니다. 이 옵션은 설정된 오라 소리를 재생할 수 있는 유닛도 제한합니다."
+L["Open CDM"] = "CDM 열기"
+L["Operator"] = "연산자"
+L["Other ranks could not be found for: %s"] = "다른 등급을 찾을 수 없습니다: %s"
+L["Padding"] = "여백"
+L["Play when one of the trigger's exact spell IDs is %s. Works even if Blizzard cannot display the aura. Uses the selected unit and exact spell IDs, excluding ignored IDs; other display filters do not affect sounds."] = "활성 조건의 정확한 주문 ID 중 하나가 %s일 때 재생합니다. 블리자드가 오라를 표시할 수 없는 경우에도 작동합니다. 선택된 유닛과 정확한 주문 ID를 사용하고 무시된 ID는 제외됩니다. 다른 디스플레이 필터는 소리에 영향을 주지 않습니다."
+L["Player Name(s)"] = "플레이어 이름"
+L["Player Names"] = "플레이어 이름"
+L["Power value checks and calculations:"] = "자원 실수치 검사 및 계산:"
+L["Preferred Match"] = "선호 항목 일치"
+L["Pulse Glow"] = "맥박 반짝임"
+L["Refresh from Blizzard CDM"] = "블리자드 CDM에서 새로고침"
+L["Require attackable target"] = "공격 가능한 대상 필요"
+L["Reverse Sort"] = "역순 정렬"
+L["Reverse the selected order. For Remaining time, later expirations and permanent auras come first."] = "선택한 순서를 뒤집습니다. 남은 시간의 경우 만료 시간이 더 많이 남은 오라와 시간이 무한인 오라가 먼저 표시됩니다."
+L["Search"] = "검색"
+L["Selected value checks:"] = "선택한 값 검사:"
+L["Show Border"] = "테두리 표시"
+L["Show Icon"] = "아이콘 표시"
+L["Show If Unit Does Not Exist"] = "유닛이 존재하지 않아도 표시"
+L["Show and Clone Settings"] = "표시 및 복제 설정"
+L["Show global cooldown"] = "글로벌 쿨타임 표시"
+L["Show only available"] = "사용 가능한 것만 표시"
+L["Show only max rank"] = "최고 등급만 표시"
+L["Shown for (seconds)"] = "표시 시간 (초)"
+L["Shows for up to this many seconds. Hides sooner if the aura ends."] = "지정한 초만큼 표시됩니다. 오라가 끝나면 더 일찍 숨겨집니다."
+L["Shows a resizable border coloured by dispel type."] = "크기가 조정되는 테두리를 디버프 유형에 따른 색상으로 표시합니다."
+L["Sort by"] = "정렬 기준"
+L["Space reserved for each aura's text. Set its width in Font Flags."] = "각 오라의 텍스트를 위한 공간입니다. 글꼴 속성에서 너비를 설정하세요."
+L["Spell ID(s) (All Ranks)"] = "주문 ID (모든 등급)"
+L["Spell IDs come from the Spell List |cffffd100%s|r, set by this pack's backend aura."] = "주문 ID는 이 팩의 백엔드 오라에 의해 설정된 주문 목록 |cffffd100%s|r에서 가져옵니다."
+L["Spell Selection Filters"] = "주문 선택 필터"
+L["Spell count checks:"] = "주문 횟수 검사:"
+L["Spells must be active in the CDM to be displayed. Type /cdm and add them."] = "표시하려면 주문이 CDM에서 활성화되어 있어야 합니다. /cdm을 입력해서 추가하세요."
+L["Stagger value checks and calculations:"] = "시간차 실수치 검사 및 계산:"
+L["Start a new row after this many auras. 0 keeps one row. Not used for several units on the screen."] = "지정한 오라 수마다 새 행을 시작합니다. 0으로 설정하면 한 행으로 유지됩니다. 화면에 여러 유닛이 표시될 때는 사용되지 않습니다."
+L["Style the glow on the anchored unit frame."] = "고정된 유닛 프레임의 반짝임 스타일을 설정합니다."
+L["Swipe Color"] = "회전 레이어 색상"
+L["Tank"] = "탱커"
+L["Text Area Height"] = "텍스트 영역 높이"
+L["The trigger's Show On or Remaining Time shows one aura in this display's position. Sort by chooses which aura when several match."] = "활성 조건의 표시 조건 또는 남은 시간에 따라 이 디스플레이 위치에 오라가 하나 표시됩니다. 여러 개가 일치하면 정렬 기준으로 표시할 오라를 선택합니다."
+L["Show On Always and Remaining Time show one aura in this display's position; use Aura(s) Found with a Limit to show several. Sort by chooses which aura is shown when several match."] = "항상 표시나 남은 시간 조건으론 이 디스플레이 위치에 오라를 하나만 표시합니다. 여러 개를 표시하려면 제한과 함께 오라 있음을 사용하세요. 여러 개가 일치하면 정렬 기준으로 표시할 오라를 선택합니다."
+L["Threat checks:"] = "위협 수준 검사:"
+L["Track cooldowns"] = "쿨타임 추적"
+L["Unassigned"] = "미지정"
+L["Unit identity checks:"] = "유닛 신원 검사:"
+L["Usable checks Blizzard's spell requirements, including reactive abilities and resources. It does not replace cooldown or range checks. If usability is unavailable, neither usability mode matches."] = "사용 가능 옵션은 블리자드의 주문 요구 조건을 검사하며 반응형 스킬과 자원도 포함됩니다. 쿨타임이나 사거리 검사를 대체하지 않습니다. 사용 가능 상태를 확인할 수 없다면 어떠한 사용 가능 모드도 일치시키지 않습니다."
+L["Use %p for duration, %s for stacks or %n for the aura name. Each code needs its own text element. Literal text is also supported."] = "지속시간은 %p, 중첩 수는 %s, 오라 이름은 %n을 사용하세요. 각 코드마다 맞는 텍스트 요소가 필요합니다. 일반 텍스트도 지원됩니다."
+L["Use Unit Frames anchoring in Display. The frame glows while any aura matches your filters and stops automatically. Exact Spell IDs are not required."] = "디스플레이에서 유닛 프레임 고정을 사용하세요. 필터와 일치하는 오라가 있는 동안 프레임이 반짝이고 자동으로 끝납니다. 정확한 주문 ID는 필수가 아닙니다."
+L["Uses Blizzard's assigned group role. Members without a role assigned match Unassigned."] = "블리자드가 지정한 그룹 내 역할을 사용합니다. 역할이 지정되지 않은 그룹원은 미지정으로 처리됩니다."
+L["Whole Area"] = "전체 영역"
+L["You cannot control clones with an Aura (Modern). Use the Aura (Modern) Settings under Display."] = "오라 (신형)에서는 복제된 오라를 제어할 수 없습니다. 디스플레이 탭에서 오라 (신형) 설정을 사용하세요."
+L["|cffff0000Secret detected. Some features may be restricted in combat.|r"] = "|cffff0000비밀값이 감지되었습니다. 전투 중에 일부 기능이 제한될 수 있습니다.|r"
+L["|cffff2020Blizzard-controlled aura display: only supported actions are available.|r"] = "|cffff2020블리자드가 제어하는 오라 디스플레이: 지원되는 동작만 사용할 수 있습니다.|r"
+L["|cffffffffNote: Trigger Always Active|r"] = "|cffffffff참고: 활성 조건이 항상 활성화 되있음|r"
+L["|cffff8800Aura(s) Gained: changing targets, or a nameplate disappearing and returning, can make an existing aura appear newly gained.|r"] = "|cffff8800오라에 걸림: 대상 변경이나 이름표가 사라졌다 다시 나타나면 이미 걸려있던 오라가 새로 걸린 것처럼 보일 수 있습니다.|r"
+L["Set Up CDM"] = "CDM 설정"
+L["CDM setup runs out of combat."] = "CDM 설정은 비전투 중에 실행됩니다."
+L["Sets up Blizzard's Cooldown Manager for ForeverAuras: tracks every buff and spell cooldown it lists, sets the viewers to Always visible, hides Blizzard's own display and reloads. Your current CDM and Edit Mode settings are backed up. Same as /fa cdmsetup."] = "ForeverAuras용 블리자드 재사용 대기시간 관리자 설정: 목록에 있는 모든 버프와 주문 쿨타임을 추적하고 뷰어를 항상 표시하도록 설정하며 블리자드 내장 디스플레이를 숨기고 UI를 다시 불러옵니다. 현재 CDM과 편집 모드 설정이 백업됩니다. /fa cdmsetup 명령어와 같은 기능입니다."
+L["Hides the countdown text while only the global cooldown runs."] = "글로벌 쿨타임만 돌고 있을땐 초읽기 텍스트를 숨깁니다."
+L["Not Usable"] = "사용 불가"
+L["Unticked, the trigger only shows while you have a target you can attack."] = "체크를 해제하면 공격할 수 있는 대상이 있을 때만 활성 조건이 표시됩니다."
+L["Usable"] = "사용 가능"
+L["Usable follows Blizzard's spell requirements; it is not a cooldown or range check."] = "사용 가능은 블리자드의 주문 요구 조건을 따르며 쿨타임이나 사거리를 확인하는게 아닙니다."
+L["One display per listed aura; unticked, one display for whichever matches."] = "목록에 있는 오라마다 디스플레이를 하나씩 표시합니다. 체크를 해제하면 모든 일치하는 것 중에 하나만 표시합니다."
+L["First in the list"] = "목록의 맨 앞"
