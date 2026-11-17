@@ -1291,10 +1291,20 @@ end
 
 local function PowerCurveCode(data, properties, allConditionsTemplate)
   Private.AuraWarnings.UpdateWarning(data.uid, "power_curve_conditions", nil)
-  if Private.BlizzardAuraDisplay.Enabled(data) then return end
   local conditions = data.conditions or {}
   local supported, mixed, curveTrigger, kind = CurveSetup(data, properties)
   if not curveTrigger then return end
+  -- An Aura (Modern) display paints its own buttons: a curve can only drive
+  -- the properties it accepts from ordinary conditions (Color, not Alpha).
+  -- They reach the addon's own Missing sample at once; live buttons follow
+  -- when access returns, as with any ordinary condition.
+  if Private.BlizzardAuraDisplay.Enabled(data) then
+    for property in pairs(supported) do
+      if not Private.BlizzardAuraDisplay.IsNativeConditionProperty(data, property) then
+        supported[property] = nil
+      end
+    end
+  end
 
   local function Base(property, propertyData)
     local base = GetBaseProperty(data, property)
@@ -2007,6 +2017,12 @@ local function ConstructConditionFunction(data)
             end
           end
         end
+      end
+      -- A secret Power/Health curve never marks its conditions active, yet
+      -- its value is an override, not a restored setting.
+      local helpers = Private.ExecEnv.conditionHelpers[data.uid]
+      if helpers and helpers.powerCurve and helpers.powerCurve.props[baseProperty] then
+        controllers[#controllers + 1] = "region.powerCurveActive"
       end
       local controlled = #controllers > 0 and table.concat(controllers, " or ") or "false"
       table.insert(ret, "    if " .. controlled .. " then\n")
