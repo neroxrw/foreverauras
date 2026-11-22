@@ -190,7 +190,7 @@ function OptionsPrivate.PrepareSecretDisplayOptions(data, groups)
     local index = tonumber(groupKey:match("^sub%.(%d+)%."))
     local detached = index and Display.IsDetachedElement(data, data.subRegions and data.subRegions[index])
     if detached then
-      group.__title = "Detached " .. group.__title
+      group.__title = L["Detached %s"]:format(group.__title)
       if group.text_text then group.text_text.desc = L["Hardcoded text. Use Conditions from other triggers to show, hide or change this message."] end
       if group.text_text_pChoose then group.text_text_pChoose.disabled = true end
     end
@@ -206,7 +206,7 @@ function OptionsPrivate.PrepareSecretDisplayOptions(data, groups)
             option.disabled = true
             option.desc = L["Not supported by Blizzard's native aura display."]
           elseif key == "iconSource" then
-            option.values = {[-1] = "Automatic", [0] = "Manual"}
+            option.values = {[-1] = L["Automatic"], [0] = L["Manual"]}
           elseif key == "automaticWidth" then
             option.values = {Fixed = L["Fixed"]}
             option.desc = L["Native aura layout uses a fixed text area."]
@@ -277,7 +277,7 @@ function OptionsPrivate.PrepareSecretActionOptions(data, action)
         for value, title in pairs(OptionsPrivate.Private.sound_types) do
           if value ~= " KitID" then values[value] = title end
         end
-        values[" Fojji"] = "FojjiCore recorded voice"
+        values[" Fojji"] = L["FojjiCore recorded voice"]
         option.values = values
         option.sorting = OptionsPrivate.Private.SortOrderForValues(values)
       end
@@ -323,10 +323,10 @@ function OptionsPrivate.PrepareSecretActionOptions(data, action)
     disabled = function() return not stackOn() end,
   }
   action.args.stack_sound_fojji = {
-    type = "input", name = "Recorded phrase", width = "full", order = 41.41,
+    type = "input", name = L["Recorded phrase"], width = "full", order = 41.41,
     hidden = function() return (data.actions.stack or {}).sound ~= " Fojji" end,
     disabled = function() return not stackOn() end,
-    desc = "Exact phrase in your selected FojjiCore recorded voice pack. Live TTS is not supported.",
+    desc = L["Exact phrase in your selected FojjiCore recorded voice pack. Live TTS is not supported."],
   }
   -- Reuse the native unit-glow settings, never the Lua On Show glow action.
   local settings = data.blizzardAuraDisplay
