@@ -3684,6 +3684,8 @@ Private.event_prototypes = {
         do
           AddUnitEventForEvents(result, unit, "UNIT_POWER_POINT_CHARGE")
         end
+        -- combo points are read for the current target (below), so a new target is a change too
+        AddUnitEventForEvents(result, unit, "UNIT_TARGET")
       end
       if trigger.use_inRange then
         AddUnitEventForEvents(result, unit, "UNIT_IN_RANGE_UPDATE")
@@ -3760,7 +3762,9 @@ Private.event_prototypes = {
               state.changed = true
             end
 
-            local power = UnitPower(unit, powerType)
+            -- Forever keeps combo points on the target, as Classic does. UnitPower(unit, 4) still holds the
+            -- points of the last target built on after a target change; GetComboPoints is the current target.
+            local power = GetComboPoints(unit, 'target')
             local total = UnitPowerMax(unit, powerType)
             if not issecretvalue(total) then
               total = math.max(1, total)
