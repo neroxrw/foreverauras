@@ -487,6 +487,69 @@ function Display.StandAnchor(region)
   return nil
 end
 
+-- Masque: an Icon display's skin (mask, border, gloss) is drawn by Masque on
+-- the display's own button, which sits off screen. The copy took the icon's
+-- texture, crop and place through the hooks but none of the skin's artwork,
+-- so a copied icon looked unskinned beside the row's Aura (Modern) icons. A
+-- frame of the stand joins the display's Masque group with the copies of the
+-- icon and swipe, as a native button's base does (SkinWithMasque,
+-- SecretAuraAppearance.lua).
+local MSQ = LibStub("Masque", true)
+local function ReleaseStandMasque(stand)
+  local group, base = stand.masqueGroup, stand.masqueBase
+  if group and base then pcall(group.RemoveButton, group, base) end
+  if base then pcall(base.Hide, base) end
+  stand.masqueGroup = nil
+end
+local function SkinStandIcon(stand, region, data)
+  local group = MSQ and region.regionType == "icon" and region.MSQGroup or nil
+  local icon = region.icon and stand.copies[region.icon]
+  local cooldown = region.cooldown and stand.copies[region.cooldown] or nil
+  -- The copies were made again on a new chain frame: the old base is let go.
+  if stand.masqueBase and stand.pool.masque ~= stand.masqueBase then
+    ReleaseStandMasque(stand)
+    stand.masqueBase = nil
+  end
+  if not (group and icon) then ReleaseStandMasque(stand); return end
+  if stand.masqueGroup and stand.masqueGroup ~= group then ReleaseStandMasque(stand) end
+  local base = stand.masqueBase
+  if not base then
+    base = CreateFrame("Frame", nil, stand.frame)
+    base:EnableMouse(false)
+    stand.masqueBase, stand.pool.masque = base, base
+  end
+  base:ClearAllPoints()
+  base:SetAllPoints(stand.frame)
+  base:Show()
+  -- The chain frame can report a secret size; Masque takes the size of the
+  -- display's own button, or the configured one.
+  local width, height = Display.Dimensions(data)
+  if region.button then
+    local ok, w, h = pcall(region.button.GetSize, region.button)
+    if ok and type(w) == "number" and type(h) == "number" and not issecretvalue(w) and not issecretvalue(h) and w > 0 and h > 0 then
+      width, height = w, h
+    end
+  end
+  if stand.masqueGroup ~= group then
+    group:AddButton(base, {Icon = icon, Cooldown = cooldown}, "WA_Aura", true)
+    stand.masqueGroup = group
+  end
+  if group.SetFrameSize then group:SetFrameSize(width, height, base, nil, true) end
+  group:ReSkin(base)
+  -- Masque has set the skin's own crop and anchors on the copies; the
+  -- display's (zoom, offsets, inset on top of the skin) are put back.
+  local source = region.icon
+  if NumPoints(source) > 0 then
+    CopyPoints(stand, source, icon)
+    if NumPoints(source) < 2 then
+      local ok, w, h = pcall(source.GetSize, source)
+      if ok and type(w) == "number" and type(h) == "number" and not issecretvalue(w) and not issecretvalue(h) then Try(icon, "SetSize", w, h) end
+    end
+  end
+  Pass(icon, "SetTexCoord", source, "GetTexCoord")
+  if cooldown and NumPoints(region.cooldown) > 0 then CopyPoints(stand, region.cooldown, cooldown) end
+end
+
 function Display.EnsureStand(region, normal)
   local stand = normal.stand
   if not stand then
@@ -1169,6 +1232,9 @@ function Display.EnsureStand(region, normal)
   for _, replay in ipairs(stand.replays) do replay() end
   stand.replays = {}
   if region.cooldown then CopyCooldown(stand, region.cooldown, stand.copies[region.cooldown], normal.data) end
+  -- Masque, once the copies are placed. A Masque error leaves the copy
+  -- unskinned rather than interrupting the stand.
+  if MSQ and not pcall(SkinStandIcon, stand, region, normal.data) then pcall(ReleaseStandMasque, stand) end
   -- Glows are replayed once the copies are placed and sized.
   for _, source in ipairs(stand.sources) do
     local copy = stand.copies[source]
