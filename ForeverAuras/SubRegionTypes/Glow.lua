@@ -218,7 +218,14 @@ local funcs = {
     -- hidden and the display itself is shown, with its own glow.
     local stand = self.faStand and self.faStand.stand
     local mirrored = stand and stand.active and stand.copies[self] ~= nil and stand.frame ~= nil
-      and (function() local shown = stand.frame:IsShown(); return not issecretvalue(shown) and shown == true end)()
+      and (function()
+        -- A restricted chain frame refuses the question (as SecretAuraStand.lua's
+        -- ProxyUpdate found after a reload in combat). The stand is active (checked
+        -- above), so a refusal is read as shown.
+        local ok, shown = pcall(stand.frame.IsShown, stand.frame)
+        if not ok then return true end
+        return not issecretvalue(shown) and shown == true
+      end)()
     -- Likewise while the display is suppressed behind the editor's samples
     -- (BlizzardAuraDisplay.lua, Suppress): the element is at alpha 0.
     local parent = self.parent

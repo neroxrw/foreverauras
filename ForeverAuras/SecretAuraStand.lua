@@ -289,7 +289,11 @@ local player = {
 local function MirrorGlow(copy)
   local sub = copy.faGlowSource
   copy.faGlowEntry = copy.faGlowEntry or {}
-  local width, height = copy:GetSize()
+  -- A copy on a restricted chain frame refuses to be asked anything (seen in a fight:
+  -- "calling 'GetSize' on bad self"). Its glow is left as it is; the next call that the
+  -- copy answers builds it.
+  local okCopy, width, height = pcall(copy.GetSize, copy)
+  if not okCopy then return end
   -- ForeverAuras: a copy laid out by the aura container can report a secret
   -- size, which cannot be compared. The glow then takes the size of the
   -- element it mirrors, whose display is drawn off screen at its own size.
