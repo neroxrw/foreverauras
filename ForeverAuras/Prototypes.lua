@@ -6059,7 +6059,7 @@ Private.event_prototypes = {
       ]=]
 
       if trigger.use_ignoreSpellCooldown then
-        ret = ret .. [=[local active = Private.ExecEnv.IsUsableSpell(spellName or "")]=]
+        ret = ret .. [=[local active = Private.ExecEnv.IsUsableSpell(effectiveSpellId or "")]=]
       else
         ret = ret .. [=[
         local startTime, duration, gcdCooldown, readyTime, _, paused = WeakAuras.GetSpellCooldown(effectiveSpellId, nil, nil, nil, nil)
@@ -6081,7 +6081,7 @@ Private.event_prototypes = {
           end
           ready = (startTime == 0 and not paused) or charges > 0
         end
-        local active = Private.ExecEnv.IsUsableSpell(spellName or "") and ready
+        local active = Private.ExecEnv.IsUsableSpell(effectiveSpellId or "") and ready
         ]=]
       end
       if(trigger.use_targetRequired) then

@@ -64,6 +64,51 @@ local function Place(frame, point, rel, relPoint, x, y)
   if not ok then frame.faPlaceError = err end
   return ok, err
 end
+-- ForeverAuras 1.2.9 (Dan's "ClearAllPoints on bad self" when combat began as the editor closed;
+-- Astra's 1.2.7 review): a shadow is placed on its one point (sh.start) through Place, which replaces
+-- that point without clearing first, so no clear can leave a live layout anchorless; under
+-- restrictions a placement the record already holds is kept (Place), out of them it is written. A
+-- locked container is skipped by Place itself. (1.2.5 cleared the frame first out of combat; 1.2.7
+-- cleared it in combat too and then trusted the record: a reproduced anchor loss.)
+-- A shadow frame keeps ONE wanted anchor point, recorded in frame.faPoint, and a set of other
+-- points still installed on it (frame.faStalePoints), owed a removal. The same point is replaced
+-- by Place in one write. A changed point (a Centered growth edited from horizontal to vertical) is
+-- a staged replacement: the new point is placed first, so the frame is never without a resolvable
+-- anchor; the point it replaces joins the owed set; then every owed point is removed on its own
+-- (ClearPoint, the client's method for one point). A refused removal keeps the point owed, and a
+-- later growth change back keeps every owed point owed: ownership is only dropped by a removal
+-- that succeeded. The next pass through here (the regular rechains) tries again. (Astra's dev.1
+-- and dev.2 reviews.)
+local function Repoint(frame, point, rel, relPoint, x, y)
+  local ok = Place(frame, point, rel, relPoint, x, y)
+  if not ok then return false end
+  local held = frame.faPoint
+  if held and held ~= point then
+    frame.faStalePoints = frame.faStalePoints or {}
+    frame.faStalePoints[held] = true
+  end
+  frame.faPoint = point
+  local stale = frame.faStalePoints
+  if stale then
+    stale[point] = nil   -- wanted again: not owed a removal
+    if not Busy(frame) and frame.ClearPoint then
+      for old in pairs(stale) do
+        if pcall(frame.ClearPoint, frame, old) then stale[old] = nil end
+      end
+    end
+    if next(stale) == nil then frame.faStalePoints = nil end
+  end
+  return true
+end
+-- A row start owns one point. Clear while unrestricted; under restrictions
+-- replace the point in place so a cached or refused write keeps its anchor.
+local function PlaceRowPoint(frame, point, rel, relPoint, x, y)
+  if not RestrictedNow() then
+    frame:ClearAllPoints()
+    frame.faPlace, frame.faPoint, frame.faStalePoints = nil, nil, nil
+  end
+  return Repoint(frame, point, rel, relPoint, x, y)
+end
 local function SetShown(frame, shown)
   if not frame or Busy(frame) or frame:IsShown() == shown then return end
   if shown then frame:Show() else frame:Hide() end
@@ -592,8 +637,7 @@ function Display.PrewireFollower(region, data, endOwner)
   local point, rel, relPoint, x, y = g.start, endFrame, endPoint or g.start, 0 - px, 0 - py
   local last = nextFlow.start.faPlace
   if not (last and last[1] == point and last[2] == rel and last[3] == relPoint and last[4] == x and last[5] == y) then
-    if not RestrictedNow() then nextFlow.start:ClearAllPoints() end
-    local ok = Place(nextFlow.start, point, rel, relPoint, x, y)
+    local ok = PlaceRowPoint(nextFlow.start, point, rel, relPoint, x, y)
     if not ok then return false, "the next member's start could not be prewired: " .. tostring(nextFlow.start.faPlaceError) end
   end
   nextFlow.startPrewired = true
@@ -1456,7 +1500,7 @@ function Display.EnsureFlowStart(region, data)
   if not flow.startPrewired then
     flow.start:ClearAllPoints()
     flow.start:SetPoint(flow.growth.start, region, flow.growth.start)
-    flow.start.faPlace = nil   -- the placement record (Place) is stale now
+    flow.start.faPlace, flow.start.faPoint, flow.start.faStalePoints = nil, flow.growth.start, nil
   end
   -- ForeverAuras: group-owned row: the content frame carries the display's
   -- own offset (FlowContent); a legacy row draws from the start frame.
@@ -2257,42 +2301,6 @@ end
 
 -- Chains one display's shadows from its shadow start; returns where the next
 -- display's shadows start.
--- ForeverAuras 1.2.9 (Dan's "ClearAllPoints on bad self" when combat began as the editor closed;
--- Astra's 1.2.7 review): a shadow is placed on its one point (sh.start) through Place, which replaces
--- that point without clearing first, so no clear can leave a live layout anchorless; under
--- restrictions a placement the record already holds is kept (Place), out of them it is written. A
--- locked container is skipped by Place itself. (1.2.5 cleared the frame first out of combat; 1.2.7
--- cleared it in combat too and then trusted the record: a reproduced anchor loss.)
--- A shadow frame keeps ONE wanted anchor point, recorded in frame.faPoint, and a set of other
--- points still installed on it (frame.faStalePoints), owed a removal. The same point is replaced
--- by Place in one write. A changed point (a Centered growth edited from horizontal to vertical) is
--- a staged replacement: the new point is placed first, so the frame is never without a resolvable
--- anchor; the point it replaces joins the owed set; then every owed point is removed on its own
--- (ClearPoint, the client's method for one point). A refused removal keeps the point owed, and a
--- later growth change back keeps every owed point owed: ownership is only dropped by a removal
--- that succeeded. The next pass through here (the regular rechains) tries again. (Astra's dev.1
--- and dev.2 reviews.)
-local function Repoint(frame, point, rel, relPoint, x, y)
-  local ok = Place(frame, point, rel, relPoint, x, y)
-  if not ok then return false end
-  local held = frame.faPoint
-  if held and held ~= point then
-    frame.faStalePoints = frame.faStalePoints or {}
-    frame.faStalePoints[held] = true
-  end
-  frame.faPoint = point
-  local stale = frame.faStalePoints
-  if stale then
-    stale[point] = nil   -- wanted again: not owed a removal
-    if not Busy(frame) and frame.ClearPoint then
-      for old in pairs(stale) do
-        if pcall(frame.ClearPoint, frame, old) then stale[old] = nil end
-      end
-    end
-    if next(stale) == nil then frame.faStalePoints = nil end
-  end
-  return true
-end
 local function ChainShadows(flow)
   local sh = flow.growth.shadow
   if flow.shadowKind == "list" then
@@ -4061,9 +4069,8 @@ function Display.AnchorFlowNormal(data, region, anchorParent, anchorPoint)
   if not InCombatLockdown() then
     local parent = region:GetParent() or UIParent
     if normal.home:GetParent() ~= parent then normal.home:SetParent(parent) end
-    normal.home:ClearAllPoints()
   end
-  Place(normal.home, data.selfPoint or "CENTER", anchorParent, anchorPoint or "CENTER", data.xOffset or 0, data.yOffset or 0)
+  PlaceRowPoint(normal.home, data.selfPoint or "CENTER", anchorParent, anchorPoint or "CENTER", data.xOffset or 0, data.yOffset or 0)
   local g = GROWTH[group.blizzardFlowGrowth] or GROWTH.RIGHT
   -- ForeverAuras: group-owned row: the content frame carries the display's
   -- own offset, and a stand's copies draw in it (SecretAuraStand.lua), so it
@@ -4094,7 +4101,10 @@ function Display.AnchorFlowNormal(data, region, anchorParent, anchorPoint)
     region:SetOffset(0, 0)
     Display.ArrangeFlowPreview(group)
   else
-    if not normal.flow.start:GetPoint() then normal.flow.start:SetPoint(g.start, normal.home, g.start) end
+    if not normal.flow.start:GetPoint() then
+      normal.flow.start:SetPoint(g.start, normal.home, g.start)
+      normal.flow.start.faPlace, normal.flow.start.faPoint, normal.flow.start.faStalePoints = nil, g.start, nil
+    end
     if not region.relativeTo then PlaceNormalRegion(region, normal) end
   end
   QueueRechain(region)
@@ -4163,15 +4173,14 @@ local function SetLegacyJoinAnchor(join, owner, previous)
 end
 
 local function OriginalLegacyJoin(flow, previous, ox, oy, px, py)
-  return Place(flow.start, flow.growth.start, previous.endFrame, previous.endPoint, previous.x + ox - px, previous.y + oy - py)
+  return PlaceRowPoint(flow.start, flow.growth.start, previous.endFrame, previous.endPoint, previous.x + ox - px, previous.y + oy - py)
 end
 
-local function PlaceLegacyJoin(flow, previous, ox, oy, px, py, group, clear)
+local function PlaceLegacyJoin(flow, previous, ox, oy, px, py, group)
   local point = flow.growth.start
   if not legacyJoinEnabled or not (flow.legacyListEnd and previous.legacyListEnd and previous.legacyListEnd == previous.endFrame)
     or flow.home or previous.home or not flow.start.SetRoundLayoutToNearestPixel or tonumber(group.blizzardFlowSpacing) ~= 0
     or Display.FlowGroupOwned(group) or WeakAuras.IsOptionsOpen() then
-    if clear then flow.start:ClearAllPoints() end
     return OriginalLegacyJoin(flow, previous, ox, oy, px, py)
   end
 
@@ -4186,10 +4195,8 @@ local function PlaceLegacyJoin(flow, previous, ox, oy, px, py, group, clear)
     if matches and placed and placed[1] == point and placed[2] == join.frame
       and placed[3] == "CENTER" and placed[4] == ox - px and placed[5] == oy - py then return true end
     afterCombat[group] = true
-    if clear then flow.start:ClearAllPoints() end
     return OriginalLegacyJoin(flow, previous, ox, oy, px, py)
   end
-  if clear then flow.start:ClearAllPoints() end
   -- Compare ordinary display scales only. Mixed-scale or unavailable values
   -- keep the original join; never query the native list's dimensions.
   local okA, a = pcall(PixelsPerUnit, owner)
@@ -4203,7 +4210,7 @@ local function PlaceLegacyJoin(flow, previous, ox, oy, px, py, group, clear)
       return OriginalLegacyJoin(flow, previous, ox, oy, px, py)
     end
   end
-  if Place(flow.start, point, join.frame, "CENTER", ox - px, oy - py) then return true end
+  if PlaceRowPoint(flow.start, point, join.frame, "CENTER", ox - px, oy - py) then return true end
   join.target = nil
   -- The native endpoint remains published, giving this pass its original
   -- fallback. A normal rechain, including restriction end, retries it.
@@ -4506,27 +4513,24 @@ function Display.RechainFlow(group)
       local locked = combat and flow.stand and Display.StandLocked(flow.normal)
       if flow.home and not flow.stand then
         local x, y = g.sign[1] * lead, g.sign[2] * lead
-        if not combat then flow.start:ClearAllPoints() end
-        Place(flow.start, g.start, originFrame, originPoint, x + snapX, y + snapY)
+        PlaceRowPoint(flow.start, g.start, originFrame, originPoint, x + snapX, y + snapY)
         local ox, oy = OwnOffset(flow.normal.data)
         PlaceNormalRegion(region, flow.normal, originFrame, x + snapX + ox, y + snapY + oy, originPoint)
         lead = lead + math.abs(flow.x) + math.abs(flow.y)
         previous = flow
       elseif not locked then
-        if not combat then flow.start:ClearAllPoints() end
         local px, py = 0, 0
         if previous and previous.region and previous.content and previous.endInContent then
           px, py = OwnOffset(FlowData(previous))
         end
-        local chained = previous and Place(flow.start, g.start, previous.endFrame, previous.endPoint, previous.x - px, previous.y - py)
+        local chained = previous and PlaceRowPoint(flow.start, g.start, previous.endFrame, previous.endPoint, previous.x - px, previous.y - py)
         if previous then previous.followerPlaced = chained and true or false end
         if not chained then
           -- (dev.80) said in chat with "/fa cells debug on"
           if previous and Display.BuildReport then Display.BuildReport(("%s could not be placed on %s's end: %s"):format(tostring(FlowData(flow) and FlowData(flow).id), tostring(previous.region and FlowData(previous) and FlowData(previous).id), tostring(flow.start.faPlaceError))) end
-          if not combat then flow.start:ClearAllPoints() end
           -- The first member sits on the row's origin; a refused member too,
           -- which is then the wrong place (startPlaced = false).
-          local onOrigin = Place(flow.start, g.start, originFrame, originPoint, snapX, snapY)
+          local onOrigin = PlaceRowPoint(flow.start, g.start, originFrame, originPoint, snapX, snapY)
           flow.startPlaced = (previous == nil and onOrigin) and true or false
         else
           flow.startPlaced = true
@@ -4542,8 +4546,7 @@ function Display.RechainFlow(group)
     elseif flow.home and not flow.stand then
       origin = origin or flow.home
       local x, y = g.sign[1] * lead, g.sign[2] * lead
-      if not combat then flow.start:ClearAllPoints() end
-      Place(flow.start, g.start, origin, g.start, x + snapX, y + snapY)
+      PlaceRowPoint(flow.start, g.start, origin, g.start, x + snapX, y + snapY)
       PlaceNormalRegion(region, flow.normal, origin, x + snapX, y + snapY)
       lead = lead + math.abs(flow.x) + math.abs(flow.y)
       previous = flow
@@ -4560,25 +4563,23 @@ function Display.RechainFlow(group)
       else
         -- ForeverAuras: at the reference display's frame (rowFlow), not
         -- necessarily this display's own.
-        Place(flow.start, flow.growth.start, rowFrame, flow.growth.start, snapX + ox, snapY + oy)
+        PlaceRowPoint(flow.start, flow.growth.start, rowFrame, flow.growth.start, snapX + ox, snapY + oy)
       end
       previous = flow
     else
       -- A matching helper may already be bound after combat drops while
       -- aura restrictions are still active; let the join preserve it.
-      if not previous then flow.start:ClearAllPoints() end
       -- As in combat above: this display's own offset on, the previous one's off.
       local ox, oy = RowOffset(flow, rowFlow)
       local px, py = RowOffset(previous, rowFlow)
-      local chained = previous and PlaceLegacyJoin(flow, previous, ox, oy, px, py, group, true)
+      local chained = previous and PlaceLegacyJoin(flow, previous, ox, oy, px, py, group)
       if previous then previous.followerPlaced = chained and true or false end
       if not chained then
         -- First display: start at the reference display's frame (rowFlow,
         -- not necessarily this display's own); Blizzard refused the anchor:
         -- start at the display's own region.
-        flow.start:ClearAllPoints()
-        flow.start:SetPoint(flow.growth.start, previous and (flow.home or region) or rowFrame, flow.growth.start, snapX + ox, snapY + oy)
-        flow.startPlaced = previous == nil
+        local onOrigin = PlaceRowPoint(flow.start, flow.growth.start, previous and (flow.home or region) or rowFrame, flow.growth.start, snapX + ox, snapY + oy)
+        flow.startPlaced = previous == nil and onOrigin or false
       else
         flow.startPlaced = true
       end

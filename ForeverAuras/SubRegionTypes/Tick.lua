@@ -19,6 +19,7 @@ local default = function()
     progressSources = {{-2, ""}},
     automatic_length = true,
     tick_thickness = 2,
+    tick_ppscale = false,
     tick_length = 30,
     use_texture = false,
     tick_texture = [[Interface\CastingBar\UI-CastingBar-Spark]],
@@ -355,17 +356,25 @@ local funcs = {
     end
   end,
   UpdateTickSize = function(self)
+    local thickness = self.tick_thickness
+    local length = self.automatic_length and self.parentMinorSize or self.tick_length
+    if self.tick_ppscale then
+      local unit = PixelUtil.GetPixelToUIUnitFactor() / self:GetEffectiveScale()
+      thickness = math.floor(thickness + 0.5) * unit
+      if not self.automatic_length then
+        length = math.floor(length + 0.5) * unit
+      end
+    end
     if self.vertical then
       for i, tick in ipairs(self.ticks) do
-        tick:SetHeight(self.tick_thickness)
+        tick:SetHeight(thickness)
       end
     else
       for i, tick in ipairs(self.ticks) do
-        tick:SetWidth(self.tick_thickness)
+        tick:SetWidth(thickness)
       end
     end
 
-    local length = self.automatic_length and self.parentMinorSize or self.tick_length
     if self.vertical then
       for i, tick in ipairs(self.ticks) do
         tick:SetWidth(length)
@@ -521,12 +530,12 @@ local function modify(parent, region, parentData, data, first)
 
     if region.ticks[i] == nil then
       local texture = region:CreateTexture()
-      texture:SetSnapToPixelGrid(false)
-      texture:SetTexelSnappingBias(0)
       texture:SetDrawLayer("ARTWORK", 3)
       texture:SetAllPoints()
       region.ticks[i] = texture
     end
+    region.ticks[i]:SetSnapToPixelGrid(data.tick_ppscale == true)
+    region.ticks[i]:SetTexelSnappingBias(data.tick_ppscale and 0.5 or 0)
   end
 
   for i = #data.tick_placements + 1, #region.ticks do
@@ -534,6 +543,7 @@ local function modify(parent, region, parentData, data, first)
   end
 
   region.automatic_length = data.automatic_length
+  region.tick_ppscale = data.tick_ppscale == true
   region.tick_thickness = data.tick_thickness
   region.tick_length = data.tick_length
   region.use_texture = data.use_texture

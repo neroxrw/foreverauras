@@ -1,5 +1,10 @@
 # Changelog
 ## VERSIONS
+## 1.4.18
+- Fixed a Modern Aura Group sometimes losing its position between pulls while the game continued to restrict aura information.
+- Bar ticks have a new "Force pixel perfect scale" option, so a tick can stay exactly one pixel wide on a scaled bar.
+- Fixed Spell Usable icons sometimes showing that a spell could be cast when only a lower rank was affordable. Usability now follows the selected rank and spell override settings.
+
 ## 1.4.16
 - Spell cooldown icons set to Show Always now keep their picture when the game withholds cooldown timing
 - Fixed Modern icons, bars, texts and group members sometimes staying blank when combat started right after closing the options window
