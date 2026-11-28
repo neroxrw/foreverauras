@@ -40,6 +40,13 @@ local function createOptions(parentData, data, index, subIndex)
       step = 1,
     },
 
+    tick_ppscale = {
+      type = "toggle",
+      width = WeakAuras.normalWidth,
+      name = L["Force pixel perfect scale"],
+      order = 2.6,
+    },
+
     tick_progress_source_space = {
       type = "description",
       name = "",
